@@ -1,0 +1,28 @@
+train:
+    dataset: "DTU"
+    subject: "65"
+
+    batch_size: 1
+    drop_last: False
+    shuffle: True
+    worker: 4
+
+    data_dir : "DTU"
+    scan_id : ${dataset.train.subject}
+    num_sample : 2048
+
+valid:
+    dataset: "DTUVal"
+    subject: ${dataset.train.subject}
+    image_id: 0
+
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 4
+
+    data_dir : ${dataset.train.data_dir}
+    scan_id : ${dataset.train.scan_id}
+
+    num_sample : -1
+    pixel_per_batch: 8192

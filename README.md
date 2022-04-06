@@ -1,1 +1,1 @@
-# RGB-PINA
+# SNARF-IDR

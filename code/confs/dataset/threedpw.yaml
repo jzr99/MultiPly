@@ -1,0 +1,25 @@
+train:
+    dataset: ThreeDPW
+    subject: "debug"
+
+    batch_size: 1
+    drop_last: False
+    shuffle: True
+    worker: 8
+
+    data_dir : courtyard_jumpBench_01/
+    num_sample : 2048
+
+valid:
+    dataset: "ThreeDPWVal"
+    subject: "debug"
+    image_id: 0
+
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 8
+
+    data_dir : courtyard_jumpBench_01/
+    num_sample : -1
+    pixel_per_batch: 12000

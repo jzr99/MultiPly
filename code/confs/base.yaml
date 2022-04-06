@@ -1,0 +1,13 @@
+hydra:
+    run:
+        dir: "outputs/${exp}/${run}"
+
+defaults:
+  - model: idr
+  - dataset: threedpw
+  - _self_
+
+seed: 42
+project_name: "SNARF-IDR"
+exp: ${dataset.train.dataset}
+run: ${dataset.train.subject}
