@@ -92,6 +92,51 @@ class IDRLoss(nn.Module):
             'normal_loss': normal_loss,
         }
 
+class VolSDFLoss(nn.Module):
+    def __init__(self, opt):
+        super().__init__()
+        self.eikonal_weight = opt.eikonal_weight
+        self.bone_weight = opt.bone_weight
+        self.normal_weight = opt.normal_weight
+        self.l1_loss = nn.L1Loss(reduction='mean')
+        self.l2_loss = nn.MSELoss(reduction='mean')
+    
+    def get_rgb_loss(self, rgb_values, rgb_gt):
+        # rgb_gt = rgb_gt.reshape(-1, 3)
+        rgb_loss = self.l1_loss(rgb_values, rgb_gt)
+        return rgb_loss
+    
+    def get_eikonal_loss(self, grad_theta):
+        eikonal_loss = ((grad_theta.norm(2, dim=-1) - 1)**2).mean()
+        return eikonal_loss
+        
+    def get_normal_loss(self, normal_values, surface_normal_gt, normal_weight):
+        # TODO Check
+        normal_loss = torch.mean(normal_weight[:, None] * torch.norm((normal_values-surface_normal_gt) ** 2, dim=1))
+        return normal_loss
+    
+    def get_bone_loss(self, w_pd, w_gt):
+        bone_loss = self.l2_loss(w_pd, w_gt)
+        return bone_loss
+    
+    def forward(self, model_outputs, ground_truth):
+
+        surface_mask = model_outputs['object_mask']
+        rgb_gt = ground_truth['rgb'][0, surface_mask].cuda()
+        rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'], rgb_gt)
+        eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
+        normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
+        bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
+        loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
+
+        return {
+            'loss': loss,
+            'rgb_loss': rgb_loss,
+            'eikonal_loss': eikonal_loss,
+            'bone_loss': bone_loss,
+            'normal_loss': normal_loss,
+        }
+
 class ThreeDLoss(nn.Module):
     def __init__(self, opt):
         super().__init__()

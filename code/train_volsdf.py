@@ -1,4 +1,4 @@
-from lib.model.idr import IDR
+from lib.model.volsdf import VolSDF
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -24,14 +24,14 @@ def main(opt):
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=1500,
-        check_val_every_n_epoch=2,
+        check_val_every_n_epoch=1,
         logger=logger,
         log_every_n_steps=1,
         num_sanity_val_steps=0
     )
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
-    model = IDR(opt, betas_path)
+    model = VolSDF(opt, betas_path)
     trainset = create_dataset(opt.dataset.train)
     validset = create_dataset(opt.dataset.valid)
 

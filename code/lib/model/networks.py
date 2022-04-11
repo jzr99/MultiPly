@@ -124,7 +124,6 @@ class ImplicitNet(nn.Module):
         if num_batch * num_point == 0: return input
 
         input = input.reshape(num_batch * num_point, num_dim)
-        # input_embed = input_embed if self.embed_fn is None else self.embed_fn(input_embed)
 
         if self.cond != 'none':
             num_batch, num_cond = cond[self.cond].shape
@@ -183,10 +182,6 @@ class RenderingNet(nn.Module):
             self.embedview_fn = embedview_fn
             dims[0] += (input_ch - 3)
 
-            # embedpos_fn, input_ch = get_embedder(10) # manually set to 10
-            # self.embedpos_fn = embedpos_fn
-            # dims[0] += (input_ch - 3)
-
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -196,8 +191,6 @@ class RenderingNet(nn.Module):
             setattr(self, "lin" + str(l), lin)
         self.relu = nn.ReLU()
         self.tanh = nn.Tanh()
-        # self.parsing_embed = nn.Embedding(6, 128)
-        # self.dropout = nn.Dropout(0.5)
 
     def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing):
         if self.embedview_fn is not None:
@@ -215,8 +208,6 @@ class RenderingNet(nn.Module):
             num_points = points.shape[0]
             body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
             if surface_body_parsing is not None:
-                # if self.training:
-                    # surface_body_parsing = (self.dropout(surface_body_parsing.float()) / 2.).type(torch.LongTensor).to(points.device)
                 parsing_feature = self.parsing_embed(surface_body_parsing)
                 rendering_input = torch.cat([points, parsing_feature, view_dirs, body_pose, normals, feature_vectors], dim=-1)
             else:
