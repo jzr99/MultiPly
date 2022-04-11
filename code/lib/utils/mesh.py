@@ -180,3 +180,5 @@ def generate_mesh(func, verts, level_set=0, res_init=32, res_up=3, point_batch=5
     meshexport = max_comp
 
     return meshexport
+
+

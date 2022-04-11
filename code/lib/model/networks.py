@@ -63,7 +63,8 @@ class ImplicitNet(nn.Module):
             opt.dims) + [opt.d_out + opt.feature_vector_size]
         self.num_layers = len(dims)
         self.skip_in = opt.skip_in
-
+        self.sdf_bounding_sphere = opt.scene_bounding_sphere
+        self.sphere_scale = opt.sphere_scale
         self.embed_fn = None
         if opt.multires > 0:
             embed_fn, input_ch = get_embedder(opt.multires)
@@ -124,6 +125,7 @@ class ImplicitNet(nn.Module):
         if num_batch * num_point == 0: return input
 
         input = input.reshape(num_batch * num_point, num_dim)
+        # input_embed = input_embed if self.embed_fn is None else self.embed_fn(input_embed)
 
         if self.cond != 'none':
             num_batch, num_cond = cond[self.cond].shape
@@ -166,7 +168,33 @@ class ImplicitNet(nn.Module):
                                         only_inputs=True)[0]
         return gradients.unsqueeze(1)
 
+    def get_outputs(self, x):
+        x.requires_grad_(True)
+        output = self.forward(x)
+        sdf = output[:,:1]
+        ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+        if self.sdf_bounding_sphere > 0.0:
+            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+            sdf = torch.minimum(sdf, sphere_sdf)
+        feature_vectors = output[:, 1:]
+        d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+        gradients = torch.autograd.grad(
+            outputs=sdf,
+            inputs=x,
+            grad_outputs=d_output,
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True)[0]
 
+        return sdf, feature_vectors, gradients
+
+    def get_sdf_vals(self, x):
+        sdf = self.forward(x)[:,:1]
+        ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+        if self.sdf_bounding_sphere > 0.0:
+            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+            sdf = torch.minimum(sdf, sphere_sdf)
+        return sdf
 
 class RenderingNet(nn.Module):
     def __init__(self, opt):
@@ -182,6 +210,10 @@ class RenderingNet(nn.Module):
             self.embedview_fn = embedview_fn
             dims[0] += (input_ch - 3)
 
+            # embedpos_fn, input_ch = get_embedder(10) # manually set to 10
+            # self.embedpos_fn = embedpos_fn
+            # dims[0] += (input_ch - 3)
+
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -190,8 +222,9 @@ class RenderingNet(nn.Module):
                 lin = nn.utils.weight_norm(lin)
             setattr(self, "lin" + str(l), lin)
         self.relu = nn.ReLU()
+        # self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
-
+        
     def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing):
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
@@ -208,6 +241,8 @@ class RenderingNet(nn.Module):
             num_points = points.shape[0]
             body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
             if surface_body_parsing is not None:
+                # if self.training:
+                    # surface_body_parsing = (self.dropout(surface_body_parsing.float()) / 2.).type(torch.LongTensor).to(points.device)
                 parsing_feature = self.parsing_embed(surface_body_parsing)
                 rendering_input = torch.cat([points, parsing_feature, view_dirs, body_pose, normals, feature_vectors], dim=-1)
             else:
@@ -222,4 +257,5 @@ class RenderingNet(nn.Module):
             if l < self.num_layers - 2:
                 x = self.relu(x)
         x = self.tanh(x)
+        # x = self.sigmoid(x)
         return x

@@ -83,7 +83,7 @@ class PointOnBones:
 
     
 class PointInSpace:
-    def __init__(self, global_sigma=1.8, local_sigma=0.01):
+    def __init__(self, global_sigma=0.5, local_sigma=0.05):
         self.global_sigma = global_sigma
         self.local_sigma = local_sigma
 

@@ -28,7 +28,7 @@ class VolSDFNetwork(nn.Module):
         super().__init__()
         self.implicit_network = ImplicitNet(opt.implicit_network)
         self.rendering_network = RenderingNet(opt.rendering_network)
-        # self.ray_tracer = RayTracing(**opt.ray_tracer)
+        self.ray_tracer = RayTracing(**opt.ray_tracer)
         self.sampler = PointInSpace()
         self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
@@ -167,7 +167,7 @@ class VolSDFNetwork(nn.Module):
             # sample pnts for the eikonal loss
             smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
             
-            indices = torch.randperm(smpl_verts_c.shape[1])[:num_pixels].cuda()
+            indices = torch.randperm(smpl_verts_c.shape[1])[:100].cuda()
             verts_c = torch.index_select(smpl_verts_c, 1, indices)
             sample = self.sampler.get_points(verts_c, global_ratio=0.)
             # sample = torch.cat([sample_local, sample_global], dim=1)
@@ -224,7 +224,6 @@ class VolSDFNetwork(nn.Module):
 
         rgb_values = rgb_values.reshape(-1, N_samples, 3)
         normal_values = normal_values.reshape(-1, N_samples, 3)
-        import ipdb; ipdb.set_trace()
         weights = self.volume_rendering(z_vals, sdf_output)
 
         rgb_values = torch.sum(weights.unsqueeze(-1) * rgb_values, 1)

@@ -6,6 +6,8 @@ from .smpl import SMPLServer
 from .sampler import PointInSpace, PointOnBones
 from .loss import IDRLoss
 from ..utils import idr_utils
+from ..utils.mesh import generate_mesh
+from ..utils.snarf_utils import weights2colors
 
 import numpy as np
 import cv2
@@ -29,11 +31,12 @@ class IDRNetwork(nn.Module):
         self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        self.smpl_server = SMPLServer(gender='male') # average shape for now. Adjust gender later!
+        gender = 'male'
+        self.smpl_server = SMPLServer(gender=gender) # average shape for now. Adjust gender later!
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init.pth'))
+            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_512.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
@@ -132,11 +135,22 @@ class IDRNetwork(nn.Module):
 
             # Sample points for the eikonal loss
 
-            eikonal_points_c = self.sampler.get_points(surface_canonical_points[None].detach(), global_ratio=0.125)
-            eikonal_points_c.requires_grad_()
-            eikonal_points_pred_c = self.implicit_network(eikonal_points_c, cond)[..., 0:1]
-            grad_theta = gradient(eikonal_points_c, eikonal_points_pred_c)
+            # eikonal_points_c = self.sampler.get_points(surface_canonical_points[None].detach(), global_ratio=0.125)
+            # eikonal_points_c.requires_grad_()
+            # eikonal_points_pred_c = self.implicit_network(eikonal_points_c, cond)[..., 0:1]
+            # grad_theta = gradient(eikonal_points_c, eikonal_points_pred_c)
 
+            smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
+            
+            indices = torch.randperm(smpl_verts_c.shape[1])[:500].cuda()
+            verts_c = torch.index_select(smpl_verts_c, 1, indices)
+            sample = self.sampler.get_points(verts_c, global_ratio=0.)
+            # sample = torch.tensor(np.load('/home/chen/Desktop/volsdf_sample.npy')).cuda()
+            # sample = torch.cat([sample_local, sample_global], dim=1)
+            sample.requires_grad_()
+            local_pred = self.implicit_network(sample, cond)[..., 0:1]
+            grad_theta = gradient(sample, local_pred)
+            
             differentiable_surface_points = self.get_differentiable_x(surface_canonical_points,
                                                                       cond,
                                                                       smpl_tfs,
@@ -431,8 +445,48 @@ class IDR(pl.LightningModule):
         #     self.save_checkpoints(self.current_epoch)
         return super().training_epoch_end(outputs)
 
+    def query_oc(self, x, cond):
+        
+        x = x.reshape(-1, 3)
+        mnfld_pred = self.model.implicit_network(x, cond)[:,:,0].reshape(-1,1)
+    
+        return {'occ':mnfld_pred}
+
+    def query_wc(self, x, cond):
+        
+        x = x.reshape(-1, 3)
+        w = self.model.deformer.query_weights(x, cond)
+    
+        return w
+
+    def query_od(self, x, cond, smpl_tfs):
+        
+        x = x.reshape(-1, 3)
+        x_c, others = self.model.deformer(x, cond, smpl_tfs, eval_mode = True)
+        x_c = x_c.squeeze(0)
+        num_point, num_init, num_dim = x_c.shape
+
+        x_c = x_c.reshape(num_point * num_init, num_dim)
+        output = self.model.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
+        sdf = output[:, :, 0]
+        if others['valid_ids'].ndim == 3:
+            sdf_mask = others['valid_ids'].squeeze(0)
+        elif others['valid_ids'].ndim == 2:
+            sdf_mask = others['valid_ids']
+        sdf[~sdf_mask] = 1.
+
+        sdf, _ = torch.min(sdf, dim=1)
+        sdf = sdf.reshape(-1,1)
+        
+        return {'occ': sdf}
+    
     def validation_step(self, batch, *args, **kwargs):
+
+        output = {}
         inputs, targets = batch
+
+        self.model.eval()
+
         device = inputs["smpl_params"].device
         if self.current_epoch < 1:
             reference_pose = inputs["smpl_params"][:, 4:76]
@@ -450,12 +504,58 @@ class IDR(pl.LightningModule):
         inputs["smpl_shape"] = val_smpl_shape
         inputs["smpl_trans"] = val_smpl_trans
 
-        model_outputs = self.model(inputs)
-        return {
+        cond = {'smpl': inputs["smpl_pose"][:, 3:]/np.pi}
+        mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+        verts_mesh  = torch.tensor(mesh_canonical.vertices).cuda().float().unsqueeze(0)
+        weights_mesh = self.query_wc(verts_mesh, cond).data.cpu().numpy()
+
+        mesh_canonical.colors = weights2colors(weights_mesh)*255
+        
+        mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces, vertex_colors=mesh_canonical.colors)
+        
+        # model_outputs = self.model(inputs)
+
+        output.update({
+            'canonical_weighted':mesh_canonical
+        })
+
+        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(50000, targets["img_size"][0,0] * targets["img_size"][0,1]))
+
+        res = []
+        for s in split:
+
+            out = self.model(s)
+
+            for k, v in out.items():
+                try:
+                    out[k] = v.detach()
+                except:
+                    out[k] = v
+
+            res.append({
+                'points': out['points'].detach(),
+                'rgb_values': out['rgb_values'].detach(),
+                'normal_values': out['normal_values'].detach(),
+                'network_object_mask': out['network_object_mask'].detach(),
+                'object_mask': out['object_mask'].detach()
+            })
+        batch_size = targets['rgb'].shape[0]
+
+        model_outputs = idr_utils.merge_output(res, targets["total_pixels"][0], batch_size)
+
+        output.update({
             "rgb_values": model_outputs["rgb_values"].detach().clone(),
             "normal_values": model_outputs["normal_values"].detach().clone(),
             **targets,
-        }
+        })
+            
+        # return {
+        #     "rgb_values": model_outputs["rgb_values"].detach().clone(),
+        #     "normal_values": model_outputs["normal_values"].detach().clone(),
+        #     **targets,
+        # }
+
+        return output
 
     def validation_step_end(self, batch_parts):
         return batch_parts
@@ -483,8 +583,13 @@ class IDR(pl.LightningModule):
 
         
         normal = (normal * 255).astype(np.uint8)
+
         os.makedirs("rendering", exist_ok=True)
         os.makedirs("normal", exist_ok=True)
+
+        canonical_mesh = outputs[0]['canonical_weighted']
+        canonical_mesh.export(f"rendering/{self.current_epoch}.ply")
+
         cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
         cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
     

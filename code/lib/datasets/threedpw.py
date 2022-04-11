@@ -82,7 +82,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         root = hydra.utils.to_absolute_path(root)
         # self.start_frame = 0
         # self.end_frame = 2
-        self.skip_step = 10
+        self.skip_step = 3
         self.images, self.img_sizes = [], []
         self.object_masks = []
         self.normals = []
@@ -212,42 +212,6 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             }
             return inputs, images
 
-class ThreeDPWValDataset(torch.utils.data.Dataset):
-    def __init__(self, opt):
-        dataset = ThreeDPWDataset(opt)
-        image_id = opt.image_id
-
-        self.data = dataset[image_id]
-        self.img_size = dataset.img_sizes[image_id]
-
-        self.total_pixels = np.prod(self.img_size)
-        self.pixel_per_batch = opt.pixel_per_batch
-
-    def __len__(self):
-        return (self.total_pixels + self.pixel_per_batch -
-                1) // self.pixel_per_batch
-
-    def __getitem__(self, idx):
-        indices = list(
-            range(idx * self.pixel_per_batch,
-                  min((idx + 1) * self.pixel_per_batch, self.total_pixels)))
-
-        inputs, images = self.data
-        inputs = {
-            "object_mask": inputs["object_mask"][indices],
-            # "body_parsing": inputs["body_parsing"][indices],
-            "uv": inputs["uv"][indices],
-            "P": inputs["P"],
-            "C": inputs["C"],
-            "smpl_params": inputs["smpl_params"]
-        }
-        images = {
-            "rgb": images["rgb"][indices],
-            "normal": images["normal"][indices],
-            "img_size": images["img_size"]
-        }
-        return inputs, images
-
 # class ThreeDPWValDataset(torch.utils.data.Dataset):
 #     def __init__(self, opt):
 #         dataset = ThreeDPWDataset(opt)
@@ -260,27 +224,62 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
 #         self.pixel_per_batch = opt.pixel_per_batch
 
 #     def __len__(self):
-#         return 1
+#         return (self.total_pixels + self.pixel_per_batch - 1) // self.pixel_per_batch
 
 #     def __getitem__(self, idx):
-#         uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
-#         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
+#         indices = list(
+#             range(idx * self.pixel_per_batch,
+#                   min((idx + 1) * self.pixel_per_batch, self.total_pixels)))
 
 #         inputs, images = self.data
-
 #         inputs = {
-#             "object_mask": inputs["object_mask"],
-#             # "body_parsing": inputs["body_parsing"],
-#             "uv": inputs["uv"],
+#             "object_mask": inputs["object_mask"][indices],
+#             # "body_parsing": inputs["body_parsing"][indices],
+#             "uv": inputs["uv"][indices],
 #             "P": inputs["P"],
 #             "C": inputs["C"],
 #             "smpl_params": inputs["smpl_params"]
 #         }
 #         images = {
-#             "rgb": images["rgb"],
-#             "normal": images["normal"],
-#             "img_size": images["img_size"],
-#             'pixel_per_batch': self.pixel_per_batch,
-#             'total_pixels': self.total_pixels
+#             "rgb": images["rgb"][indices],
+#             "normal": images["normal"][indices],
+#             "img_size": images["img_size"]
 #         }
 #         return inputs, images
+
+class ThreeDPWValDataset(torch.utils.data.Dataset):
+    def __init__(self, opt):
+        dataset = ThreeDPWDataset(opt)
+        image_id = opt.image_id
+
+        self.data = dataset[image_id]
+        self.img_size = dataset.img_sizes[image_id]
+
+        self.total_pixels = np.prod(self.img_size)
+        self.pixel_per_batch = opt.pixel_per_batch
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, idx):
+        uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
+        uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
+
+        inputs, images = self.data
+
+        inputs = {
+            "object_mask": inputs["object_mask"],
+            # "body_parsing": inputs["body_parsing"],
+            "uv": inputs["uv"],
+            "P": inputs["P"],
+            "C": inputs["C"],
+            "smpl_params": inputs["smpl_params"]
+        }
+        images = {
+            "rgb": images["rgb"],
+            "normal": images["normal"],
+            "img_size": images["img_size"],
+            'pixel_per_batch': self.pixel_per_batch,
+            'total_pixels': self.total_pixels
+        }
+        return inputs, images

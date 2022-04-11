@@ -91,7 +91,7 @@ class IDRLoss(nn.Module):
             'lbs_loss': lbs_loss,
             'normal_loss': normal_loss,
         }
-
+    
 class VolSDFLoss(nn.Module):
     def __init__(self, opt):
         super().__init__()
