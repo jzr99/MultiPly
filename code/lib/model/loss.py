@@ -112,7 +112,7 @@ class VolSDFLoss(nn.Module):
         
     def get_normal_loss(self, normal_values, surface_normal_gt, normal_weight):
         # TODO Check
-        normal_loss = torch.mean(normal_weight[:, None] * torch.norm((normal_values-surface_normal_gt) ** 2, dim=1))
+        normal_loss = torch.mean(torch.norm((normal_values-surface_normal_gt) ** 2, dim=1)) # torch.mean(normal_weight[:, None] * torch.norm((normal_values-surface_normal_gt) ** 2, dim=1))
         return normal_loss
     
     def get_bone_loss(self, w_pd, w_gt):
@@ -121,20 +121,19 @@ class VolSDFLoss(nn.Module):
     
     def forward(self, model_outputs, ground_truth):
 
-        surface_mask = model_outputs['object_mask']
-        rgb_gt = ground_truth['rgb'][0, surface_mask].cuda()
+        rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'], rgb_gt)
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
         bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
-        loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
+        loss = rgb_loss + self.eikonal_weight * eikonal_loss # + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
 
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
             'eikonal_loss': eikonal_loss,
-            'bone_loss': bone_loss,
-            'normal_loss': normal_loss,
+            # 'bone_loss': bone_loss,
+            # 'normal_loss': normal_loss,
         }
 
 class ThreeDLoss(nn.Module):

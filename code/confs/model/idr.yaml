@@ -3,7 +3,7 @@ alpha_milestones : []
 alpha_factor : 2
 sched_milestones : [40,80]
 sched_factor : 0.5
-smpl_init: True
+smpl_init: False
 is_continue: False
 use_body_parsing: False
 white_bkgd: True
@@ -39,6 +39,7 @@ ray_sampler:
     eps: 0.1
     beta_iters: 10
     max_total_iters: 5
+    inverse_sphere_bg: False
 ray_tracer:
     object_bounding_sphere: 1.0
     sdf_threshold: 5.0e-5

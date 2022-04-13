@@ -168,33 +168,33 @@ class ImplicitNet(nn.Module):
                                         only_inputs=True)[0]
         return gradients.unsqueeze(1)
 
-    def get_outputs(self, x):
-        x.requires_grad_(True)
-        output = self.forward(x)
-        sdf = output[:,:1]
-        ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-        if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-            sdf = torch.minimum(sdf, sphere_sdf)
-        feature_vectors = output[:, 1:]
-        d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
-        gradients = torch.autograd.grad(
-            outputs=sdf,
-            inputs=x,
-            grad_outputs=d_output,
-            create_graph=True,
-            retain_graph=True,
-            only_inputs=True)[0]
+    # def get_outputs(self, x):
+    #     x.requires_grad_(True)
+    #     output = self.forward(x)
+    #     sdf = output[:,:1]
+    #     ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+    #     if self.sdf_bounding_sphere > 0.0:
+    #         sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+    #         sdf = torch.minimum(sdf, sphere_sdf)
+    #     feature_vectors = output[:, 1:]
+    #     d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+    #     gradients = torch.autograd.grad(
+    #         outputs=sdf,
+    #         inputs=x,
+    #         grad_outputs=d_output,
+    #         create_graph=True,
+    #         retain_graph=True,
+    #         only_inputs=True)[0]
 
-        return sdf, feature_vectors, gradients
+    #     return sdf, feature_vectors, gradients
 
-    def get_sdf_vals(self, x):
-        sdf = self.forward(x)[:,:1]
-        ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-        if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-            sdf = torch.minimum(sdf, sphere_sdf)
-        return sdf
+    # def get_sdf_vals(self, x):
+    #     sdf = self.forward(x)[:,:1]
+    #     ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+    #     if self.sdf_bounding_sphere > 0.0:
+    #         sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+    #         sdf = torch.minimum(sdf, sphere_sdf)
+    #     return sdf
 
 class RenderingNet(nn.Module):
     def __init__(self, opt):
@@ -222,8 +222,8 @@ class RenderingNet(nn.Module):
                 lin = nn.utils.weight_norm(lin)
             setattr(self, "lin" + str(l), lin)
         self.relu = nn.ReLU()
-        # self.sigmoid = nn.Sigmoid()
-        self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
+        # self.tanh = nn.Tanh()
         
     def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing):
         if self.embedview_fn is not None:
@@ -256,6 +256,6 @@ class RenderingNet(nn.Module):
             x = lin(x)
             if l < self.num_layers - 2:
                 x = self.relu(x)
-        x = self.tanh(x)
-        # x = self.sigmoid(x)
+        # x = self.tanh(x)
+        x = self.sigmoid(x)
         return x

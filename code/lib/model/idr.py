@@ -150,7 +150,8 @@ class IDRNetwork(nn.Module):
             sample.requires_grad_()
             local_pred = self.implicit_network(sample, cond)[..., 0:1]
             grad_theta = gradient(sample, local_pred)
-            
+            import ipdb
+            ipdb.set_trace()
             differentiable_surface_points = self.get_differentiable_x(surface_canonical_points,
                                                                       cond,
                                                                       smpl_tfs,

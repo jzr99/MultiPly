@@ -87,8 +87,11 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.object_masks = []
         self.normals = []
         # self.parsing_masks = []
+
+        normalize_rgb = False
+
         # images
-        img_dir = os.path.join(root, "image")
+        img_dir = os.path.join(root, "whitebg_image")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))
         
         for img_path in img_paths[::self.skip_step]:
@@ -97,7 +100,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             self.img_sizes.append(img_size)
 
             # preprocess: BGR -> RGB -> Normalize
-            img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+            if normalize_rgb:
+                img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+            else:
+                img = img[:, :, ::-1] / 255
             self.images.append(img)
             
         # masks

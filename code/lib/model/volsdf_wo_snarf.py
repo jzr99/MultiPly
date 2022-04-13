@@ -32,7 +32,7 @@ class VolSDFNetwork(nn.Module):
         self.sampler = PointInSpace()
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
-        self.deformer = ForwardDeformer(opt.deformer, betas=betas)
+        # self.deformer = ForwardDeformer(opt.deformer, betas=betas)
         gender = 'male'
         self.sdf_bounding_sphere = opt.implicit_network.scene_bounding_sphere
         self.sphere_scale = opt.implicit_network.sphere_scale
@@ -47,15 +47,15 @@ class VolSDFNetwork(nn.Module):
         if opt.smpl_init:
             smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_512.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
-            self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
+            # self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
-    def extract_normal(self, x_c, cond, tfs):
+    # def extract_normal(self, x_c, cond, tfs):
         
-        x_c = x_c.unsqueeze(0)
-        x_c.requires_grad_(True) 
-        output = self.implicit_network(x_c, cond)[..., 0:1]
-        gradient_c = gradient(x_c, output)
-        gradient_d = self.deformer.forward_skinning_normal(x_c, gradient_c, cond, tfs)
+    #     x_c = x_c.unsqueeze(0)
+    #     x_c.requires_grad_(True) 
+    #     output = self.implicit_network(x_c, cond)[..., 0:1]
+    #     gradient_c = gradient(x_c, output)
+    #     gradient_d = self.deformer.forward_skinning_normal(x_c, gradient_c, cond, tfs)
 
         return gradient_d
     def sdf_func(self, x, cond, smpl_tfs, eval_mode=False):
@@ -156,24 +156,14 @@ class VolSDFNetwork(nn.Module):
             # ray_dirs = ray_dirs.reshape(-1, 3)
             cam_loc = cam_loc.reshape(-1, 3)
 
-            # n_eik_points = batch_size * num_pixels
-            # eikonal_points = torch.empty(n_eik_points, 3).uniform_(-self.sdf_bounding_sphere, self.sdf_bounding_sphere).cuda()
-            # eik_near_points = (cam_loc.unsqueeze(1) + z_samples_eik.unsqueeze(2) * ray_dirs.unsqueeze(1)).reshape(-1, 3)
-            # eikonal_points = torch.cat([eikonal_points, eik_near_points], 0).unsqueeze(0)
-            # eikonal_points.requires_grad_()
-            # eikonal_points_pred = self.implicit_network(eikonal_points, cond)[..., 0:1]
-            # grad_theta = gradient(eikonal_points, eikonal_points_pred)
+            n_eik_points = batch_size * num_pixels
+            eikonal_points = torch.empty(n_eik_points, 3).uniform_(-self.sdf_bounding_sphere, self.sdf_bounding_sphere).cuda()
+            eik_near_points = (cam_loc.unsqueeze(1) + z_samples_eik.unsqueeze(2) * ray_dirs.unsqueeze(1)).reshape(-1, 3)
+            eikonal_points = torch.cat([eikonal_points, eik_near_points], 0).unsqueeze(0)
+            eikonal_points.requires_grad_()
+            eikonal_points_pred = self.implicit_network(eikonal_points, cond)[..., 0:1]
+            grad_theta = gradient(eikonal_points, eikonal_points_pred)
 
-            # sample pnts for the eikonal loss
-            smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
-            
-            indices = torch.randperm(smpl_verts_c.shape[1])[:100].cuda()
-            verts_c = torch.index_select(smpl_verts_c, 1, indices)
-            sample = self.sampler.get_points(verts_c, global_ratio=0.)
-            # sample = torch.cat([sample_local, sample_global], dim=1)
-            sample.requires_grad_()
-            local_pred = self.implicit_network(sample, cond)[..., 0:1]
-            grad_theta = gradient(sample, local_pred)
 
             differentiable_points = self.get_differentiable_x(canonical_points,
                                                               cond,
@@ -181,22 +171,7 @@ class VolSDFNetwork(nn.Module):
                                                               dirs_flat,
                                                               cam_loc)
 
-            # pts_c_sdf, sdf_gt = self.sampler_bone.get_points(self.smpl_server.joints_c.expand(1, -1, -1))
-            # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
 
-            # Bone regularization!!!
-            pts_c_w, w_gt = self.sampler_bone.get_joints(self.smpl_server.joints_c.expand(1, -1, -1))
-            w_pd = self.deformer.query_weights(pts_c_w, cond)
-
-            # SMPL skinning weight regularization!!!
-            # lbs_weight = self.deformer.query_weights(surface_canonical_points.detach().unsqueeze(0), cond)[0]
-            # gt_lbs_weight = self.deformer.query_smpl_weights(surface_canonical_points.detach().unsqueeze(0))[0]
-            # skinning_values = torch.ones([points.shape[0], points.shape[1], lbs_weight.shape[1]]).float().cuda()
-            # gt_skinning_values = torch.ones([points.shape[0], points.shape[1], lbs_weight.shape[1]]).float().cuda()
-            # skinning_values = skinning_values[surface_mask].reshape(-1, lbs_weight.shape[1])
-            # gt_skinning_values = gt_skinning_values[surface_mask].reshape(-1, lbs_weight.shape[1])
-            # skinning_values = lbs_weight
-            # gt_skinning_values = gt_lbs_weight
             normal_weight = torch.zeros(points_flat.shape[0]).float().cuda()
         else:
             # surface_mask = object_mask # network_object_mask
