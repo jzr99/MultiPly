@@ -4,11 +4,12 @@ import hydra
 import cv2
 import numpy as np
 import torch
+# from smplx import SMPL
 
 
-class DTUDataset(torch.utils.data.Dataset):
+class SampleDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
-        root = os.path.join("../data", opt.data_dir, f"scan{opt.scan_id}")
+        root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
 
         # images
@@ -50,7 +51,7 @@ class DTUDataset(torch.utils.data.Dataset):
         cameras = dict(np.load(os.path.join(root, "cameras.npz")))
         self.P, self.C = [], []
         for i in range(len(self.images)):
-            P = cameras[f"world_mat_{i}"] @ cameras[f"scale_mat_{i}"]
+            P = cameras[f"cam_{i}"].astype(np.float32)
             self.P.append(P)
 
             C = -np.linalg.solve(P[:3, :3], P[:3, 3])
@@ -76,7 +77,7 @@ class DTUDataset(torch.utils.data.Dataset):
                 "object_mask": self.object_masks[idx][sample_idx],
                 "uv": uv[sample_idx],
                 "P": self.P[idx],
-                "C": self.C[idx],
+                "C": self.C[idx]
             }
             images = {"rgb": self.images[idx][sample_idx]}
             return inputs, images
@@ -90,10 +91,9 @@ class DTUDataset(torch.utils.data.Dataset):
             images = {"rgb": self.images[idx], "img_size": self.img_sizes[idx]}
             return inputs, images
 
-
-class DTUValDataset(torch.utils.data.Dataset):
+class SampleValDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
-        dataset = DTUDataset(opt)
+        dataset = SampleDataset(opt)
         image_id = opt.image_id
 
         self.data = dataset[image_id]

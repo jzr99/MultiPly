@@ -25,4 +25,4 @@ valid:
     scan_id : ${dataset.train.scan_id}
 
     num_sample : -1
-    pixel_per_batch: 8192
+    pixel_per_batch: 2048 # 8192

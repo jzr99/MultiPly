@@ -5,7 +5,7 @@ import hydra
 import cv2
 import numpy as np
 import torch
-
+from lib.utils import rend_util
 def uniform_sampling(data, img_size, num_sample):
     indices = np.random.permutation(np.prod(img_size))[:num_sample]
     output = {
@@ -105,7 +105,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             else:
                 img = img[:, :, ::-1] / 255
             self.images.append(img)
-            
+        self.n_images = len(img_paths)
         # masks
         mask_dir = os.path.join(root, "mask")
         mask_paths = sorted(glob.glob(f"{mask_dir}/*"))
@@ -143,15 +143,29 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.poses = np.load(os.path.join(root, 'poses.npy'))[::self.skip_step]
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[::self.skip_step]
         # cameras
-        cameras = np.load(os.path.join(root, "cameras.npy"))[::self.skip_step]
+        # cameras = np.load(os.path.join(root, "cameras.npy"))[::self.skip_step]
 
-        self.P, self.C = [], []
-        for i in range(cameras.shape[0]):
-            P = cameras[i].astype(np.float32)
-            self.P.append(P)
+        # self.P, self.C = [], []
+        # for i in range(cameras.shape[0]):
+        #     P = cameras[i].astype(np.float32)
+        #     self.P.append(P)
 
-            C = -np.linalg.solve(P[:3, :3], P[:3, 3])
-            self.C.append(C)
+        #     C = -np.linalg.solve(P[:3, :3], P[:3, 3])
+        #     self.C.append(C)
+
+        camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
+
+        self.intrinsics_all = []
+        self.pose_all = []
+        for scale_mat, world_mat in zip(scale_mats, world_mats):
+            P = world_mat @ scale_mat
+            P = P[:3, :4]
+            intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
+            self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
+            self.pose_all.append(torch.from_numpy(pose).float())
+        assert len(self.intrinsics_all) == len(self.pose_all) == len(self.images)
 
         # other properties
         self.num_sample = opt.num_sample
@@ -195,8 +209,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
                 "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
-                "P": self.P[idx],
-                "C": self.C[idx],
+                # "P": self.P[idx],
+                # "C": self.C[idx],
+                "intrinsics": self.intrinsics_all[idx],
+                "pose": self.pose_all[idx],
                 "smpl_params": smpl_params,
                 "idx": idx
             }
@@ -207,8 +223,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": self.object_masks[idx].reshape(-1) > 0.5,
                 # "body_parsing": self.parsing_masks[idx].reshape(-1).astype(np.int64),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                "P": self.P[idx],
-                "C": self.C[idx],
+                # "P": self.P[idx],
+                # "C": self.C[idx],
+                "intrinsics": self.intrinsics_all[idx],
+                "pose": self.pose_all[idx],
                 "smpl_params": smpl_params
             }
             images = {
@@ -277,8 +295,10 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             "object_mask": inputs["object_mask"],
             # "body_parsing": inputs["body_parsing"],
             "uv": inputs["uv"],
-            "P": inputs["P"],
-            "C": inputs["C"],
+            # "P": inputs["P"],
+            # "C": inputs["C"],
+            "intrinsics": inputs['intrinsics'],
+            "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
         }
         images = {

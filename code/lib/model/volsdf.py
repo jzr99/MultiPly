@@ -10,6 +10,7 @@ from .loss import VolSDFLoss
 from ..utils import idr_utils
 from ..utils.mesh import generate_mesh
 from ..utils.snarf_utils import weights2colors
+from ..utils import rend_util
 
 import numpy as np
 import cv2
@@ -87,7 +88,10 @@ class VolSDFNetwork(nn.Module):
         # Parse model input
         torch.set_grad_enabled(True)
 
+        intrinsics = input["intrinsics"]
+        pose = input["pose"]
         uv = input["uv"]
+
         object_mask = input["object_mask"].reshape(-1)
         if self.use_body_pasing:
             body_parsing = input['body_parsing'].reshape(-1)
@@ -105,7 +109,8 @@ class VolSDFNetwork(nn.Module):
 
         # smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces)
         cond = {'smpl': smpl_pose[:, 3:]/np.pi}
-        ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
+        # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
+        ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
         """
         # self.implicit_network.eval()
@@ -167,7 +172,7 @@ class VolSDFNetwork(nn.Module):
             # sample pnts for the eikonal loss
             smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
             
-            indices = torch.randperm(smpl_verts_c.shape[1])[:100].cuda()
+            indices = torch.randperm(smpl_verts_c.shape[1])[:num_pixels].cuda()
             verts_c = torch.index_select(smpl_verts_c, 1, indices)
             sample = self.sampler.get_points(verts_c, global_ratio=0.)
             # sample = torch.cat([sample_local, sample_global], dim=1)
@@ -205,7 +210,7 @@ class VolSDFNetwork(nn.Module):
             grad_theta = None
 
         sdf_output = sdf_output.reshape(num_pixels, N_samples, 1).reshape(-1, 1)
-        z_vals = z_vals# [surface_mask]
+        z_vals = z_vals # [surface_mask]
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
 
         # rgb_values = torch.ones_like(points).float().cuda()
@@ -231,8 +236,6 @@ class VolSDFNetwork(nn.Module):
         # white background assumption
         if self.white_bkgd:
             acc_map = torch.sum(weights, -1)
-            import ipdb
-            ipdb.set_trace()
             rgb_values = rgb_values + (1. - acc_map[..., None]) * self.bg_color.unsqueeze(0)
 
         if self.training:
@@ -379,8 +382,6 @@ class VolSDFNetwork(nn.Module):
         shifted_free_energy = torch.cat([torch.zeros(dists.shape[0], 1).cuda(), free_energy[:, :-1]], dim=-1)  # shift one step
         alpha = 1 - torch.exp(-free_energy)  # probability of it is not empty here
         transmittance = torch.exp(-torch.cumsum(shifted_free_energy, dim=-1))  # probability of everything is empty up to now
-        import ipdb
-        ipdb.set_trace()
         weights = alpha * transmittance # probability of the ray hits something here
 
         return weights
@@ -617,13 +618,13 @@ class VolSDF(pl.LightningModule):
         img_size = outputs[0]["img_size"].squeeze(0)
 
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
-        rgb_pred = (rgb_pred.reshape(*img_size, -1) + 1) / 2
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
 
         normal_pred = torch.cat([output["normal_values"] for output in outputs], dim=0)
         normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
         rgb_gt = torch.cat([output["rgb"] for output in outputs], dim=1).squeeze(0)
-        rgb_gt = (rgb_gt.reshape(*img_size, -1) + 1) / 2
+        rgb_gt = rgb_gt.reshape(*img_size, -1)
         if 'normal' in outputs[0].keys():
             normal_gt = torch.cat([output["normal"] for output in outputs], dim=1).squeeze(0)
             normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2

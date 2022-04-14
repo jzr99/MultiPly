@@ -124,9 +124,9 @@ class VolSDFLoss(nn.Module):
         rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'], rgb_gt)
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
-        normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
-        bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
-        loss = rgb_loss + self.eikonal_weight * eikonal_loss # + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
+        # normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
+        # bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
+        loss = rgb_loss + self.eikonal_weight * eikonal_loss # + self.bone_weight * bone_loss # + self.normal_weight * normal_loss 
 
         return {
             'loss': loss,
