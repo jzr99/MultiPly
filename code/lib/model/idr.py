@@ -20,7 +20,7 @@ import torch.optim as optim
 from torch.autograd import grad
 import pytorch_lightning as pl
 import hydra
-
+import open3d as o3d
 class IDRNetwork(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -36,7 +36,7 @@ class IDRNetwork(nn.Module):
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_512.pth' % gender))
+            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
@@ -107,7 +107,15 @@ class IDRNetwork(nn.Module):
 
         points = (cam_loc.unsqueeze(1) +
                   dists.reshape(batch_size, num_pixels, 1) * ray_dirs).reshape(-1, 3)
-        
+
+        import ipdb
+        ipdb.set_trace()
+        o3d_pcl = o3d.geometry.PointCloud()
+        o3d_pcl.points = o3d.utility.Vector3dVector(points.detach().cpu().numpy().squeeze())
+        o3d.io.write_point_cloud("/home/chen/Desktop/points_flat_idr.ply", o3d_pcl)
+        smpl_pcl = o3d.geometry.PointCloud()
+        smpl_pcl.points = o3d.utility.Vector3dVector(smpl_output['smpl_verts'][0].detach().cpu().numpy().squeeze())
+        o3d.io.write_point_cloud("/home/chen/Desktop/smpl_pcl_idr.ply", smpl_pcl)
 
         # sdf_output = self.implicit_network(points)[:, 0:1]
         sdf_output, canonical_points, _ = self.sdf_func(points, cond, smpl_tfs, eval_mode=False)

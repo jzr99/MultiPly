@@ -23,11 +23,11 @@ def main(opt):
         gpus=1,
         accelerator="gpu",
         callbacks=[checkpoint_callback],
-        max_epochs=1500,
+        max_epochs=8000,
         check_val_every_n_epoch=10,
         logger=logger,
         log_every_n_steps=1,
-        num_sanity_val_steps=-1
+        num_sanity_val_steps=0
     )
 
     model = VolSDF(opt)

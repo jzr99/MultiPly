@@ -104,6 +104,9 @@ class VolSDFLoss(nn.Module):
     def get_rgb_loss(self, rgb_values, rgb_gt):
         # rgb_gt = rgb_gt.reshape(-1, 3)
         rgb_loss = self.l1_loss(rgb_values, rgb_gt)
+        if rgb_loss == float('nan'):
+            import ipdb
+            ipdb.set_trace()
         return rgb_loss
     
     def get_eikonal_loss(self, grad_theta):

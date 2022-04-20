@@ -53,7 +53,8 @@ def normalize_cameras(original_cameras_filename,output_cameras_filename,num_of_c
     normalization[0, 0] = max_radius / scene_bounding_sphere # 3.0
     normalization[1, 1] = max_radius / scene_bounding_sphere # 3.0
     normalization[2, 2] = max_radius / scene_bounding_sphere # 3.0
-
+    import ipdb
+    ipdb.set_trace()
     cameras_new = {}
     for i in range(num_of_cameras):
         cameras_new['scale_mat_%d' % i] = normalization

@@ -23,7 +23,7 @@ import torch.optim as optim
 from torch.autograd import grad
 import pytorch_lightning as pl
 import hydra
-
+import open3d as o3d
 class VolSDFNetwork(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -46,7 +46,7 @@ class VolSDFNetwork(nn.Module):
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_512.pth' % gender))
+            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
@@ -135,6 +135,16 @@ class VolSDFNetwork(nn.Module):
         points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
         points_flat = points.reshape(-1, 3)
 
+        # import ipdb
+        # ipdb.set_trace()
+        # o3d_pcl = o3d.geometry.PointCloud()
+        # o3d_pcl.points = o3d.utility.Vector3dVector(points_flat.detach().cpu().numpy().squeeze())
+        # o3d.io.write_point_cloud("/home/chen/Desktop/points_flat.ply", o3d_pcl)
+        # smpl_pcl = o3d.geometry.PointCloud()
+        # smpl_pcl.points = o3d.utility.Vector3dVector(smpl_output['smpl_verts'][0].detach().cpu().numpy().squeeze())
+        # o3d.io.write_point_cloud("/home/chen/Desktop/smpl_pcl.ply", smpl_pcl)
+        # ipdb.set_trace()
+
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
 
@@ -152,8 +162,8 @@ class VolSDFNetwork(nn.Module):
             # ray_dirs = dirs # [surface_mask]
             cam_loc = cam_loc.unsqueeze(1).repeat(1, N_samples, 1) # [surface_mask]
 
-            normal = input["normal"].reshape(-1, 3)
-            surface_normal = normal # [surface_mask]
+            # normal = input["normal"].reshape(-1, 3)
+            # surface_normal = normal # [surface_mask]
 
             # N = surface_points.shape[0]
 
@@ -233,6 +243,7 @@ class VolSDFNetwork(nn.Module):
 
         rgb_values = torch.sum(weights.unsqueeze(-1) * rgb_values, 1)
         normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
+
         # white background assumption
         if self.white_bkgd:
             acc_map = torch.sum(weights, -1)
@@ -245,7 +256,7 @@ class VolSDFNetwork(nn.Module):
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
-                'surface_normal_gt': surface_normal,
+                # 'surface_normal_gt': surface_normal,
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
                 # 'network_object_mask': network_object_mask,
@@ -281,7 +292,7 @@ class VolSDFNetwork(nn.Module):
         others = {}
 
         _, gradients, feature_vectors = self.forward_gradient(pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
-        normals = gradients # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
+        normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
         rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
                                           feature_vectors, surface_body_parsing)
         
@@ -401,7 +412,7 @@ def gradient(inputs, outputs):
 class VolSDF(pl.LightningModule):
     def __init__(self, opt, betas_path) -> None:
         super().__init__()
-        self.automatic_optimization = False
+        # self.automatic_optimization = False
         self.model = VolSDFNetwork(opt.model, betas_path)
         self.loss = VolSDFLoss(opt.model.loss)
         self.training_modules = ["model"]
@@ -420,11 +431,11 @@ class VolSDF(pl.LightningModule):
         ])
 
         self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate)
-        self.pose_optimizer = optim.Adam([self.smpl_pose , self.smpl_shape, self.smpl_trans], lr=1e-4) 
+        # self.pose_optimizer = optim.Adam([self.smpl_pose , self.smpl_shape, self.smpl_trans], lr=1e-4) 
         self.scheduler = optim.lr_scheduler.MultiStepLR(
             self.optimizer, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
-        self._optimizers = [self.optimizer, self.pose_optimizer]
-        return [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}, {"optimizer": self.pose_optimizer}]
+        # self._optimizers = [self.optimizer]
+        return [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}]
 
     def training_step(self, batch):
         inputs, targets = batch
@@ -432,7 +443,7 @@ class VolSDF(pl.LightningModule):
         batch_idx = inputs["idx"]
         
         device = inputs["smpl_params"].device
-        if self.current_epoch < 1:
+        if self.current_epoch < 10000:
             reference_pose = inputs["smpl_params"][:, 4:76]
             reference_shape = inputs["smpl_params"][:, 76:]
             reference_trans = inputs["smpl_params"][:, 1:4]
@@ -450,17 +461,19 @@ class VolSDF(pl.LightningModule):
         inputs["smpl_trans"] = self.smpl_trans
 
         model_outputs = self.model(inputs)
-        if model_outputs is None:
-            for optimizer in self._optimizers:
-                optimizer.zero_grad()
-            pass
-        else:
-            loss_output = self.loss(model_outputs, targets)
-            for k, v in loss_output.items():
-                if k in ["loss"]:
-                    self.log(k, v.item(), prog_bar=True, on_step=True)
-                else:
-                    self.log(k, v.item(), prog_bar=True, on_step=True)
+        # if model_outputs is None:
+        #     for optimizer in self._optimizers:
+        #         optimizer.zero_grad()
+        #     pass
+        # else:
+
+        loss_output = self.loss(model_outputs, targets)
+        for k, v in loss_output.items():
+            if k in ["loss"]:
+                self.log(k, v.item(), prog_bar=True, on_step=True)
+            else:
+                self.log(k, v.item(), prog_bar=True, on_step=True)
+
             # if self.current_epoch < 5:
             #     # self.model.implicit_network.eval()
             #     # self.model.deformer.eval()
@@ -475,22 +488,23 @@ class VolSDF(pl.LightningModule):
             #     # for param in self.model.deformer.parameters():
             #     #     param.requires_grad = False
             #     self.model.rendering_network.train()
-            for optimizer in self._optimizers:
-                optimizer.zero_grad()
+
+            # for optimizer in self._optimizers:
+            #     optimizer.zero_grad()
 
             # loss_output["loss"].backward()
-            self.manual_backward(loss_output["loss"])
-            for optimizer in self._optimizers:
-                optimizer.step()
+            # self.manual_backward(loss_output["loss"])
+            # for optimizer in self._optimizers:
+            #     optimizer.step()
 
-            if not os.path.exists("./opt_params"):
-                os.makedirs("./opt_params")
-            smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
-                        "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
-                        "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
-            # np.save(f"./opt_pose/smpl_pose_{batch_idx[0]}.npz", self.smpl_pose.detach().cpu().numpy())
-            np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
-            # return loss_output["loss"]
+            # if not os.path.exists("./opt_params"):
+            #     os.makedirs("./opt_params")
+            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
+            #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
+            #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
+
+            # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
+        return loss_output["loss"]
 
     def training_epoch_end(self, outputs) -> None:
         if self.current_epoch in self.opt.model.alpha_milestones:
@@ -542,7 +556,7 @@ class VolSDF(pl.LightningModule):
         self.model.eval()
 
         device = inputs["smpl_params"].device
-        if self.current_epoch < 1:
+        if self.current_epoch < 10000:
             reference_pose = inputs["smpl_params"][:, 4:76]
             reference_shape = inputs["smpl_params"][:, 76:]
             reference_trans = inputs["smpl_params"][:, 1:4]

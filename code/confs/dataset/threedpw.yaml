@@ -5,7 +5,7 @@ train:
     batch_size: 1
     drop_last: False
     shuffle: True
-    worker: 0
+    worker: 8
 
     data_dir : courtyard_jumpBench_01/
     num_sample : 256 # 2048 256

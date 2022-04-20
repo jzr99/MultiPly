@@ -1,10 +1,10 @@
-learning_rate : 1.0e-3
+learning_rate : 5.0e-4
 alpha_milestones : []
 alpha_factor : 2
 sched_milestones : [40,80]
 sched_factor : 0.5
 smpl_init: False
-is_continue: False
+is_continue: True
 use_body_parsing: False
 white_bkgd: False
 implicit_network:

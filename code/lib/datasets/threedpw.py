@@ -54,7 +54,7 @@ def weighted_sampling(data, img_size, num_sample):
     bbox_min = where.min(axis=1)
     bbox_max = where.max(axis=1)
 
-    num_sample_bbox = int(num_sample * 0.9)
+    num_sample_bbox = int(num_sample * 0.5)
     samples_bbox = np.random.rand(num_sample_bbox, 2)
     samples_bbox = samples_bbox * (bbox_max - bbox_min) + bbox_min
 
@@ -143,15 +143,15 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.poses = np.load(os.path.join(root, 'poses.npy'))[::self.skip_step]
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[::self.skip_step]
         # cameras
-        # cameras = np.load(os.path.join(root, "cameras.npy"))[::self.skip_step]
+        cameras = np.load(os.path.join(root, "cameras.npy"))[::self.skip_step]
 
-        # self.P, self.C = [], []
-        # for i in range(cameras.shape[0]):
-        #     P = cameras[i].astype(np.float32)
-        #     self.P.append(P)
+        self.P, self.C = [], []
+        for i in range(cameras.shape[0]):
+            P = cameras[i].astype(np.float32)
+            self.P.append(P)
 
-        #     C = -np.linalg.solve(P[:3, :3], P[:3, 3])
-        #     self.C.append(C)
+            C = -np.linalg.solve(P[:3, :3], P[:3, 3])
+            self.C.append(C)
 
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
@@ -209,8 +209,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
                 "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
-                # "P": self.P[idx],
-                # "C": self.C[idx],
+                "P": self.P[idx],
+                "C": self.C[idx],
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
                 "smpl_params": smpl_params,
@@ -223,8 +223,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": self.object_masks[idx].reshape(-1) > 0.5,
                 # "body_parsing": self.parsing_masks[idx].reshape(-1).astype(np.int64),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                # "P": self.P[idx],
-                # "C": self.C[idx],
+                "P": self.P[idx],
+                "C": self.C[idx],
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
                 "smpl_params": smpl_params
@@ -295,8 +295,8 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             "object_mask": inputs["object_mask"],
             # "body_parsing": inputs["body_parsing"],
             "uv": inputs["uv"],
-            # "P": inputs["P"],
-            # "C": inputs["C"],
+            "P": inputs["P"],
+            "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
