@@ -18,18 +18,24 @@ class SMPLDeformer():
         smpl_output = self.smpl(cano_scale, cano_transl, cano_thetas, cano_betas)
         self.smpl_verts = smpl_output['smpl_verts']
         self.smpl_weights = smpl_output['smpl_weights']
-    def forward(self, x, cond, return_weights=True):
+    def forward(self, x, smpl_tfs, return_weights=True, inverse=False, smpl_verts=None):
         if x.shape[0] == 0: return x
-        
-        weights = self.query_skinning_weights_smpl(x, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        if smpl_verts is None:
+            weights = self.query_skinning_weights_smpl(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        else:
+            weights = self.query_skinning_weights_smpl(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
         if return_weights:
             return weights
         # invalid_ids =((skinning_weights[:,-1]==1) )
-        _, smpl_tfs, _, _ = self.smpl(cond['smpl'])
-        x_d = skinning(x.unsqueeze(0), weights, smpl_tfs, inverse=False)
+        # _, smpl_tfs, _, _ = self.smpl(cond['smpl'])
+        x_transformed = skinning(x.unsqueeze(0), weights, smpl_tfs, inverse=inverse)
 
-        return x_d
+        return x_transformed.squeeze(0)
+    def forward_skinning(self, xc, cond, smpl_tfs):
+        weights = self.query_skinning_weights_smpl(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        x_transformed = skinning(xc, weights, smpl_tfs, inverse=False)
 
+        return x_transformed
     def query_skinning_weights_smpl(self, pts, smpl_verts, smpl_weights):
 
         distance_batch, index_batch, neighbor_points = ops.knn_points(pts, smpl_verts.unsqueeze(0),
@@ -45,6 +51,10 @@ class SMPLDeformer():
         # weights[static_ids,:] = 0
         # weights[static_ids,-1] = 1
 
+        return weights
+
+    def query_weights(self, xc, cond):
+        weights = self.forward(xc, None, return_weights=True, inverse=False)
         return weights
 # import tinycudann as tcnn
 # with open('config_hash.json') as config_file:

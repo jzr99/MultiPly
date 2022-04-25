@@ -1,6 +1,6 @@
 train:
     dataset: BuffMonoSeg
-    subject: "debug_buffmono_weighted"
+    subject: "debug_buffmono_sdf_func_x"
 
     batch_size: 1
     drop_last: False
@@ -8,11 +8,11 @@ train:
     worker: 8
 
     data_dir : buff_mono_seg/
-    num_sample : 256 # 2048
+    num_sample : 512 # 2048
 
 valid:
     dataset: "BuffMonoSegVal"
-    subject: "debug_buffmono_weighted"
+    subject: "debug_buffmono_sdf_func_x"
     image_id: 0
 
     batch_size: 1
@@ -22,7 +22,7 @@ valid:
 
     data_dir : buff_mono_seg/
     num_sample : -1
-    pixel_per_batch: 360 # 12000
+    pixel_per_batch: 512 # 12000
 
 # test:
 #     dataset: "BuffMonoSegTest"

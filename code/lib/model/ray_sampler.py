@@ -11,6 +11,15 @@ class RaySampler(metaclass=abc.ABCMeta):
     def get_z_vals(self, ray_dirs, cam_loc, model):
         pass
 
+class BBoxSampler(RaySampler):
+    def __init__(self, near, far):
+        super().__init__(near, far) # indeed, we need to set the bounds for every iteration
+
+    def get_z_vals(self, ray_dirs, cam_loc, smpl_mesh):
+        smpl_intersections = rend_util.get_smpl_intersection()
+        z_vals = None
+        return z_vals
+
 class UniformSampler(RaySampler):
     def __init__(self, scene_bounding_sphere, near, N_samples, take_sphere_intersection=False, far=-1):
         super().__init__(near, 2.0 * scene_bounding_sphere if far == -1 else far)  # default far is 2*R
@@ -63,7 +72,7 @@ class ErrorBoundSampler(RaySampler):
         if inverse_sphere_bg:
             self.inverse_sphere_sampler = UniformSampler(1.0, 0.0, N_samples_inverse_sphere, False, far=1.0)
 
-    def get_z_vals(self, ray_dirs, cam_loc, model):
+    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts): 
         # def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
         # def get_z_vals(self, ray_dirs, cam_loc, model):
         beta0 = model.density.get_beta().detach()
@@ -86,9 +95,10 @@ class ErrorBoundSampler(RaySampler):
             # Calculating the SDF only for the new sampled points
             model.implicit_network.eval()
             with torch.no_grad():
-                samples_sdf = model.implicit_network.get_sdf_vals(points_flat)
+                samples_sdf = model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
                 # model.sdf_func(points_flat, cond, smpl_tfs, eval_mode)[0] 
                 # model.implicit_network.get_sdf_vals(points_flat)
+                # model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
             model.implicit_network.train()
             if samples_idx is not None:
                 sdf_merge = torch.cat([sdf.reshape(-1, z_vals.shape[1] - samples.shape[1]),

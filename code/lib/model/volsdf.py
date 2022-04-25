@@ -3,7 +3,7 @@ from .ray_tracing import RayTracing
 from .sample_network import SampleNetwork
 from .density import LaplaceDensity
 from .ray_sampler import ErrorBoundSampler
-from .deformer import ForwardDeformer
+from .deformer import ForwardDeformer, SMPLDeformer
 from .smpl import SMPLServer
 from .sampler import PointInSpace, PointOnBones
 from .loss import VolSDFLoss
@@ -24,6 +24,8 @@ from torch.autograd import grad
 import pytorch_lightning as pl
 import hydra
 import open3d as o3d
+import pytorch3d
+
 class VolSDFNetwork(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -33,7 +35,7 @@ class VolSDFNetwork(nn.Module):
         self.sampler = PointInSpace()
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
-        self.deformer = ForwardDeformer(opt.deformer, betas=betas)
+        self.deformer = SMPLDeformer(betas=betas) # ForwardDeformer(opt.deformer, betas=betas) SMPLDeformer(betas=betas)
         gender = 'male'
         self.sdf_bounding_sphere = opt.implicit_network.scene_bounding_sphere
         self.sphere_scale = opt.implicit_network.sphere_scale
@@ -48,7 +50,7 @@ class VolSDFNetwork(nn.Module):
         if opt.smpl_init:
             smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
-            self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
+            # self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
     def extract_normal(self, x_c, cond, tfs):
         
@@ -76,7 +78,7 @@ class VolSDFNetwork(nn.Module):
                 sdf_mask = others['valid_ids'].squeeze(0)
             elif others['valid_ids'].ndim == 2:
                 sdf_mask = others['valid_ids']
-            sdf[~sdf_mask] = 1.
+            sdf[~sdf_mask] = 4.
             sdf, index = torch.min(sdf, dim=1)
 
             x_c = x_c.reshape(num_point, num_init, num_dim)
@@ -84,10 +86,23 @@ class VolSDFNetwork(nn.Module):
             feature = torch.gather(feature, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, feature.shape[-1]))[:, 0, :]
         return sdf, x_c, feature # [:, 0]
 
+    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts):
+        if hasattr(self, "deformer"):
+            x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            output = self.implicit_network(x_c, cond)[0]
+            sdf = output[:, 0:1]
+            ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+            if self.sdf_bounding_sphere > 0.0:
+                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                sdf = torch.minimum(sdf, sphere_sdf)
+            feature = output[:, 1:]
+
+        return sdf, x_c, feature
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
-
+        # for param in self.deformer.parameters():
+        #     param.requires_grad = False
         intrinsics = input["intrinsics"]
         pose = input["pose"]
         uv = input["uv"]
@@ -129,29 +144,41 @@ class VolSDFNetwork(nn.Module):
         cam_loc = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape(-1, 3)
         ray_dirs = ray_dirs.reshape(-1, 3)
 
-        z_vals, z_samples_eik = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
+        # z_vals = self.ray_sampler.uniform_sampler.get_z_vals(ray_dirs, cam_loc, self)
+        z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
         N_samples = z_vals.shape[1]
 
         points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
         points_flat = points.reshape(-1, 3)
 
+
+        dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
+        dirs_flat = dirs.reshape(-1, 3)
+
+        sdf_output, canonical_points, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts']) # self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
+
+        sdf_output = sdf_output.unsqueeze(1)
+
+        # _, canonical_smpl_points, _ = self.sdf_func_with_smpl_deformer(smpl_output['smpl_verts'][0], cond, smpl_tfs, smpl_output['smpl_verts']) # self.sdf_func(smpl_output['smpl_verts'][0], cond, smpl_tfs, eval_mode=True)
+        # posed_smpl_points = self.deformer.forward_skinning(canonical_smpl_points[None], cond, smpl_tfs)
         # import ipdb
         # ipdb.set_trace()
         # o3d_pcl = o3d.geometry.PointCloud()
         # o3d_pcl.points = o3d.utility.Vector3dVector(points_flat.detach().cpu().numpy().squeeze())
         # o3d.io.write_point_cloud("/home/chen/Desktop/points_flat.ply", o3d_pcl)
+        # o3d_cano_pcl = o3d.geometry.PointCloud()
+        # o3d_cano_pcl.points = o3d.utility.Vector3dVector(canonical_points.detach().cpu().numpy().squeeze())
+        # o3d.io.write_point_cloud("/home/chen/Desktop/canonical_points.ply", o3d_cano_pcl)
         # smpl_pcl = o3d.geometry.PointCloud()
         # smpl_pcl.points = o3d.utility.Vector3dVector(smpl_output['smpl_verts'][0].detach().cpu().numpy().squeeze())
         # o3d.io.write_point_cloud("/home/chen/Desktop/smpl_pcl.ply", smpl_pcl)
+        # o3d_cano_smpl_pcl = o3d.geometry.PointCloud()
+        # o3d_cano_smpl_pcl.points = o3d.utility.Vector3dVector(canonical_smpl_points.detach().cpu().numpy().squeeze())
+        # o3d.io.write_point_cloud("/home/chen/Desktop/canonical_smpl_pcl.ply", o3d_cano_smpl_pcl)
+        # o3d_posed_smpl_pcl = o3d.geometry.PointCloud()
+        # o3d_posed_smpl_pcl.points = o3d.utility.Vector3dVector(posed_smpl_points.detach().cpu().numpy().squeeze())
+        # o3d.io.write_point_cloud("/home/chen/Desktop/posed_smpl_pcl.ply", o3d_posed_smpl_pcl)
         # ipdb.set_trace()
-
-        dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
-        dirs_flat = dirs.reshape(-1, 3)
-
-        sdf_output, canonical_points, _ = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=False)
-
-        sdf_output = sdf_output.unsqueeze(1)
-        
 
         if self.training:
 
@@ -200,8 +227,8 @@ class VolSDFNetwork(nn.Module):
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
 
             # Bone regularization!!!
-            pts_c_w, w_gt = self.sampler_bone.get_joints(self.smpl_server.joints_c.expand(1, -1, -1))
-            w_pd = self.deformer.query_weights(pts_c_w, cond)
+            # pts_c_w, w_gt = self.sampler_bone.get_joints(self.smpl_server.joints_c.expand(1, -1, -1))
+            # w_pd = self.deformer.query_weights(pts_c_w, cond)
 
             # SMPL skinning weight regularization!!!
             # lbs_weight = self.deformer.query_weights(surface_canonical_points.detach().unsqueeze(0), cond)[0]
@@ -242,6 +269,7 @@ class VolSDFNetwork(nn.Module):
         weights = self.volume_rendering(z_vals, sdf_output)
 
         rgb_values = torch.sum(weights.unsqueeze(-1) * rgb_values, 1)
+        # rgb_values = weights.sum(-1, keepdims=True)[..., [0] * 3]
         normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
 
         # white background assumption
@@ -263,8 +291,8 @@ class VolSDFNetwork(nn.Module):
                 'object_mask': object_mask,
                 # "sdf_pd": sdf_pd,
                 # "sdf_gt": sdf_gt,
-                "w_pd": w_pd,
-                "w_gt": w_gt,
+                # "w_pd": w_pd,
+                # "w_gt": w_gt,
                 # 'lbs_weight_pd': skinning_values,
                 # 'lbs_weight_gt': gt_skinning_values,
                 'grad_theta': grad_theta
@@ -304,7 +332,7 @@ class VolSDFNetwork(nn.Module):
             return pnts_c.detach()
         pnts_c.requires_grad_(True)
 
-        pnts_d = self.deformer.forward_skinning(pnts_c.unsqueeze(0), None, tfs, None).squeeze(0)
+        pnts_d = self.deformer.forward_skinning(pnts_c.unsqueeze(0), None, tfs).squeeze(0)
         num_dim = pnts_d.shape[-1]
         grads = []
         for i in range(num_dim):
@@ -325,9 +353,9 @@ class VolSDFNetwork(nn.Module):
         output = self.implicit_network(pnts_c, cond)[0]
         sdf = output[:, :1]
 
-        # if self.sdf_bounding_sphere > 0.0:
-        #     sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
-        #     sdf = torch.minimum(sdf, sphere_sdf)
+        if self.sdf_bounding_sphere > 0.0:
+            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
+            sdf = torch.minimum(sdf, sphere_sdf)
         
         feature = output[:, 1:]
         d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
@@ -352,9 +380,9 @@ class VolSDFNetwork(nn.Module):
 
         sdf = self.implicit_network(pnts_c, cond)[0, :, 0:1]
 
-        # if self.sdf_bounding_sphere > 0.0:
-        #     sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
-        #     sdf = torch.minimum(sdf, sphere_sdf)
+        if self.sdf_bounding_sphere > 0.0:
+            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
+            sdf = torch.minimum(sdf, sphere_sdf)
 
         dirs = deformed_x - cam_loc
         cross_product = torch.cross(view_dirs, dirs)
@@ -474,20 +502,18 @@ class VolSDF(pl.LightningModule):
             else:
                 self.log(k, v.item(), prog_bar=True, on_step=True)
 
-            # if self.current_epoch < 5:
-            #     # self.model.implicit_network.eval()
-            #     # self.model.deformer.eval()
-            #     for param in self.model.implicit_network.parameters():
-            #         param.requires_grad = False
-            #     for param in self.model.deformer.parameters():
-            #         param.requires_grad = False
-            #     self.model.rendering_network.train()
+            # if self.current_epoch < 10000:
+                # self.model.implicit_network.eval()
+                # self.model.deformer.eval()
+                # for param in self.model.implicit_network.parameters():
+                #     param.requires_grad = False
+                # for param in self.model.deformer.parameters():
+                    # param.requires_grad = False
             # else:
-            #     self.model.implicit_network.train()
-            #     self.model.deformer.train()
-            #     # for param in self.model.deformer.parameters():
-            #     #     param.requires_grad = False
-            #     self.model.rendering_network.train()
+                # self.model.implicit_network.train()
+                # self.model.deformer.train()
+                # for param in self.model.deformer.parameters():
+                #     param.requires_grad = False
 
             # for optimizer in self._optimizers:
             #     optimizer.zero_grad()
@@ -517,7 +543,7 @@ class VolSDF(pl.LightningModule):
         
         x = x.reshape(-1, 3)
         mnfld_pred = self.model.implicit_network(x, cond)[:,:,0].reshape(-1,1)
-    
+        # mnfld_pred = self.model.density(mnfld_pred)
         return {'occ':mnfld_pred}
 
     def query_wc(self, x, cond):

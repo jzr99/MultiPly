@@ -7,6 +7,47 @@ import torch
 from lib.utils import rend_util
 # from smplx import SMPL
 
+def bilinear_interpolation(xs, ys, dist_map):
+    x1 = np.floor(xs).astype(np.int32)
+    y1 = np.floor(ys).astype(np.int32)
+    x2 = x1 + 1
+    y2 = y1 + 1
+
+    dx = np.expand_dims(np.stack([x2 - xs, xs - x1], axis=1), axis=1)
+    dy = np.expand_dims(np.stack([y2 - ys, ys - y1], axis=1), axis=2)
+    Q = np.stack([
+        dist_map[x1, y1], dist_map[x1, y2], dist_map[x2, y1], dist_map[x2, y2]
+    ], axis=1).reshape(-1, 2, 2)
+    return np.squeeze(dx @ Q @ dy)  # ((x2 - x1) * (y2 - y1)) = 1
+
+def weighted_sampling(data, img_size, num_sample):
+    # calculate bounding box
+    mask = data["object_mask"]
+    where = np.asarray(np.where(mask))
+    bbox_min = where.min(axis=1)
+    bbox_max = where.max(axis=1)
+
+    num_sample_bbox = int(num_sample * 0.9)
+    samples_bbox = np.random.rand(num_sample_bbox, 2)
+    samples_bbox = samples_bbox * (bbox_max - bbox_min) + bbox_min
+
+    num_sample_uniform = num_sample - num_sample_bbox
+    samples_uniform = np.random.rand(num_sample_uniform, 2)
+    samples_uniform *= (img_size[0] - 1, img_size[1] - 1)
+
+    indices = np.concatenate([samples_bbox, samples_uniform], axis=0)
+    output = {}
+    for key, val in data.items():
+        if len(val.shape) == 3:
+            new_val = np.stack([
+                bilinear_interpolation(indices[:, 0], indices[:, 1], val[:, :, i])
+                for i in range(val.shape[2])
+            ], axis=-1)
+        else:
+            new_val = bilinear_interpolation(indices[:, 0], indices[:, 1], val)
+        new_val = new_val.reshape(-1, *val.shape[2:])
+        output[key] = new_val
+    return output
 
 class SampleDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
@@ -29,8 +70,6 @@ class SampleDataset(torch.utils.data.Dataset):
                 img = ((img[:, :, ::-1] / 255) - 0.5) * 2
             else:
                 img = img[:, :, ::-1] / 255
-            img = img.reshape(-1, 3)
-            img = torch.from_numpy(img).float()
             self.images.append(img)
 
         self.n_images = len(img_paths)
@@ -45,8 +84,6 @@ class SampleDataset(torch.utils.data.Dataset):
 
             # preprocess: BGR -> Gray -> Mask -> Tensor
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 127
-            mask = mask.reshape(-1)
-            mask = torch.from_numpy(mask).bool()
             self.object_masks.append(mask)
 
         # cameras
@@ -83,31 +120,36 @@ class SampleDataset(torch.utils.data.Dataset):
         img_size = self.img_sizes[idx]
 
         uv = np.mgrid[:img_size[0], :img_size[1]].astype(np.int32)
-        uv = torch.from_numpy(np.flip(uv, axis=0).copy()).float()
-        uv = uv.reshape(2, -1).transpose(1, 0)
+        uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         if self.num_sample > 0:
-            sample_idx = torch.randperm(np.prod(img_size))[:self.num_sample]
+            data = {
+                "rgb": self.images[idx],
+                "uv": uv,
+                "object_mask": self.object_masks[idx],
+            }
+            samples = weighted_sampling(data, img_size, self.num_sample)
+            # sample_idx = torch.randperm(np.prod(img_size))[:self.num_sample]
             inputs = {
-                "object_mask": self.object_masks[idx][sample_idx],
-                "uv": uv[sample_idx],
+                "object_mask": samples["object_mask"] > 0.5,
+                "uv": samples["uv"].astype(np.float32),
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
                 # "P": self.P[idx],
                 # "C": self.C[idx]
             }
-            images = {"rgb": self.images[idx][sample_idx]}
+            images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
         else:
             inputs = {
-                "object_mask": self.object_masks[idx],
-                "uv": uv,
+                "object_mask": self.object_masks[idx].reshape(-1),
+                "uv": uv.reshape(-1, 2).astype(np.float32),
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
                 # "P": self.P[idx],
                 # "C": self.C[idx],
             }
-            images = {"rgb": self.images[idx], "img_size": self.img_sizes[idx]}
+            images = {"rgb": self.images[idx].reshape(-1, 3).astype(np.float32), "img_size": self.img_sizes[idx]}
             return inputs, images
 
 class SampleValDataset(torch.utils.data.Dataset):

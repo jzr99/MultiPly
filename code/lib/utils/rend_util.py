@@ -167,3 +167,29 @@ def get_sphere_intersections(cam_loc, ray_directions, r = 1.0):
     sphere_intersections = sphere_intersections.clamp_min(0.0)
 
     return sphere_intersections
+
+def get_smpl_intersection(cam_loc, ray_directions, smpl_mesh, interval_dist=0.1):
+    # smpl mesh scaling or bounding box with scaling? 
+    bbox = smpl_mesh.apply_scale(1.2).bounding_box
+    n_imgs, n_pix, _ = ray_directions.shape
+    # smpl_mesh.apply_scale(1.1)
+    
+    ray_dirs = ray_directions[0].clone().cpu().numpy()
+    ray_origins = np.tile(cam_loc[0].clone().cpu().numpy(), n_pix).reshape(n_pix, 3)
+    locations, index_ray, _ = bbox.ray.intersects_location(ray_origins=ray_origins, ray_directions=ray_dirs, multiple_hits=False)
+    mask_intersect = np.zeros(ray_dirs.shape[0], dtype=np.bool)
+    
+    mask_intersect[index_ray] = True
+    unfinished_mask_start = torch.from_numpy(mask_intersect).cuda()
+    intersect_dis = np.linalg.norm(ray_origins[index_ray] - locations, axis=1)
+
+    curr_start_points = torch.zeros(n_pix, 3).cuda().float()
+    curr_start_points[unfinished_mask_start] = torch.tensor(locations - interval_dist * ray_dirs[mask_intersect]).cuda().float()
+    acc_start_dis = torch.zeros(n_pix).cuda().float()
+    acc_start_dis[unfinished_mask_start] = torch.tensor(intersect_dis - interval_dist).cuda().float()
+    acc_end_dis = torch.zeros(n_pix).cuda().float()
+    acc_end_dis[unfinished_mask_start] = torch.tensor(intersect_dis + interval_dist).cuda().float()
+
+    min_dis = acc_start_dis.clone()
+    max_dis = acc_end_dis.clone()
+    return curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis

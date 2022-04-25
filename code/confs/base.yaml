@@ -4,7 +4,7 @@ hydra:
 
 defaults:
   - model: idr
-  - dataset: sample
+  - dataset: buffmonoseg
   - _self_
 
 seed: 42

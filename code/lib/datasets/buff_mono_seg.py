@@ -53,7 +53,7 @@ def weighted_sampling(data, img_size, num_sample):
     bbox_min = where.min(axis=1)
     bbox_max = where.max(axis=1)
 
-    num_sample_bbox = int(num_sample * 0.9)
+    num_sample_bbox = int(num_sample * 1.0)
     samples_bbox = np.random.rand(num_sample_bbox, 2)
     samples_bbox = samples_bbox * (bbox_max - bbox_min) + bbox_min
 
@@ -83,12 +83,13 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         self.images, self.img_sizes = [], []
         self.object_masks = []
         self.parsing_masks = []
+        self.skip_step = 400
         # images
         img_dir = os.path.join(root, "image")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))
         
         normalize_rgb = False
-        for img_path in img_paths:
+        for img_path in img_paths[::self.skip_step]:
             img = cv2.imread(img_path)
             img_size = img.shape[:2]
             self.img_sizes.append(img_size)
@@ -105,7 +106,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         mask_dir = os.path.join(root, "mask")
         mask_paths = sorted(glob.glob(f"{mask_dir}/*"))
         
-        for i, mask_path in enumerate(mask_paths):
+        for i, mask_path in enumerate(mask_paths[::self.skip_step]):
             mask = cv2.imread(mask_path)
             assert mask.shape[:2] == self.img_sizes[i], "Mask image imcompatible with RGB"
 
@@ -131,8 +132,8 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         # for smpl_path in smpl_paths:
         #     smpl_params = pkl.load(open(smpl_path, "rb"))
         self.shape = np.load(os.path.join(root, "mean_shape.npy"))
-        self.poses = np.load(os.path.join(root, 'poses.npy'))
-        self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))
+        self.poses = np.load(os.path.join(root, 'poses.npy'))[::self.skip_step]
+        self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[::self.skip_step]
         # cameras
         cameras = dict(np.load(os.path.join(root, "cameras.npz")))
         self.P, self.C = [], []
@@ -143,10 +144,12 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
 
             C = -np.linalg.solve(P[:3, :3], P[:3, 3])
             self.C.append(C)
+        self.P = self.P[::self.skip_step]
+        self.C = self.C[::self.skip_step]
 
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
-        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images)]
-        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images)]
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
 
         self.scale = 1 / scale_mats[0][0, 0]
 
@@ -279,6 +282,12 @@ class BuffMonoSegValDataset(torch.utils.data.Dataset):
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         inputs, images = self.data
+        # tmp_cam = dict(np.load('/home/chen/RGB-PINA/data/sample_buff/cameras_normalize.npz')) 
+        
+        # scale_mat, world_mat = tmp_cam['scale_mat_2'], tmp_cam['world_mat_2'].astype(np.float32)
+        # P = world_mat @ scale_mat
+        # P = P[:3, :4]
+        # intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
         inputs = {
             "object_mask": inputs["object_mask"],
             # "body_parsing": inputs["body_parsing"][indices],

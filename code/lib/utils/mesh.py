@@ -162,7 +162,7 @@ def generate_mesh(func, verts, level_set=0, res_init=32, res_up=3, point_batch=5
     verts, faces, normals, values = measure.marching_cubes_lewiner(
                                                 volume=value_grid,
                                                 gradient_direction='ascent',
-                                                level=0)
+                                                level=level_set)
 
     verts = (verts / mesh_extractor.resolution - 0.5) * scale
     verts = verts * gt_scale + gt_center

@@ -15,7 +15,7 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=10,
+        every_n_epochs=50,
         save_top_k=-1)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
@@ -24,10 +24,10 @@ def main(opt):
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=8000,
-        check_val_every_n_epoch=10,
+        check_val_every_n_epoch=50,
         logger=logger,
         log_every_n_steps=1,
-        num_sanity_val_steps=0
+        num_sanity_val_steps=-1
     )
 
     model = VolSDF(opt)
