@@ -83,7 +83,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         self.images, self.img_sizes = [], []
         self.object_masks = []
         self.parsing_masks = []
-        self.skip_step = 400
+        self.skip_step = 1
         # images
         img_dir = os.path.join(root, "image")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))

@@ -1,6 +1,6 @@
 train:
     dataset: BuffMonoSeg
-    subject: "debug_buffmono_sdf_func_x"
+    subject: "debug_buffmono_all"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "BuffMonoSegVal"
-    subject: "debug_buffmono_sdf_func_x"
+    subject: "debug_buffmono_all"
     image_id: 0
 
     batch_size: 1

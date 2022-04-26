@@ -75,6 +75,7 @@ class ErrorBoundSampler(RaySampler):
     def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts): 
         # def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
         # def get_z_vals(self, ray_dirs, cam_loc, model):
+        # get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
         beta0 = model.density.get_beta().detach()
 
         # Start with uniform sampling
