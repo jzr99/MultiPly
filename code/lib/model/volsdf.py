@@ -35,7 +35,11 @@ class VolSDFNetwork(nn.Module):
         self.sampler = PointInSpace()
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
-        self.deformer = SMPLDeformer(betas=betas) # ForwardDeformer(opt.deformer, betas=betas) SMPLDeformer(betas=betas)
+        self.use_smpl_deformer = opt.use_smpl_deformer
+        if self.use_smpl_deformer:
+            self.deformer = SMPLDeformer(betas=betas) 
+        else:
+            self.deformer = ForwardDeformer(opt.deformer, betas=betas)
         gender = 'male'
         self.sdf_bounding_sphere = opt.implicit_network.scene_bounding_sphere
         self.sphere_scale = opt.implicit_network.sphere_scale
@@ -50,7 +54,8 @@ class VolSDFNetwork(nn.Module):
         if opt.smpl_init:
             smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % gender))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
-            # self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
+            if not self.use_smpl_deformer:
+                self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
     def extract_normal(self, x_c, cond, tfs):
         
@@ -69,10 +74,7 @@ class VolSDFNetwork(nn.Module):
             x_c = x_c.reshape(num_point * num_init, num_dim)
             output = self.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
             sdf = output[:, :, 0]
-            ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-            # if self.sdf_bounding_sphere > 0.0:
-            #     sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-            #     sdf = torch.minimum(sdf, sphere_sdf)
+
             feature = output[:, :, 1:]
             if others['valid_ids'].ndim == 3:
                 sdf_mask = others['valid_ids'].squeeze(0)
@@ -80,6 +82,11 @@ class VolSDFNetwork(nn.Module):
                 sdf_mask = others['valid_ids']
             sdf[~sdf_mask] = 4.
             sdf, index = torch.min(sdf, dim=1)
+
+            ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
+            if self.sdf_bounding_sphere > 0.0:
+                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                sdf = torch.minimum(sdf.unsqueeze(-1), sphere_sdf)
 
             x_c = x_c.reshape(num_point, num_init, num_dim)
             x_c = torch.gather(x_c, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, num_dim))[:, 0, :]
@@ -144,8 +151,11 @@ class VolSDFNetwork(nn.Module):
         cam_loc = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape(-1, 3)
         ray_dirs = ray_dirs.reshape(-1, 3)
 
-        # z_vals = self.ray_sampler.uniform_sampler.get_z_vals(ray_dirs, cam_loc, self)
-        z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+        if self.use_smpl_deformer:
+            z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+        else:
+            z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
+
         N_samples = z_vals.shape[1]
 
         points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
@@ -154,12 +164,16 @@ class VolSDFNetwork(nn.Module):
 
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
-
-        sdf_output, canonical_points, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts']) # self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
-
+        if self.use_smpl_deformer:
+            sdf_output, canonical_points, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+        else:
+            sdf_output, canonical_points, _ = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
 
-        # _, canonical_smpl_points, _ = self.sdf_func_with_smpl_deformer(smpl_output['smpl_verts'][0], cond, smpl_tfs, smpl_output['smpl_verts']) # self.sdf_func(smpl_output['smpl_verts'][0], cond, smpl_tfs, eval_mode=True)
+        # if self.use_smpl_deformer:
+        #   _, canonical_smpl_points, _ = self.sdf_func_with_smpl_deformer(smpl_output['smpl_verts'][0], cond, smpl_tfs, smpl_output['smpl_verts']) 
+        # else:
+            # _, canonical_smpl_points, _ = self.sdf_func(smpl_output['smpl_verts'][0], cond, smpl_tfs, eval_mode=True)
         # posed_smpl_points = self.deformer.forward_skinning(canonical_smpl_points[None], cond, smpl_tfs)
         # import ipdb
         # ipdb.set_trace()
@@ -181,12 +195,8 @@ class VolSDFNetwork(nn.Module):
         # ipdb.set_trace()
 
         if self.training:
-
-            # surface_mask = object_mask # network_object_mask & object_mask
-            # surface_points = points_flat.reshape(num_pixels, N_samples, 3)[surface_mask]
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
-            # ray_dirs = dirs # [surface_mask]
             cam_loc = cam_loc.unsqueeze(1).repeat(1, N_samples, 1) # [surface_mask]
 
             # normal = input["normal"].reshape(-1, 3)
@@ -195,18 +205,10 @@ class VolSDFNetwork(nn.Module):
             # N = surface_points.shape[0]
 
             canonical_points = canonical_points.reshape(-1, 3)
-            # ray_dirs = ray_dirs.reshape(-1, 3)
+
             cam_loc = cam_loc.reshape(-1, 3)
 
-            # n_eik_points = batch_size * num_pixels
-            # eikonal_points = torch.empty(n_eik_points, 3).uniform_(-self.sdf_bounding_sphere, self.sdf_bounding_sphere).cuda()
-            # eik_near_points = (cam_loc.unsqueeze(1) + z_samples_eik.unsqueeze(2) * ray_dirs.unsqueeze(1)).reshape(-1, 3)
-            # eikonal_points = torch.cat([eikonal_points, eik_near_points], 0).unsqueeze(0)
-            # eikonal_points.requires_grad_()
-            # eikonal_points_pred = self.implicit_network(eikonal_points, cond)[..., 0:1]
-            # grad_theta = gradient(eikonal_points, eikonal_points_pred)
-
-            # sample pnts for the eikonal loss
+            # sample canonical SMPL surface pnts for the eikonal loss
             smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
             
             indices = torch.randperm(smpl_verts_c.shape[1])[:num_pixels].cuda()
@@ -223,8 +225,11 @@ class VolSDFNetwork(nn.Module):
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
 
             # Bone regularization!!!
-            # pts_c_w, w_gt = self.sampler_bone.get_joints(self.smpl_server.joints_c.expand(1, -1, -1))
-            # w_pd = self.deformer.query_weights(pts_c_w, cond)
+            if self.use_smpl_deformer:
+                w_gt, w_pd = None, None
+            else:
+                pts_c_w, w_gt = self.sampler_bone.get_joints(self.smpl_server.joints_c.expand(1, -1, -1))
+                w_pd = self.deformer.query_weights(pts_c_w, cond)
 
             # SMPL skinning weight regularization!!!
             # lbs_weight = self.deformer.query_weights(surface_canonical_points.detach().unsqueeze(0), cond)[0]
@@ -272,22 +277,17 @@ class VolSDFNetwork(nn.Module):
                 # 'surface_normal_gt': surface_normal,
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
-                # 'network_object_mask': network_object_mask,
                 'object_mask': object_mask,
                 # "sdf_pd": sdf_pd,
                 # "sdf_gt": sdf_gt,
-                # "w_pd": w_pd,
-                # "w_gt": w_gt,
+                "w_pd": w_pd,
+                "w_gt": w_gt,
                 # 'lbs_weight_pd': skinning_values,
                 # 'lbs_weight_gt': gt_skinning_values,
-                'grad_theta': grad_theta
+                'grad_theta': grad_theta,
+                'use_smpl_deformer': self.use_smpl_deformer
             }
         else:
-            # rgb_values_global = torch.ones(num_pixels, 3).float().cuda()
-            # normal_values_global = torch.ones(num_pixels, 3).float().cuda()
-
-            # rgb_values_global[surface_mask] = rgb_values
-            # normal_values_global[surface_mask] = normal_values
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
@@ -297,7 +297,6 @@ class VolSDFNetwork(nn.Module):
                 # 'object_mask': object_mask
             }
         return output
-
 
 
     def get_rbg_value(self, points, view_dirs, cond, tfs, surface_body_parsing=None, is_training=True):
@@ -323,7 +322,6 @@ class VolSDFNetwork(nn.Module):
         for i in range(num_dim):
             d_out = torch.zeros_like(pnts_d, requires_grad=False, device=pnts_d.device)
             d_out[:, i] = 1
-            # d_out = d_out.double()*scale
             grad = torch.autograd.grad(
                 outputs=pnts_d,
                 inputs=pnts_c,
@@ -353,46 +351,6 @@ class VolSDFNetwork(nn.Module):
             only_inputs=True)[0]
 
         return grads.reshape(grads.shape[0], -1), torch.nn.functional.normalize(torch.einsum('bi,bij->bj', gradients, grads_inv), dim=1), feature
-
-
-    def get_differentiable_x(self, pnts_c, cond, smpl_tfs, view_dirs, cam_loc):
-        if pnts_c.shape[0] == 0:
-            return pnts_c.detach()
-        
-        pnts_c = pnts_c.detach()
-        pnts_c.requires_grad_(True)
-        deformed_x = self.deformer.forward_skinning(pnts_c.unsqueeze(0), None, smpl_tfs).squeeze(0)
-
-        sdf = self.implicit_network(pnts_c, cond)[0, :, 0:1]
-
-        if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
-            sdf = torch.minimum(sdf, sphere_sdf)
-
-        dirs = deformed_x - cam_loc
-        cross_product = torch.cross(view_dirs, dirs)
-        constant = torch.cat([cross_product[:, 0:2], sdf], dim=1)
-        # constant: num_points, 3
-        num_dim = constant.shape[-1]
-        grads = []
-        for i in range(num_dim):
-            d_out = torch.zeros_like(constant, requires_grad=False, device=constant.device)
-            d_out[:, i] = 1
-            # d_out = d_out.double()*scale
-            grad = torch.autograd.grad(
-                outputs=constant,
-                inputs=pnts_c,
-                grad_outputs=d_out,
-                create_graph=False,
-                retain_graph=True,
-                only_inputs=True)[0]
-            grads.append(grad)
-        grads = torch.stack(grads, dim=-2)
-        grads_inv = grads.inverse()
-        # grad_inv: num_points, 3, 3
-
-        differentiable_x = pnts_c.detach() - torch.einsum('bij,bj->bi', grads_inv, constant - constant.detach())
-        return differentiable_x
 
     def volume_rendering(self, z_vals, sdf):
         density_flat = self.density(sdf)
