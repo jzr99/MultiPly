@@ -15,7 +15,7 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=1,
+        every_n_epochs=5,
         save_top_k=-1)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
@@ -24,7 +24,7 @@ def main(opt):
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
-        check_val_every_n_epoch=1,
+        check_val_every_n_epoch=5,
         logger=logger,
         log_every_n_steps=1,
         num_sanity_val_steps=0

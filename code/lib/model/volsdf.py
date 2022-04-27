@@ -217,11 +217,7 @@ class VolSDFNetwork(nn.Module):
             local_pred = self.implicit_network(sample, cond)[..., 0:1]
             grad_theta = gradient(sample, local_pred)
 
-            differentiable_points = self.get_differentiable_x(canonical_points,
-                                                              cond,
-                                                              smpl_tfs,
-                                                              dirs_flat,
-                                                              cam_loc)
+            differentiable_points = canonical_points 
 
             # pts_c_sdf, sdf_gt = self.sampler_bone.get_points(self.smpl_server.joints_c.expand(1, -1, -1))
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
@@ -241,8 +237,6 @@ class VolSDFNetwork(nn.Module):
             # gt_skinning_values = gt_lbs_weight
             normal_weight = torch.zeros(points_flat.shape[0]).float().cuda()
         else:
-            # surface_mask = object_mask # network_object_mask
-            # surface_body_parsing = body_parsing[surface_mask] if self.use_body_pasing else None
             differentiable_points = canonical_points.reshape(num_pixels, N_samples, 3).reshape(-1, 3)
             grad_theta = None
 
@@ -250,18 +244,9 @@ class VolSDFNetwork(nn.Module):
         z_vals = z_vals # [surface_mask]
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
 
-        # rgb_values = torch.ones_like(points).float().cuda()
-        # normal_values = torch.ones_like(points).float().cuda()
-
-        # rgb_values = rgb_values[surface_mask].reshape(-1, 3)
-        # normal_values = normal_values[surface_mask].reshape(-1, 3)
         if differentiable_points.shape[0] > 0:
-            if self.use_body_pasing:
-                rgb_values, others = self.get_rbg_value(differentiable_points, view,
-                                                        cond, smpl_tfs, surface_body_parsing=surface_body_parsing, is_training=self.training)
-            else:
-                rgb_values, others = self.get_rbg_value(differentiable_points, view,
-                                                        cond, smpl_tfs, is_training=self.training)                       
+            rgb_values, others = self.get_rbg_value(differentiable_points, view,
+                                                    cond, smpl_tfs, is_training=self.training)                       
             normal_values = others['normals'] # should we flip the normals? No
 
         rgb_values = rgb_values.reshape(-1, N_samples, 3)
