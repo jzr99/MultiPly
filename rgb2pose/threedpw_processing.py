@@ -62,7 +62,7 @@ K[0, 2] = K[0, 2] / resize_factor
 K[1, 2] = K[1, 2] / resize_factor
 output_trans = []
 output_pose = []
-output_P = []
+output_P = {}
 for idx, img_path in enumerate(tqdm(img_paths)):
     # resize image for speed-up
     img = cv2.imread(img_path)
@@ -103,13 +103,13 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     P = K @ target_extrinsic
     output_trans.append(trans)
     output_pose.append(smpl_pose)
-    output_P.append(P)
+    output_P[f"cam_{idx}"] = P # output_P.append(P)
 # import ipdb
 # ipdb.set_trace()
 np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
 np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
 np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
-np.save(os.path.join(save_dir, 'cameras.npy'), np.array(output_P))
+np.save(os.path.join(save_dir, 'cameras.npz'), **output_P)
 
     # re-project to images to debug
 

@@ -7,7 +7,7 @@ smpl_init: True
 is_continue: False
 use_body_parsing: False
 white_bkgd: False
-use_smpl_deformer: False
+use_smpl_deformer: True
 implicit_network:
     feature_vector_size: 256
     d_in: 3

@@ -54,7 +54,7 @@ def weighted_sampling(data, img_size, num_sample):
     bbox_min = where.min(axis=1)
     bbox_max = where.max(axis=1)
 
-    num_sample_bbox = int(num_sample * 0.5)
+    num_sample_bbox = int(num_sample * 1.0)
     samples_bbox = np.random.rand(num_sample_bbox, 2)
     samples_bbox = samples_bbox * (bbox_max - bbox_min) + bbox_min
 
@@ -91,7 +91,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         normalize_rgb = False
 
         # images
-        img_dir = os.path.join(root, "whitebg_image")
+        img_dir = os.path.join(root, "image_Graphonomy")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))
         
         for img_path in img_paths[::self.skip_step]:
@@ -107,16 +107,15 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             self.images.append(img)
         self.n_images = len(img_paths)
         # masks
-        mask_dir = os.path.join(root, "mask")
-        mask_paths = sorted(glob.glob(f"{mask_dir}/*"))
-        
+        mask_dir = os.path.join(root, "cloth_seg")
+        mask_paths = sorted(glob.glob(f"{mask_dir}/*_gray.png"))
         for i, mask_path in enumerate(mask_paths[::self.skip_step]):
             mask = cv2.imread(mask_path)
             assert mask.shape[:2] == self.img_sizes[
                 i], "Mask image imcompatible with RGB"
 
             # preprocess: BGR -> Gray -> Mask -> Tensor
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 127
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
             self.object_masks.append(mask)
         
         # normals
@@ -157,6 +156,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
         world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(0, self.n_images, self.skip_step)]
 
+        self.scale = 1 / scale_mats[0][0, 0]
+
         self.intrinsics_all = []
         self.pose_all = []
         for scale_mat, world_mat in zip(scale_mats, world_mats):
@@ -182,7 +183,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         smpl_params = torch.zeros([86]).float()
-        smpl_params[0] = 1
+        smpl_params[0] = torch.from_numpy(np.asarray(self.scale)).float() 
 
         smpl_params[1:4] = torch.from_numpy(self.trans[idx]).float()
         smpl_params[4:76] = torch.from_numpy(self.poses[idx]).float()
