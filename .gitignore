@@ -11,3 +11,4 @@ code/outputs/
 *.obj
 *.ipynb
 *.so
+code/training_log
