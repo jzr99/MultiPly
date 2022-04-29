@@ -173,7 +173,7 @@ class VolSDFNetwork(nn.Module):
         # if self.use_smpl_deformer:
         #   _, canonical_smpl_points, _ = self.sdf_func_with_smpl_deformer(smpl_output['smpl_verts'][0], cond, smpl_tfs, smpl_output['smpl_verts']) 
         # else:
-            # _, canonical_smpl_points, _ = self.sdf_func(smpl_output['smpl_verts'][0], cond, smpl_tfs, eval_mode=True)
+        #   _, canonical_smpl_points, _ = self.sdf_func(smpl_output['smpl_verts'][0], cond, smpl_tfs, eval_mode=True)
         # posed_smpl_points = self.deformer.forward_skinning(canonical_smpl_points[None], cond, smpl_tfs)
         # import ipdb
         # ipdb.set_trace()

@@ -8,7 +8,7 @@ train:
     worker: 8
 
     data_dir : courtyard_jumpBench_01/
-    num_sample : 256 # 2048 256
+    num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
@@ -22,4 +22,4 @@ valid:
 
     data_dir : courtyard_jumpBench_01/
     num_sample : -1
-    pixel_per_batch: 256  # 16000 256
+    pixel_per_batch: 512  # 16000 256

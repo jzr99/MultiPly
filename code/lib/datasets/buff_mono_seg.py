@@ -178,7 +178,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         smpl_params = torch.zeros([86]).float()
-        smpl_params[0] = torch.from_numpy(np.asarray(self.scale)).float() 
+        smpl_params[0] = 1 # torch.from_numpy(np.asarray(self.scale)).float() 
 
         smpl_params[1:4] = torch.from_numpy(self.trans[idx]).float()
         smpl_params[4:76] = torch.from_numpy(self.poses[idx]).float()
