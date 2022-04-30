@@ -72,7 +72,7 @@ class ErrorBoundSampler(RaySampler):
         if inverse_sphere_bg:
             self.inverse_sphere_sampler = UniformSampler(1.0, 0.0, N_samples_inverse_sphere, False, far=1.0)
 
-    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
+    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
         # def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
         # def get_z_vals(self, ray_dirs, cam_loc, model):
         # get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
@@ -96,7 +96,7 @@ class ErrorBoundSampler(RaySampler):
             # Calculating the SDF only for the new sampled points
             model.implicit_network.eval()
             with torch.no_grad():
-                samples_sdf = model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
+                samples_sdf = model.sdf_func(points_flat, cond, smpl_tfs, eval_mode)[0] 
                 # model.sdf_func(points_flat, cond, smpl_tfs, eval_mode)[0] 
                 # model.implicit_network.get_sdf_vals(points_flat)
                 # model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
