@@ -91,7 +91,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         normalize_rgb = False
 
         # images
-        img_dir = os.path.join(root, "image_Graphonomy")
+        img_dir = os.path.join(root, "image_rembg")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))
         
         for img_path in img_paths[::self.skip_step]:
@@ -107,8 +107,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             self.images.append(img)
         self.n_images = len(img_paths)
         # masks
-        mask_dir = os.path.join(root, "cloth_seg")
-        mask_paths = sorted(glob.glob(f"{mask_dir}/*_gray.png"))
+        mask_dir = os.path.join(root, "mask")
+        mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
         for i, mask_path in enumerate(mask_paths[::self.skip_step]):
             mask = cv2.imread(mask_path)
             assert mask.shape[:2] == self.img_sizes[

@@ -12,12 +12,36 @@ class RaySampler(metaclass=abc.ABCMeta):
         pass
 
 class BBoxSampler(RaySampler):
-    def __init__(self, near, far):
+    def __init__(self, N_samples, near=0.0, far=6.0, **kwargs):
         super().__init__(near, far) # indeed, we need to set the bounds for every iteration
+        self.perturb = 1
+        self.N_samples = N_samples
 
-    def get_z_vals(self, ray_dirs, cam_loc, smpl_mesh):
-        smpl_intersections = rend_util.get_smpl_intersection()
-        z_vals = None
+    # https://github.com/yenchenlin/nerf-pytorch
+    def get_wsampling_points(self, ray_o, ray_d, near, far, is_training):
+        # calculate the steps for each ray
+        t_vals = torch.linspace(0., 1., steps=self.N_samples).to(near)
+        z_vals = near[..., None] * (1. - t_vals) + far[..., None] * t_vals
+        
+        if self.perturb > 0. and is_training:
+            # get intervals between samples
+            mids = .5 * (z_vals[..., 1:] + z_vals[..., :-1])
+            upper = torch.cat([mids, z_vals[..., -1:]], -1)
+            lower = torch.cat([z_vals[..., :1], mids], -1)
+            # stratified samples in those intervals
+            t_rand = torch.rand(z_vals.shape).to(upper)
+            z_vals = lower + (upper - lower) * t_rand
+        # pts = ray_o[:, :, None] + ray_d[:, :, None] * z_vals[..., None]
+
+        # return pts, z_vals
+        return z_vals
+
+    def get_z_vals(self, ray_dirs, cam_loc, smpl_mesh, is_training):
+        self.near, self.far, padded_ray_dirs = rend_util.get_bbox_intersection(cam_loc, ray_dirs, smpl_mesh)
+        if padded_ray_dirs is None:
+            z_vals = self.get_wsampling_points(cam_loc, ray_dirs, self.near, self.far, is_training) 
+        else:
+            z_vals = self.get_wsampling_points(cam_loc, padded_ray_dirs, self.near, self.far, is_training)
         return z_vals
 
 class UniformSampler(RaySampler):
@@ -72,7 +96,7 @@ class ErrorBoundSampler(RaySampler):
         if inverse_sphere_bg:
             self.inverse_sphere_sampler = UniformSampler(1.0, 0.0, N_samples_inverse_sphere, False, far=1.0)
 
-    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
+    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
         # def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode): 
         # def get_z_vals(self, ray_dirs, cam_loc, model):
         # get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
@@ -96,7 +120,7 @@ class ErrorBoundSampler(RaySampler):
             # Calculating the SDF only for the new sampled points
             model.implicit_network.eval()
             with torch.no_grad():
-                samples_sdf = model.sdf_func(points_flat, cond, smpl_tfs, eval_mode)[0] 
+                samples_sdf = model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
                 # model.sdf_func(points_flat, cond, smpl_tfs, eval_mode)[0] 
                 # model.implicit_network.get_sdf_vals(points_flat)
                 # model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 

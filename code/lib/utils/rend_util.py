@@ -4,7 +4,7 @@ import skimage
 import cv2
 import torch
 from torch.nn import functional as F
-
+import trimesh
 
 def get_psnr(img1, img2, normalize_rgb=False):
     if normalize_rgb: # [-1,1] --> [0,1]
@@ -193,3 +193,50 @@ def get_smpl_intersection(cam_loc, ray_directions, smpl_mesh, interval_dist=0.1)
     min_dis = acc_start_dis.clone()
     max_dis = acc_end_dis.clone()
     return curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis
+
+def get_bbox_intersection(cam_loc, ray_directions, smpl_mesh):
+    # smpl mesh scaling or bounding box with scaling? 
+    bbox = smpl_mesh.apply_scale(1.5).bounding_box
+
+    n_pix, _ = ray_directions.shape
+
+    ray_dirs_np = ray_directions.clone().cpu().numpy()
+    ray_origins_np = np.tile(cam_loc[0].clone().cpu().numpy(), n_pix).reshape(n_pix, 3)
+    locations, index_ray, _ = bbox.ray.intersects_location(ray_origins=ray_origins_np, ray_directions=ray_dirs_np, multiple_hits=True)
+    # strong assumption that either the ray has zero hit or two hits!
+    num_ray_hits = locations.shape[0] // 2
+    if num_ray_hits == n_pix:
+        dists = np.linalg.norm(ray_origins_np[index_ray] - locations, axis=1)
+        # condition is that all rays intersect the bbox
+        near = dists[:n_pix]
+        far = dists[n_pix:]
+        return torch.tensor(near).cuda().float(), torch.tensor(far).cuda().float(), None
+    else:
+
+        unhit_first_index_ray = set(np.arange(0, 512)).difference(index_ray[:num_ray_hits])
+        unhit_second_index_ray = set(np.arange(0, 512)).difference(index_ray[num_ray_hits:])
+        if unhit_first_index_ray != unhit_second_index_ray:
+            import ipdb
+            ipdb.set_trace()
+        unhit_index_ray = list(unhit_first_index_ray)
+        to_pad_index_ray = np.random.choice(index_ray[:num_ray_hits].shape[0], len(unhit_index_ray))
+        
+        near_hit_locations = np.zeros((n_pix, locations.shape[1]))
+        near_hit_locations[index_ray[:num_ray_hits]] = locations[:num_ray_hits]
+        # padding the invalid two hits 
+        near_hit_locations[unhit_index_ray] = locations[:num_ray_hits][to_pad_index_ray]
+
+        far_hit_locations = np.zeros((n_pix, locations.shape[1]))
+        far_hit_locations[index_ray[num_ray_hits:]] = locations[num_ray_hits:]
+        # padding the invalid two hits
+        far_hit_locations[unhit_index_ray] = locations[num_ray_hits:][to_pad_index_ray]
+
+        near = np.linalg.norm(ray_origins_np - near_hit_locations, axis=1)
+
+        far = np.linalg.norm(ray_origins_np - far_hit_locations, axis=1)
+
+        ray_dirs_np[unhit_index_ray] = ray_dirs_np[to_pad_index_ray]
+
+        padded_ray_dirs = torch.tensor(ray_dirs_np).cuda().float()
+        return torch.tensor(near).cuda().float(), torch.tensor(far).cuda().float(), padded_ray_dirs
+    

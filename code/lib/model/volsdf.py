@@ -2,7 +2,7 @@ from .networks import ImplicitNet, RenderingNet
 from .ray_tracing import RayTracing
 from .sample_network import SampleNetwork
 from .density import LaplaceDensity
-from .ray_sampler import ErrorBoundSampler
+from .ray_sampler import ErrorBoundSampler, BBoxSampler
 from .deformer import ForwardDeformer, SMPLDeformer
 from .smpl import SMPLServer
 from .sampler import PointInSpace, PointOnBones
@@ -47,7 +47,12 @@ class VolSDFNetwork(nn.Module):
         self.bg_color = torch.tensor([1.0, 1.0, 1.0]).float().cuda()
 
         self.density = LaplaceDensity(**opt.density)
-        self.ray_sampler = ErrorBoundSampler(self.sdf_bounding_sphere, **opt.ray_sampler)
+        
+        self.use_bbox_sampler = opt.use_bbox_sampler
+        if self.use_bbox_sampler:
+            self.ray_sampler = BBoxSampler(**opt.ray_sampler)
+        else:
+            self.ray_sampler = ErrorBoundSampler(self.sdf_bounding_sphere, **opt.ray_sampler)
         self.smpl_server = SMPLServer(gender=gender) # average shape for now. Adjust gender later!
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
@@ -129,7 +134,7 @@ class VolSDFNetwork(nn.Module):
         # smpl_params = smpl_params.detach()
         smpl_tfs = smpl_output['smpl_tfs']
 
-        # smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces)
+        smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces, process=False)
         cond = {'smpl': smpl_pose[:, 3:]/np.pi}
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
@@ -152,9 +157,15 @@ class VolSDFNetwork(nn.Module):
         ray_dirs = ray_dirs.reshape(-1, 3)
 
         if self.use_smpl_deformer:
-            z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+            if self.use_bbox_sampler:
+                z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
+            else:    
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
         else:
-            z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
+            if self.use_bbox_sampler:
+                z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
+            else:
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
 
         N_samples = z_vals.shape[1]
 
@@ -353,6 +364,8 @@ class VolSDFNetwork(nn.Module):
         return grads.reshape(grads.shape[0], -1), torch.nn.functional.normalize(torch.einsum('bi,bij->bj', gradients, grads_inv), dim=1), feature
 
     def volume_rendering(self, z_vals, sdf):
+        import ipdb
+        ipdb.set_trace()
         density_flat = self.density(sdf)
         density = density_flat.reshape(-1, z_vals.shape[1])  # (batch_size * num_pixels) x N_samples
 
