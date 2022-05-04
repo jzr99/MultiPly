@@ -154,8 +154,6 @@ class ImplicitNet(nn.Module):
         sdf = output[:,:1]
         ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
         if self.sdf_bounding_sphere > 0.0:
-            import ipdb
-            ipdb.set_trace()
             sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
             sdf = torch.minimum(sdf, sphere_sdf)
         feature_vectors = output[:, 1:]

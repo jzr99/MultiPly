@@ -1,4 +1,4 @@
-from lib.model.volsdf_wo_snarf import VolSDF
+from lib.model.volsdf_wo_snarf_tcnn import VolSDF
 from lib.utils.mesh import mesh_from_implicit_func
 import glob
 import hydra

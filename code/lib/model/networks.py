@@ -63,8 +63,6 @@ class ImplicitNet(nn.Module):
             opt.dims) + [opt.d_out + opt.feature_vector_size]
         self.num_layers = len(dims)
         self.skip_in = opt.skip_in
-        self.sdf_bounding_sphere = opt.scene_bounding_sphere
-        self.sphere_scale = opt.sphere_scale
         self.embed_fn = None
         if opt.multires > 0:
             embed_fn, input_ch = get_embedder(opt.multires)
@@ -206,6 +204,8 @@ class RenderingNet(nn.Module):
 
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
+        elif self.mode == 'nerf':
+            rendering_input = torch.cat([view_dirs, feature_vectors], dim=-1)
         elif self.mode == 'no_view_dir':
             rendering_input = torch.cat([points, normals, feature_vectors], dim=-1)
         elif self.mode == 'no_normal':
