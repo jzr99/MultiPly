@@ -293,7 +293,7 @@ class VolSDFNetworkBG(nn.Module):
         bg_output = self.bg_implicit_network(bg_points_flat, None)[0]
         bg_sdf = bg_output[:, :1]
         bg_feature_vectors = bg_output[:, 1:]
-        bg_rgb_flat = self.bg_rendering_network(None, None, )
+        bg_rgb_flat = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None)
         # rgb_values = weights.sum(-1, keepdims=True)[..., [0] * 3]
         normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
 

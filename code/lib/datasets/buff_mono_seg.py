@@ -83,7 +83,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         self.images, self.img_sizes = [], []
         self.object_masks = []
         self.parsing_masks = []
-        self.skip_step = 1
+        self.skip_step = 50
         # images
         img_dir = os.path.join(root, "image")
         img_paths = sorted(glob.glob(f"{img_dir}/*"))
@@ -101,7 +101,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
                 img = img[:, :, ::-1] / 255
             self.images.append(img)
         self.n_images = len(img_paths)
-        self.num_cam = len(self.images)
+
         # masks
         mask_dir = os.path.join(root, "mask")
         mask_paths = sorted(glob.glob(f"{mask_dir}/*"))
@@ -137,8 +137,7 @@ class BuffMonoSegDataset(torch.utils.data.Dataset):
         # cameras
         cameras = dict(np.load(os.path.join(root, "cameras.npz")))
         self.P, self.C = [], []
-        # for i in range(self.num_cam):
-        for i in range(self.num_cam):
+        for i in range(self.n_images):
             P = cameras[f"cam_{i}"].astype(np.float32)
             self.P.append(P)
 

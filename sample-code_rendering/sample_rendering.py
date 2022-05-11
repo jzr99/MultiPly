@@ -23,7 +23,7 @@ def create_lookat_matrix(eye, at, up):
     return lookat
     
     
-def get_camera_rig(num_cameras, axis=(0, 1, 0), C=(0, 0, 1), at=(0, 0, 0)):
+def get_camera_rig(num_cameras, axis=(0.5, 1.5, 0.5), C=(0, 0, 1), at=(0.5, 0.5, 0.5)):
     # convert to np.ndarray
     axis = np.array(axis) / np.linalg.norm(axis)
     C = np.array(C)
@@ -42,7 +42,7 @@ def get_camera_rig(num_cameras, axis=(0, 1, 0), C=(0, 0, 1), at=(0, 0, 0)):
 
 def get_cameras(num_cameras):
     cameras = []
-    for C in [(0, 0, 2), (0, 0.5, 2), (0, 1, 2)]:
+    for C in [(0, 0, 2.1), (0, 0.5, 2.1), (0, 1, 2.1)]:
         for extrinsic in get_camera_rig(num_cameras, C=C):
             camera = pyrender.IntrinsicsCamera(fx=FOCAL,
                                                fy=FOCAL,
@@ -81,13 +81,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mesh", type=str, default="./sample/dennis_normalized.ply")
     parser.add_argument("--visualize", action="store_true")
-    parser.add_argument("--num_cameras", default=12)
+    parser.add_argument("--num_cameras", default=8)
     args = parser.parse_args()
 
     raw_scan = trimesh.load(args.mesh)
+    # normalize to 0~1 for the Hash encoding
+    raw_scan.vertices += 0.5
     meshes = [raw_scan]
-    # import ipdb
-    # ipdb.set_trace()
+
     os.makedirs("outputs/image", exist_ok=True)
     os.makedirs("outputs/mask", exist_ok=True)
     cameras = get_cameras(args.num_cameras)

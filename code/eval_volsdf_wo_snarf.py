@@ -22,7 +22,7 @@ def main(opt):
             func=lambda x: model.model.implicit_network(
                 torch.from_numpy(x).float().cuda())[:, 0].cpu(),
             bbox=np.asarray([(-1, -1, -1), (1, 1, 1)]),
-            coarse_bbox=True,
+            coarse_bbox=False,
             resolution=(256, 256, 256))
     mesh.export("sample.ply")
 

@@ -58,8 +58,6 @@ class VolSDFNetwork(nn.Module):
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
 
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
-        # ray_dirs = torch.tensor(np.load('/home/chen/RGB-PINA/data/DTU/scan65/ray_dirs.npy')).cuda()[None] 
-        # cam_loc = torch.tensor(np.load('/home/chen/RGB-PINA/data/DTU/scan65/cam_loc.npy')).cuda()[None]
 
         batch_size, num_pixels, _ = ray_dirs.shape
 
@@ -89,22 +87,20 @@ class VolSDFNetwork(nn.Module):
             acc_map = torch.sum(weights, -1)
             rgb_values = rgb_values + (1. - acc_map[..., None]) * self.bg_color.unsqueeze(0)
 
-        # if self.training:
-        #     # Sample points for the eikonal loss
-        #     n_eik_points = batch_size * num_pixels
-        #     eikonal_points = torch.empty(n_eik_points, 3).uniform_(-self.scene_bounding_sphere, self.scene_bounding_sphere).cuda()
+        if self.training:
+            # Sample points for the eikonal loss
+            n_eik_points = batch_size * num_pixels
+            eikonal_points = torch.empty(n_eik_points, 3).uniform_(-self.scene_bounding_sphere, self.scene_bounding_sphere).cuda()
 
-        #     # add some of the near surface points
-        #     eik_near_points = (cam_loc.unsqueeze(1) + z_samples_eik.unsqueeze(2) * ray_dirs.unsqueeze(1)).reshape(-1, 3)
-        #     eikonal_points = torch.cat([eikonal_points, eik_near_points], 0)
-
-        #     grad_theta = self.implicit_network.gradient(eikonal_points)
-
-        # else:
-        #     gradients = gradients.detach()
-        #     normals = gradients / gradients.norm(2, -1, keepdim=True)
-        #     normals = normals.reshape(-1, N_samples, 3)
-        #     normal_values = torch.sum(weights.unsqueeze(-1) * normals, 1)
+            # add some of the near surface points
+            eik_near_points = (cam_loc.unsqueeze(1) + z_samples_eik.unsqueeze(2) * ray_dirs.unsqueeze(1)).reshape(-1, 3)
+            eikonal_points = torch.cat([eikonal_points, eik_near_points], 0)
+            grad_theta = self.implicit_network.gradient(eikonal_points)
+        else:
+            gradients = gradients.detach()
+            normals = gradients / gradients.norm(2, -1, keepdim=True)
+            normals = normals.reshape(-1, N_samples, 3)
+            normal_values = torch.sum(weights.unsqueeze(-1) * normals, 1)
 
 
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
@@ -113,13 +109,13 @@ class VolSDFNetwork(nn.Module):
         if self.training:
             output = {
                 'rgb_values': rgb_values,
-                # 'grad_theta': grad_theta
+                'grad_theta': grad_theta
             }
         else:
 
             output = {
                 'rgb_values': rgb_values,
-                # 'normal_values': normal_values,
+                'normal_values': normal_values,
             }
         return output
 
@@ -156,7 +152,7 @@ def gradient(inputs, outputs):
 class TCNNVolSDFLoss(nn.Module):
     def __init__(self, opt):
         super().__init__()
-        self.eikonal_weight = 0 # opt.eikonal_weight
+        self.eikonal_weight = 0.1 # opt.eikonal_weight
         self.bone_weight = opt.bone_weight
         self.normal_weight = opt.normal_weight
         self.l1_loss = nn.L1Loss(reduction='mean')
@@ -189,12 +185,12 @@ class TCNNVolSDFLoss(nn.Module):
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         # import ipdb
         # ipdb.set_trace()
-        # eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
-        loss = rgb_loss # + self.eikonal_weight * eikonal_loss
+        eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
+        loss = rgb_loss + self.eikonal_weight * eikonal_loss
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
-            # 'eikonal_loss': eikonal_loss,
+            'eikonal_loss': eikonal_loss,
         }
 
 class VolSDF(pl.LightningModule):
@@ -232,7 +228,7 @@ class VolSDF(pl.LightningModule):
         model_outputs = self.model(inputs)
         return {
             "rgb_values": model_outputs["rgb_values"].detach().clone(),
-            # "normal_values": model_outputs["normal_values"].detach().clone(),
+            "normal_values": model_outputs["normal_values"].detach().clone(),
             **targets,
         }
 
@@ -242,26 +238,86 @@ class VolSDF(pl.LightningModule):
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
 
-        # normal_pred = torch.cat([output["normal_values"] for output in outputs], dim=0)
-        # normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+        normal_pred = torch.cat([output["normal_values"] for output in outputs], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
         rgb_gt = torch.cat([output["rgb"] for output in outputs], dim=1).squeeze(0)
         rgb_gt = rgb_gt.reshape(*img_size, -1)
 
-        # if 'normal' in outputs[0].keys():
-        #     normal_gt = torch.cat([output["normal"] for output in outputs], dim=1).squeeze(0)
-        #     normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
-        #     normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
-        # else:
-        #     normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+        if 'normal' in outputs[0].keys():
+            normal_gt = torch.cat([output["normal"] for output in outputs], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
 
         rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
         rgb = (rgb * 255).astype(np.uint8)
 
-        # normal = (normal * 255).astype(np.uint8)
+        normal = (normal * 255).astype(np.uint8)
 
         os.makedirs("rendering", exist_ok=True)
-        # os.makedirs("normal", exist_ok=True)
+        os.makedirs("normal", exist_ok=True)
 
         cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
-        # cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
+
+    def test_step(self, batch, *args, **kwargs):
+        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        num_batches = (total_pixels + pixel_per_batch -
+                       1) // pixel_per_batch
+        results = []
+        os.makedirs("test_rendering", exist_ok=True)
+        for i in range(num_batches):
+            print("current batch: %d / %d" % (i, num_batches))
+            indices = list(range(i * pixel_per_batch,
+                                min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "intrinsics": inputs["intrinsics"],
+                            "pose": inputs["pose"]}
+            if self.opt.model.use_body_parsing:
+                batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
+            
+            if 'rgb' in targets.keys():
+                batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone(),
+                                "img_size": targets["img_size"]}
+            else:
+                batch_targets = {"img_size": targets["img_size"]}
+            # torch.cuda.memory_stats(device="cuda:0")
+            torch.cuda.empty_cache()
+            with torch.no_grad():
+                model_outputs = self.model(batch_inputs)
+            results.append({'rgb_values':model_outputs["rgb_values"].detach().clone(), 
+                            'normal_values': model_outputs["normal_values"].detach().clone(),
+                            **batch_targets})         
+        img_size = results[0]["img_size"].squeeze(0)
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
+
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
+        if 'rgb' in results[0].keys():
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+
+        
+        rgb = (rgb * 255).astype(np.uint8)
+
+        normal = (normal * 255).astype(np.uint8)
+
+        os.makedirs("test_rendering", exist_ok=True)
+        os.makedirs("test_normal", exist_ok=True)
+
+        cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])

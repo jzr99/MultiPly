@@ -27,7 +27,7 @@ def main(opt):
         check_val_every_n_epoch=50,
         logger=logger,
         log_every_n_steps=1,
-        num_sanity_val_steps=-1
+        num_sanity_val_steps=0
     )
 
     model = VolSDF(opt)

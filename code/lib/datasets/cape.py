@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pickle as pkl
 import torch
-
+from lib.utils import rend_util
 def uniform_sampling(data, img_size, num_sample):
     indices = np.random.permutation(np.prod(img_size))[:num_sample]
     output = {
@@ -54,7 +54,7 @@ def weighted_sampling(data, img_size, num_sample):
     bbox_min = where.min(axis=1)
     bbox_max = where.max(axis=1)
 
-    num_sample_bbox = int(num_sample * 0.5)
+    num_sample_bbox = int(num_sample * 0.9)
     samples_bbox = np.random.rand(num_sample_bbox, 2)
     samples_bbox = samples_bbox * (bbox_max - bbox_min) + bbox_min
 
@@ -80,12 +80,14 @@ class CapeDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
-        self.num_cam = 1 #1
-        self.num_frames = 1# 30 # 112//2 
+        self.num_cam = 8
+        self.num_frames = 30 # 112//2 
         # import pdb
         # pdb.set_trace()
         self.images, self.img_sizes = [], []
         self.object_masks = []
+
+        normalize_rgb = False
         for cam in range(self.num_cam):
             # images
             img_dir = os.path.join(root, f"image_cam{cam:02d}")
@@ -97,7 +99,10 @@ class CapeDataset(torch.utils.data.Dataset):
                 self.img_sizes.append(img_size)
 
                 # preprocess: BGR -> RGB -> Normalize
-                img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+                if normalize_rgb:
+                    img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+                else:
+                    img = img[:, :, ::-1] / 255
                 self.images.append(img)
 
             # masks
@@ -131,6 +136,21 @@ class CapeDataset(torch.utils.data.Dataset):
             C = -np.linalg.solve(P[:3, :3], P[:3, 3])
             self.C.append(C)
 
+        camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(len(cameras))]
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(len(cameras))]
+
+        self.scale = 1 / scale_mats[0][0, 0]
+
+        self.intrinsics_all = []
+        self.pose_all = []
+        for scale_mat, world_mat in zip(scale_mats, world_mats):
+            P = world_mat @ scale_mat
+            P = P[:3, :4]
+            intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
+            self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
+            self.pose_all.append(torch.from_numpy(pose).float())
+
         # other properties
         self.num_sample = opt.num_sample
         self.img_sizes = np.array(self.img_sizes)
@@ -146,7 +166,7 @@ class CapeDataset(torch.utils.data.Dataset):
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         smpl_params = torch.zeros([86]).float()
-        smpl_params[0] = 1
+        smpl_params[0] = smpl_params[0] = torch.from_numpy(np.asarray(self.scale)).float() # 1
 
         smpl_params[1:4] = torch.from_numpy(self.trans[idx%self.num_frames]).float()
         smpl_params[4:76] = torch.from_numpy(self.poses[idx%self.num_frames]).float()
@@ -169,7 +189,10 @@ class CapeDataset(torch.utils.data.Dataset):
                 "uv": samples["uv"].astype(np.float32),
                 "P": self.P[idx//self.num_frames],
                 "C": self.C[idx//self.num_frames],
-                "smpl_params": smpl_params
+                "intrinsics": self.intrinsics_all[idx//self.num_frames],
+                "pose": self.pose_all[idx//self.num_frames],
+                "smpl_params": smpl_params,
+                'idx': idx
             }
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
@@ -179,6 +202,8 @@ class CapeDataset(torch.utils.data.Dataset):
                 "uv": uv.reshape(-1, 2).astype(np.float32),
                 "P": self.P[idx//self.num_frames],
                 "C": self.C[idx//self.num_frames],
+                "intrinsics": self.intrinsics_all[idx//self.num_frames],
+                "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params
             }
             images = {
@@ -199,25 +224,25 @@ class CapeValDataset(torch.utils.data.Dataset):
         self.pixel_per_batch = opt.pixel_per_batch
 
     def __len__(self):
-        return (self.total_pixels + self.pixel_per_batch -
-                1) // self.pixel_per_batch
+        return 1
 
     def __getitem__(self, idx):
-        indices = list(
-            range(idx * self.pixel_per_batch,
-                  min((idx + 1) * self.pixel_per_batch, self.total_pixels)))
 
         inputs, images = self.data
         inputs = {
-            "object_mask": inputs["object_mask"][indices],
-            "uv": inputs["uv"][indices],
+            "object_mask": inputs["object_mask"],
+            "uv": inputs["uv"],
             "P": inputs["P"],
             "C": inputs["C"],
+            "intrinsics": inputs['intrinsics'],
+            "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
         }
         images = {
-            "rgb": images["rgb"][indices],
-            "img_size": images["img_size"]
+            "rgb": images["rgb"],
+            "img_size": images["img_size"],
+            'pixel_per_batch': self.pixel_per_batch,
+            'total_pixels': self.total_pixels
         }
         return inputs, images
 

@@ -87,14 +87,14 @@ class SampleDataset(torch.utils.data.Dataset):
             self.object_masks.append(mask)
 
         # cameras
-        # cameras = dict(np.load(os.path.join(root, "cameras.npz")))
-        # self.P, self.C = [], []
-        # for i in range(len(self.images)):
-        #     P = cameras[f"cam_{i}"].astype(np.float32)
-        #     self.P.append(P)
+        cameras = dict(np.load(os.path.join(root, "cameras.npz")))
+        self.P, self.C = [], []
+        for i in range(len(self.images)):
+            P = cameras[f"cam_{i}"].astype(np.float32)
+            self.P.append(P)
 
-        #     C = -np.linalg.solve(P[:3, :3], P[:3, 3])
-        #     self.C.append(C)
+            C = -np.linalg.solve(P[:3, :3], P[:3, 3])
+            self.C.append(C)
 
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
@@ -135,8 +135,8 @@ class SampleDataset(torch.utils.data.Dataset):
                 "uv": samples["uv"].astype(np.float32),
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
-                # "P": self.P[idx],
-                # "C": self.C[idx]
+                "P": self.P[idx],
+                "C": self.C[idx],
             }
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
@@ -146,8 +146,8 @@ class SampleDataset(torch.utils.data.Dataset):
                 "uv": uv.reshape(-1, 2).astype(np.float32),
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
-                # "P": self.P[idx],
-                # "C": self.C[idx],
+                "P": self.P[idx],
+                "C": self.C[idx],
             }
             images = {"rgb": self.images[idx].reshape(-1, 3).astype(np.float32), "img_size": self.img_sizes[idx]}
             return inputs, images
@@ -178,11 +178,81 @@ class SampleValDataset(torch.utils.data.Dataset):
             "uv": inputs["uv"][indices],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
-            # "P": inputs["P"],
-            # "C": inputs["C"]
+            "P": inputs["P"],
+            "C": inputs["C"],
         }
         images = {
             "rgb": images["rgb"][indices],
             "img_size": images["img_size"]
         }
         return inputs, images
+
+class SampleTestDataset(torch.utils.data.Dataset):
+    def __init__(self, opt, free_view_render=True):
+        self.free_view_render = free_view_render
+        if self.free_view_render:
+            dataset = SampleDataset(opt)
+
+            image_id = 0
+            self.img_size = dataset.img_sizes[image_id]
+            self.total_pixels = np.prod(self.img_size)
+            self.pixel_per_batch = opt.pixel_per_batch
+
+            root = os.path.join('../data', opt.data_dir)
+            root = hydra.utils.to_absolute_path(root)
+
+            camera_dict = np.load(os.path.join(root, "free_view_cameras_normalize.npz"))
+            scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)]
+            world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(len(camera_dict) // 2)]
+            self.intrinsics_all = []
+            self.pose_all = []
+            for scale_mat, world_mat in zip(scale_mats, world_mats):
+                P = world_mat @ scale_mat
+                P = P[:3, :4]
+                intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
+                self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
+                self.pose_all.append(torch.from_numpy(pose).float())
+
+        else:
+            self.dataset = SampleDataset(opt)
+
+            self.img_size = self.dataset.img_sizes[0]
+
+            self.total_pixels = np.prod(self.img_size)
+            self.pixel_per_batch = opt.pixel_per_batch
+
+    def __len__(self):
+        if self.free_view_render:
+            return len(self.pose_all)
+        else:
+            return len(self.dataset)
+
+    def __getitem__(self, idx):
+        if self.free_view_render:
+            uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
+            uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
+
+            inputs = {
+                "uv": uv.reshape(-1, 2).astype(np.float32),
+                "intrinsics": self.intrinsics_all[idx],
+                "pose": self.pose_all[idx],
+            }
+            images = {
+                    "img_size": self.img_size}
+        else:
+            data = self.dataset[idx]
+
+            inputs, images = data
+
+            inputs = {
+                "uv": inputs["uv"],
+                "intrinsics": inputs['intrinsics'],
+                "pose": inputs['pose'],
+                # "P": inputs["P"],
+                # "C": inputs["C"]
+            }
+            images = {
+                "rgb": images["rgb"],
+                "img_size": images["img_size"]
+            }
+        return inputs, images, self.pixel_per_batch, self.total_pixels, idx

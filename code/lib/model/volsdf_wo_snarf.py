@@ -113,7 +113,8 @@ class VolSDFNetwork(nn.Module):
         if self.training:
             output = {
                 'rgb_values': rgb_values,
-                'grad_theta': grad_theta
+                'grad_theta': grad_theta,
+                'use_smpl_deformer': True,
             }
         else:
 
@@ -220,3 +221,63 @@ class VolSDF(pl.LightningModule):
 
         cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
         cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
+    
+    def test_step(self, batch, *args, **kwargs):
+        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        num_batches = (total_pixels + pixel_per_batch -
+                       1) // pixel_per_batch
+        results = []
+        os.makedirs("test_rendering", exist_ok=True)
+        for i in range(num_batches):
+            print("current batch: %d / %d" % (i, num_batches))
+            indices = list(range(i * pixel_per_batch,
+                                min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "intrinsics": inputs["intrinsics"],
+                            "pose": inputs["pose"]}
+            if self.opt.model.use_body_parsing:
+                batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
+            
+            if 'rgb' in targets.keys():
+                batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone(),
+                                "img_size": targets["img_size"]}
+            else:
+                batch_targets = {"img_size": targets["img_size"]}
+            # torch.cuda.memory_stats(device="cuda:0")
+            torch.cuda.empty_cache()
+            with torch.no_grad():
+                model_outputs = self.model(batch_inputs)
+            results.append({'rgb_values':model_outputs["rgb_values"].detach().clone(), 
+                            'normal_values': model_outputs["normal_values"].detach().clone(),
+                            **batch_targets})         
+        img_size = results[0]["img_size"].squeeze(0)
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
+
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
+        if 'rgb' in results[0].keys():
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+
+        
+        rgb = (rgb * 255).astype(np.uint8)
+
+        normal = (normal * 255).astype(np.uint8)
+
+        os.makedirs("test_rendering", exist_ok=True)
+        os.makedirs("test_normal", exist_ok=True)
+
+        cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])

@@ -364,8 +364,6 @@ class VolSDFNetwork(nn.Module):
         return grads.reshape(grads.shape[0], -1), torch.nn.functional.normalize(torch.einsum('bi,bij->bj', gradients, grads_inv), dim=1), feature
 
     def volume_rendering(self, z_vals, sdf):
-        import ipdb
-        ipdb.set_trace()
         density_flat = self.density(sdf)
         density = density_flat.reshape(-1, z_vals.shape[1])  # (batch_size * num_pixels) x N_samples
 

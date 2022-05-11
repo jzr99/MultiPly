@@ -1,5 +1,5 @@
 from .dtu import DTUDataset, DTUValDataset
-from .sample import SampleDataset, SampleValDataset
+from .sample import SampleDataset, SampleValDataset, SampleTestDataset
 from .cape import CapeDataset, CapeValDataset, CapeTestDataset
 from .poseprior import PosePriorDataset, PosePriorValDataset
 from .real import RealDataset, RealValDataset
@@ -14,6 +14,7 @@ def find_dataset_using_name(name):
         "DTUVal": DTUValDataset,
         "Sample": SampleDataset,
         "SampleVal": SampleValDataset,
+        "SampleTest": SampleTestDataset,
         "Cape": CapeDataset,
         "CapeVal": CapeValDataset,
         "CapeTest": CapeTestDataset,

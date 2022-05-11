@@ -79,7 +79,7 @@ class ImplicitNet(nn.Module):
         #         "n_hidden_layers": 2,
         #     }
         # )
-
+        self.feature_vector_size = 32 # opt.feature_vector_size
         self.encoder = tcnn.Encoding(
             n_input_dims=opt.d_in,
             encoding_config={
@@ -94,17 +94,17 @@ class ImplicitNet(nn.Module):
         )
         self.decoder = nn.Sequential(
             nn.Linear(self.encoder.n_output_dims, 64),
-            nn.ReLU(True),
+            nn.Softplus(),
             nn.Linear(64, 64),
-            nn.ReLU(True),
-            nn.Linear(64, opt.d_out + opt.feature_vector_size),
+            nn.Softplus(),
+            nn.Linear(64, opt.d_out + self.feature_vector_size),
         )
 
         self.sdf_bounding_sphere = opt.scene_bounding_sphere
         self.sphere_scale = opt.sphere_scale
 
     def forward(self, input):
-        input = (input + 3) / 6
+        input = (input + 3) / 6 # normalize to [0,1]
         x = self.encoder(input).to(torch.float32)
         x = self.decoder(x)
         # x = self.network(input)
@@ -124,7 +124,7 @@ class ImplicitNet(nn.Module):
         return gradients
 
     def get_outputs(self, x):
-        # x.requires_grad_(True)
+        x.requires_grad_(True)
         output = self.forward(x)
         sdf = output[:,:1]
         ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
@@ -132,15 +132,15 @@ class ImplicitNet(nn.Module):
             sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
             sdf = torch.minimum(sdf, sphere_sdf)
         feature_vectors = output[:, 1:]
-        gradients = None
-        # d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
-        # gradients = torch.autograd.grad(
-        #     outputs=sdf,
-        #     inputs=x,
-        #     grad_outputs=d_output,
-        #     create_graph=True,
-        #     retain_graph=True,
-        #     only_inputs=True)[0]
+        # gradients = None
+        d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+        gradients = torch.autograd.grad(
+            outputs=sdf,
+            inputs=x,
+            grad_outputs=d_output,
+            create_graph=True,
+            retain_graph=True,
+            only_inputs=True)[0]
     
         return sdf, feature_vectors, gradients
 
@@ -156,8 +156,8 @@ class RenderingNet(nn.Module):
     def __init__(self, opt):
         super().__init__()
 
-        self.mode = opt.mode
-        self.mode = "tcnn"
+        self.feature_vector_size = 32 # opt.feature_vector_size
+        self.mode = "tcnn" # opt.mode
         self.embedview_fn = tcnn.Encoding(
             n_input_dims=3,
             encoding_config={
@@ -166,7 +166,7 @@ class RenderingNet(nn.Module):
             },
         )
         self.network = tcnn.Network(
-            n_input_dims=3 + self.embedview_fn.n_output_dims,
+            n_input_dims=3 + 3 + self.feature_vector_size, # self.embedview_fn.n_output_dims,
             n_output_dims=opt.d_out,
             network_config={
                 "otype": "FullyFusedMLP",
@@ -187,15 +187,16 @@ class RenderingNet(nn.Module):
         # )
 
     def forward(self, points, normals, view_dirs, feature_vectors):
-        if self.embedview_fn is not None:
-            view_dirs = self.embedview_fn(view_dirs)
+        # view_dirs = (view_dirs + 1) / 2 # normalize to [0,1]
+        # if self.embedview_fn is not None:
+        #     view_dirs = self.embedview_fn(view_dirs)
 
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
         elif self.mode == 'nerf':
             rendering_input = torch.cat([view_dirs, feature_vectors], dim=-1)
         elif self.mode == "tcnn":
-            rendering_input = torch.cat([points, view_dirs], dim=-1)
+            rendering_input = torch.cat([points, view_dirs, feature_vectors], dim=-1)
 
         x = self.network(rendering_input)
         return x

@@ -4,7 +4,7 @@ hydra:
 
 defaults:
   - model: idr
-  - dataset: sample
+  - dataset: cape
   - _self_
 
 seed: 42
