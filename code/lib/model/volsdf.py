@@ -507,24 +507,29 @@ class VolSDF(pl.LightningModule):
     
         return w
 
-    def query_od(self, x, cond, smpl_tfs):
+    def query_od(self, x, cond, smpl_tfs, smpl_verts):
         
         x = x.reshape(-1, 3)
-        x_c, others = self.model.deformer(x, cond, smpl_tfs, eval_mode = True)
-        x_c = x_c.squeeze(0)
-        num_point, num_init, num_dim = x_c.shape
+        if self.opt.model.use_smpl_deformer:
+            x_c = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            output = self.model.implicit_network(x_c, cond)[0]
+            sdf = output[:, 0:1]
+        else:
+            x_c, others = self.model.deformer(x, cond, smpl_tfs, eval_mode = True)
+            x_c = x_c.squeeze(0)
+            num_point, num_init, num_dim = x_c.shape
 
-        x_c = x_c.reshape(num_point * num_init, num_dim)
-        output = self.model.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
-        sdf = output[:, :, 0]
-        if others['valid_ids'].ndim == 3:
-            sdf_mask = others['valid_ids'].squeeze(0)
-        elif others['valid_ids'].ndim == 2:
-            sdf_mask = others['valid_ids']
-        sdf[~sdf_mask] = 1.
+            x_c = x_c.reshape(num_point * num_init, num_dim)
+            output = self.model.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
+            sdf = output[:, :, 0]
+            if others['valid_ids'].ndim == 3:
+                sdf_mask = others['valid_ids'].squeeze(0)
+            elif others['valid_ids'].ndim == 2:
+                sdf_mask = others['valid_ids']
+            sdf[~sdf_mask] = 1.
 
-        sdf, _ = torch.min(sdf, dim=1)
-        sdf = sdf.reshape(-1,1)
+            sdf, _ = torch.min(sdf, dim=1)
+            sdf = sdf.reshape(-1,1)
         
         return {'occ': sdf}
     
@@ -642,11 +647,25 @@ class VolSDF(pl.LightningModule):
     
     def test_step(self, batch, *args, **kwargs):
         inputs, targets, pixel_per_batch, total_pixels, idx = batch
-        num_batches = (total_pixels + pixel_per_batch -
+        num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
         os.makedirs("test_rendering", exist_ok=True)
-        for i in range(num_batches):
+        os.makedirs("test_normal", exist_ok=True)
+        os.makedirs("test_mesh", exist_ok=True)
+
+        scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
+        smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+        smpl_tfs = smpl_outputs['smpl_tfs']
+        smpl_verts = smpl_outputs['smpl_verts']
+        cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+
+        mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+        mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+        mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+        mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+
+        for i in range(num_splits):
             print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
@@ -654,7 +673,12 @@ class VolSDF(pl.LightningModule):
                             "uv": inputs["uv"][:, indices],
                             "P": inputs["P"],
                             "C": inputs["C"],
-                            "smpl_params": inputs["smpl_params"]}
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:, 4:76],
+                            "smpl_shape": inputs["smpl_params"][:, 76:],
+                            "smpl_trans": inputs["smpl_params"][:, 1:4]}
             if self.opt.model.use_body_parsing:
                 batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone(),
@@ -664,16 +688,30 @@ class VolSDF(pl.LightningModule):
             torch.cuda.empty_cache()
             with torch.no_grad():
                 model_outputs = self.model(batch_inputs)
-            results.append({'rgb_values':model_outputs["rgb_values"].detach().clone(), 
+            results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
                             **batch_targets})         
+
         img_size = results[0]["img_size"].squeeze(0)
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
         rgb_pred = (rgb_pred.reshape(*img_size, -1) + 1) / 2
 
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
         rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
         rgb_gt = (rgb_gt.reshape(*img_size, -1) + 1) / 2
-
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
         rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
         rgb = (rgb * 255).astype(np.uint8)
 
-        cv2.imwrite(f"rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        normal = (normal * 255).astype(np.uint8)
+
+        cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+

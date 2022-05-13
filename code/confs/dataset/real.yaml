@@ -1,6 +1,6 @@
 train:
     dataset: Real
-    subject: "pss_sphere"
+    subject: "pss"
 
     batch_size: 1
     drop_last: False
@@ -8,11 +8,11 @@ train:
     worker: 0
 
     data_dir : pss_resized_new/
-    num_sample : 2048
+    num_sample : 512
 
 valid:
     dataset: "RealVal"
-    subject: "pss_sphere"
+    subject: "pss"
     image_id: 0
 
     batch_size: 1
@@ -22,4 +22,4 @@ valid:
 
     data_dir : pss_resized_new/
     num_sample : -1
-    pixel_per_batch: 12000
+    pixel_per_batch: 512

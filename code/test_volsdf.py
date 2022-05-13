@@ -15,7 +15,7 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=5,
+        every_n_epochs=10,
         save_top_k=-1)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
@@ -24,7 +24,7 @@ def main(opt):
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=10,
         logger=logger,
         log_every_n_steps=1,
         num_sanity_val_steps=0
@@ -32,16 +32,10 @@ def main(opt):
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = VolSDF(opt, betas_path)
-    trainset = create_dataset(opt.dataset.train)
-    validset = create_dataset(opt.dataset.valid)
+    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+    testset = create_dataset(opt.dataset.test)
 
-    if opt.model.is_continue == True:
-        checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
-        trainer.fit(model, trainset, validset, ckpt_path=checkpoint)
-        # trainer.validate(model, validset, ckpt_path=checkpoint)
-    else: 
-        trainer.fit(model, trainset, validset)
-
+    trainer.test(model, testset, ckpt_path=checkpoint)
 
 if __name__ == '__main__':
     main()

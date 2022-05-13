@@ -166,7 +166,7 @@ class CapeDataset(torch.utils.data.Dataset):
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
         smpl_params = torch.zeros([86]).float()
-        smpl_params[0] = smpl_params[0] = torch.from_numpy(np.asarray(self.scale)).float() # 1
+        smpl_params[0] = torch.from_numpy(np.asarray(self.scale)).float() # 1
 
         smpl_params[1:4] = torch.from_numpy(self.trans[idx%self.num_frames]).float()
         smpl_params[4:76] = torch.from_numpy(self.poses[idx%self.num_frames]).float()
@@ -265,6 +265,8 @@ class CapeTestDataset(torch.utils.data.Dataset):
             "uv": inputs["uv"],
             "P": inputs["P"],
             "C": inputs["C"],
+            "intrinsics": inputs['intrinsics'],
+            "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
         }
         images = {

@@ -8,7 +8,7 @@ train:
     worker: 8
 
     data_dir : buff_new/
-    num_sample : 1024
+    num_sample : 512
 
 valid:
     dataset: "CapeVal"
@@ -22,7 +22,7 @@ valid:
 
     data_dir : buff_new/
     num_sample : -1
-    pixel_per_batch: 1024
+    pixel_per_batch: 512
 
 test:
     dataset: "CapeTest"
@@ -36,4 +36,4 @@ test:
 
     data_dir : buff_new/
     num_sample : -1
-    pixel_per_batch: 2048
+    pixel_per_batch: 512

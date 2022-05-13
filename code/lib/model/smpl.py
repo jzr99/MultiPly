@@ -75,14 +75,14 @@ class SMPLServer(torch.nn.Module):
                                         v_template=self.v_template)
 
         verts = smpl_output.vertices.clone()
-        output['smpl_verts'] = verts * scale.unsqueeze(1) + transl.unsqueeze(1)
+        output['smpl_verts'] = verts * scale.unsqueeze(1) + transl.unsqueeze(1) * scale.unsqueeze(1)
 
         joints = smpl_output.joints.clone()
-        output['smpl_jnts'] = joints * scale.unsqueeze(1) + transl.unsqueeze(1)
+        output['smpl_jnts'] = joints * scale.unsqueeze(1) + transl.unsqueeze(1) * scale.unsqueeze(1)
 
         tf_mats = smpl_output.T.clone()
         tf_mats[:, :, :3, :] = tf_mats[:, :, :3, :] * scale.unsqueeze(1).unsqueeze(1)
-        tf_mats[:, :, :3, 3] = tf_mats[:, :, :3, 3] + transl.unsqueeze(1)
+        tf_mats[:, :, :3, 3] = tf_mats[:, :, :3, 3] + transl.unsqueeze(1) * scale.unsqueeze(1)
 
         if not absolute:
             tf_mats = torch.einsum('bnij,njk->bnik', tf_mats, self.tfs_c_inv)
