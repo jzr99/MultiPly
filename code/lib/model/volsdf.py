@@ -53,7 +53,7 @@ class VolSDFNetwork(nn.Module):
             self.ray_sampler = BBoxSampler(**opt.ray_sampler)
         else:
             self.ray_sampler = ErrorBoundSampler(self.sdf_bounding_sphere, **opt.ray_sampler)
-        self.smpl_server = SMPLServer(gender=gender) # average shape for now. Adjust gender later!
+        self.smpl_server = SMPLServer(gender=gender, betas=betas) # average shape for now. Adjust gender later!
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:

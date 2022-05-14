@@ -109,7 +109,7 @@ for idx, img_path in enumerate(tqdm(img_paths)):
 np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
 np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
 np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
-np.save(os.path.join(save_dir, 'cameras.npz'), **output_P)
+np.savez(os.path.join(save_dir, 'cameras.npz'), **output_P)
 
     # re-project to images to debug
 
