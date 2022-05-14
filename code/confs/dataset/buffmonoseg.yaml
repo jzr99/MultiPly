@@ -1,6 +1,6 @@
 train:
     dataset: BuffMonoSeg
-    subject: "skipstep_50"
+    subject: "buffmono_smpl_scale_debugged"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "BuffMonoSegVal"
-    subject: "skipstep_50"
+    subject: "buffmono_smpl_scale_debugged"
     image_id: 0
 
     batch_size: 1
