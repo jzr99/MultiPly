@@ -24,16 +24,16 @@ valid:
     num_sample : -1
     pixel_per_batch: 450 # 12000
 
-# test:
-#     dataset: "BuffMonoSegTest"
-#     subject: "with_parsing"
-#     image_id: 0
+test:
+    dataset: "BuffMonoSegTest"
+    subject: "buffmono_smpl_scale_debugged"
+    image_id: 0
 
-#     batch_size: 1
-#     drop_last: False
-#     shuffle: False
-#     worker: 8
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 8
 
-#     data_dir : buff_mono_seg/
-#     num_sample : -1
-#     pixel_per_batch: 12000
+    data_dir : buff_mono_seg/
+    num_sample : -1
+    pixel_per_batch: 450
