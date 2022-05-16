@@ -321,10 +321,11 @@ class BuffMonoSegTestDataset(torch.utils.data.Dataset):
         inputs, images = data
         inputs = {
             "object_mask": inputs["object_mask"],
-            # "body_parsing": inputs["body_parsing"],
             "uv": inputs["uv"],
             "P": inputs["P"],
             "C": inputs["C"],
+            "intrinsics": inputs['intrinsics'],
+            "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
         }
         images = {
