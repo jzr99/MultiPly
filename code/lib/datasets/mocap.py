@@ -95,7 +95,7 @@ class MoCapDataset(torch.utils.data.Dataset):
 
         for cam in range(self.num_cam):
             # images
-            img_dir = os.path.join(root, f"image_white_bg_cam{int(target_cam_ids[cam]):03d}")
+            img_dir = os.path.join(root, f"image_cam{int(target_cam_ids[cam]):03d}")
             img_paths = sorted(glob.glob(f"{img_dir}/*"))[:self.num_frames]
             
             for img_path in img_paths:

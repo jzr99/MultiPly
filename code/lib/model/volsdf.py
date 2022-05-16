@@ -694,13 +694,13 @@ class VolSDF(pl.LightningModule):
 
         img_size = results[0]["img_size"].squeeze(0)
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
-        rgb_pred = (rgb_pred.reshape(*img_size, -1) + 1) / 2
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
 
         normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
         normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
         rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-        rgb_gt = (rgb_gt.reshape(*img_size, -1) + 1) / 2
+        rgb_gt = rgb_gt.reshape(*img_size, -1)
         if 'normal' in results[0].keys():
             normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
             normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2

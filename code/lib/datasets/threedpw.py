@@ -310,3 +310,32 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             'total_pixels': self.total_pixels
         }
         return inputs, images
+
+class ThreeDPWTestDataset(torch.utils.data.Dataset):
+    def __init__(self, opt):
+        self.dataset = ThreeDPWDataset(opt)
+        self.img_size = self.dataset.img_sizes[0]
+
+        self.total_pixels = np.prod(self.img_size)
+        self.pixel_per_batch = opt.pixel_per_batch
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        data = self.dataset[idx]
+
+        inputs, images = data
+        inputs = {
+            "object_mask": inputs["object_mask"],
+            "uv": inputs["uv"],
+            "P": inputs["P"],
+            "C": inputs["C"],
+            "intrinsics": inputs['intrinsics'],
+            "pose": inputs['pose'],
+            "smpl_params": inputs["smpl_params"]
+        }
+        images = {
+            "rgb": images["rgb"],
+            "img_size": images["img_size"]
+        }
+        return inputs, images, self.pixel_per_batch, self.total_pixels, idx

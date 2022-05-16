@@ -5,8 +5,8 @@ from .poseprior import PosePriorDataset, PosePriorValDataset
 from .real import RealDataset, RealValDataset
 from .buff_mono import BuffMonoDataset, BuffMonoValDataset, BuffMonoTestDataset
 from .buff_mono_seg import BuffMonoSegDataset, BuffMonoSegValDataset, BuffMonoSegTestDataset
-from .threedpw import ThreeDPWDataset, ThreeDPWValDataset
-from .mocap import MoCapDataset, MoCapValDataset
+from .threedpw import ThreeDPWDataset, ThreeDPWValDataset, ThreeDPWTestDataset
+from .mocap import MoCapDataset, MoCapValDataset, MoCapTestDataset
 from torch.utils.data import DataLoader
 
 def find_dataset_using_name(name):
@@ -31,8 +31,10 @@ def find_dataset_using_name(name):
         "BuffMonoSegTest": BuffMonoSegTestDataset,
         "ThreeDPW": ThreeDPWDataset,
         "ThreeDPWVal": ThreeDPWValDataset,
+        "ThreeDPWTest": ThreeDPWTestDataset,
         "MoCap": MoCapDataset,
-        "MoCapVal": MoCapValDataset
+        "MoCapVal": MoCapValDataset,
+        "MoCapTest": MoCapTestDataset
     }
     cls = mapping.get(name, None)
     if cls is None:

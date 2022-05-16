@@ -1,6 +1,6 @@
 train:
     dataset: MoCap
-    subject: "juan_waving_wo_bg"
+    subject: "juan_waving_w_bg"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "MoCapVal"
-    subject: "juan_waving_wo_bg"
+    subject: "juan_waving_w_bg"
     image_id: 0
 
     batch_size: 1
@@ -24,16 +24,16 @@ valid:
     num_sample : -1
     pixel_per_batch: 512
 
-# test:
-#     dataset: "CapeTest"
-#     subject: "buff_multi_views"
-#     image_id: 0
+test:
+    dataset: "MoCapTest"
+    subject: "juan_waving_wo_bg"
+    image_id: 0
 
-#     batch_size: 1
-#     drop_last: False
-#     shuffle: False
-#     worker: 8
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 8
 
-#     data_dir : buff_new/
-#     num_sample : -1
-#     pixel_per_batch: 512
+    data_dir : mocap_juan_waving/
+    num_sample : -1
+    pixel_per_batch: 512
