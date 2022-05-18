@@ -13,7 +13,7 @@ def main(opt):
 
     checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     print("Checkpoint", checkpoint)
-    root = '../data/buff_mono_seg'
+    root = '../data/mocap_juan_waving'
     pose = torch.tensor(np.load(hydra.utils.to_absolute_path(os.path.join(root, 'poses.npy')))[0]).float().unsqueeze(0).cuda() 
     cond = {'smpl': pose[:, 3:]/np.pi}
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
@@ -25,7 +25,7 @@ def main(opt):
         mesh = mesh_from_implicit_func(
             func=lambda x, cond=cond: model.model.implicit_network(
                 torch.from_numpy(x).float().cuda(), cond)[0, :, 0].cpu(),
-            bbox=np.asarray([(-1, -1, -1), (1, 1, 1)]),
+            bbox=np.asarray([(-2, -2, -2), (2, 2, 2)]),
             coarse_bbox=True,
             resolution=(128, 128, 128))
     mesh.export("sample.ply")

@@ -261,7 +261,7 @@ class VolSDFNetwork(nn.Module):
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
 
         if differentiable_points.shape[0] > 0:
-            rgb_values, others = self.get_rbg_value(differentiable_points, view,
+            rgb_values, others = self.get_rbg_value(points_flat, differentiable_points, view,
                                                     cond, smpl_tfs, is_training=self.training)                       
             normal_values = others['normals'] # should we flip the normals? No
 
@@ -310,11 +310,11 @@ class VolSDFNetwork(nn.Module):
         return output
 
 
-    def get_rbg_value(self, points, view_dirs, cond, tfs, surface_body_parsing=None, is_training=True):
+    def get_rbg_value(self, x, points, view_dirs, cond, tfs, surface_body_parsing=None, is_training=True):
         pnts_c = points
         others = {}
 
-        _, gradients, feature_vectors = self.forward_gradient(pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
+        _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
         rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
                                           feature_vectors, surface_body_parsing)
@@ -322,7 +322,7 @@ class VolSDFNetwork(nn.Module):
         others['normals'] = normals
         return rgb_vals, others
 
-    def forward_gradient(self, pnts_c, cond, tfs, create_graph=True, retain_graph=True):
+    def forward_gradient(self, x, pnts_c, cond, tfs, create_graph=True, retain_graph=True):
         if pnts_c.shape[0] == 0:
             return pnts_c.detach()
         pnts_c.requires_grad_(True)
@@ -348,7 +348,7 @@ class VolSDFNetwork(nn.Module):
         sdf = output[:, :1]
 
         if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
+            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
             sdf = torch.minimum(sdf, sphere_sdf)
         
         feature = output[:, 1:]

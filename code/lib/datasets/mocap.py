@@ -95,7 +95,7 @@ class MoCapDataset(torch.utils.data.Dataset):
 
         for cam in range(self.num_cam):
             # images
-            img_dir = os.path.join(root, f"image_cam{int(target_cam_ids[cam]):03d}")
+            img_dir = os.path.join(root, f"image_white_bg_cam{int(target_cam_ids[cam]):03d}")
             img_paths = sorted(glob.glob(f"{img_dir}/*"))[:self.num_frames]
             
             for img_path in img_paths:
@@ -129,6 +129,7 @@ class MoCapDataset(torch.utils.data.Dataset):
         # self.smpl_params = []
         # for smpl_path in smpl_paths:
         #     smpl_params = pkl.load(open(smpl_path, "rb"))
+        self.shape = np.load(os.path.join(root, "mean_shape.npy"))
         self.poses = np.load(os.path.join(root, 'poses.npy'))[:self.num_frames]
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[:self.num_frames]
         # cameras
@@ -175,6 +176,7 @@ class MoCapDataset(torch.utils.data.Dataset):
 
         smpl_params[1:4] = torch.from_numpy(self.trans[idx%self.num_frames]).float()
         smpl_params[4:76] = torch.from_numpy(self.poses[idx%self.num_frames]).float()
+        smpl_params[76:] = torch.from_numpy(self.shape).float()
 
         if self.num_sample > 0:
             data = {
@@ -262,9 +264,12 @@ class MoCapTestDataset(torch.utils.data.Dataset):
         return len(self.dataset)
 
     def __getitem__(self, idx):
+        idx = idx + 30
         data = self.dataset[idx]
 
         inputs, images = data
+        import ipdb
+        ipdb.set_trace()
         inputs = {
             "object_mask": inputs["object_mask"],
             "uv": inputs["uv"],

@@ -12,3 +12,5 @@ code/outputs/
 *.ipynb
 *.so
 code/training_log
+data
+code/test_log

@@ -1,6 +1,6 @@
 train:
     dataset: MoCap
-    subject: "juan_waving_w_bg"
+    subject: "juan_waving_sphere_sdf_all_x"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "MoCapVal"
-    subject: "juan_waving_w_bg"
+    subject: "juan_waving_sphere_sdf_all_x"
     image_id: 0
 
     batch_size: 1
@@ -26,7 +26,7 @@ valid:
 
 test:
     dataset: "MoCapTest"
-    subject: "juan_waving_wo_bg"
+    subject: "juan_waving_sphere_sdf_all_x"
     image_id: 0
 
     batch_size: 1
