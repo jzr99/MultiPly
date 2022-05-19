@@ -134,13 +134,13 @@ class MoCapDataset(torch.utils.data.Dataset):
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[:self.num_frames]
         # cameras
         cameras = dict(np.load(os.path.join(root, "cameras.npz")))
-        self.P, self.C = [], []
-        for i in range(self.num_cam):
-            P = cameras[f"cam_{int(target_cam_ids[cam])}"].astype(np.float32)
-            self.P.append(P)
+        # self.P, self.C = [], []
+        # for i in range(self.num_cam):
+        #     P = cameras[f"cam_{int(target_cam_ids[cam])}"].astype(np.float32)
+        #     self.P.append(P)
 
-            C = -np.linalg.solve(P[:3, :3], P[:3, 3])
-            self.C.append(C)
+        #     C = -np.linalg.solve(P[:3, :3], P[:3, 3])
+        #     self.C.append(C)
 
         
         scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.num_cam)]
@@ -194,8 +194,8 @@ class MoCapDataset(torch.utils.data.Dataset):
             inputs = {
                 "object_mask": samples["object_mask"].astype(bool),
                 "uv": samples["uv"].astype(np.float32),
-                "P": self.P[idx//self.num_frames],
-                "C": self.C[idx//self.num_frames],
+                # "P": self.P[idx//self.num_frames],
+                # "C": self.C[idx//self.num_frames],
                 "intrinsics": self.intrinsics_all[idx//self.num_frames],
                 "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params,
@@ -207,8 +207,8 @@ class MoCapDataset(torch.utils.data.Dataset):
             inputs = {
                 "object_mask": self.object_masks[idx].reshape(-1).astype(bool),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                "P": self.P[idx//self.num_frames],
-                "C": self.C[idx//self.num_frames],
+                # "P": self.P[idx//self.num_frames],
+                # "C": self.C[idx//self.num_frames],
                 "intrinsics": self.intrinsics_all[idx//self.num_frames],
                 "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params
@@ -221,11 +221,10 @@ class MoCapDataset(torch.utils.data.Dataset):
 
 class MoCapValDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
-        dataset = MoCapDataset(opt)
+        self.dataset = MoCapDataset(opt)
         image_id = opt.image_id
 
-        self.data = dataset[image_id]
-        self.img_size = dataset.img_sizes[image_id]
+        self.img_size = self.dataset.img_sizes[image_id]
 
         self.total_pixels = np.prod(self.img_size)
         self.pixel_per_batch = opt.pixel_per_batch
@@ -234,13 +233,14 @@ class MoCapValDataset(torch.utils.data.Dataset):
         return 1
 
     def __getitem__(self, idx):
-
+        image_id = int(np.random.choice(len(self.dataset), 1))  
+        self.data = self.dataset[image_id]
         inputs, images = self.data
         inputs = {
             "object_mask": inputs["object_mask"],
             "uv": inputs["uv"],
-            "P": inputs["P"],
-            "C": inputs["C"],
+            # "P": inputs["P"],
+            # "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
@@ -273,8 +273,8 @@ class MoCapTestDataset(torch.utils.data.Dataset):
         inputs = {
             "object_mask": inputs["object_mask"],
             "uv": inputs["uv"],
-            "P": inputs["P"],
-            "C": inputs["C"],
+            # "P": inputs["P"],
+            # "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"]
