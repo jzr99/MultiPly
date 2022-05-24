@@ -3,8 +3,8 @@ alpha_milestones : []
 alpha_factor : 2
 sched_milestones : [40,80]
 sched_factor : 0.5
-smpl_init: False
-is_continue: True
+smpl_init: True
+is_continue: False
 use_body_parsing: False
 white_bkgd: False
 use_smpl_deformer: True

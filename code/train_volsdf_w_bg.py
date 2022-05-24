@@ -1,4 +1,4 @@
-from lib.model.volsdf import VolSDF
+from lib.model.volsdf_w_bg import VolSDF
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="base")
+@hydra.main(config_path="confs", config_name="base_volsdf_w_bg")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())

@@ -47,18 +47,19 @@ class VolSDFNetworkBG(nn.Module):
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
         gender = 'male'
-        self.sdf_bounding_sphere = 3.0
+        self.sdf_bounding_sphere = 0.0
         self.sphere_scale = opt.implicit_network.sphere_scale
 
         self.density = LaplaceDensity(**opt.density)
         self.bg_density = AbsDensity()
-        
+        import ipdb
+        ipdb.set_trace()
         self.use_bbox_sampler = opt.use_bbox_sampler
         if self.use_bbox_sampler:
             self.ray_sampler = BBoxSampler(**opt.ray_sampler)
         else:
             self.ray_sampler = ErrorBoundSampler(self.sdf_bounding_sphere, inverse_sphere_bg=True, **opt.ray_sampler)
-        self.smpl_server = SMPLServer(gender=gender) # average shape for now. Adjust gender later!
+        self.smpl_server = SMPLServer(gender=gender, betas=betas) # average shape for now. Adjust gender later!
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
@@ -269,15 +270,15 @@ class VolSDFNetworkBG(nn.Module):
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
 
         if differentiable_points.shape[0] > 0:
-            rgb_values, others = self.get_rbg_value(differentiable_points, view,
+            fg_rgb_flat, others = self.get_rbg_value(differentiable_points, view,
                                                     cond, smpl_tfs, is_training=self.training)                       
             normal_values = others['normals'] # should we flip the normals? No
 
-        rgb_values = rgb_values.reshape(-1, N_samples, 3)
+        fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
         normal_values = normal_values.reshape(-1, N_samples, 3)
         weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
 
-        fg_rgb_values = torch.sum(weights.unsqueeze(-1) * rgb_values, 1)
+        fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
 
         # Background rendering
         N_bg_samples = z_vals_bg.shape[1]
@@ -294,7 +295,16 @@ class VolSDFNetworkBG(nn.Module):
         bg_sdf = bg_output[:, :1]
         bg_feature_vectors = bg_output[:, 1:]
         bg_rgb_flat = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None)
-        # rgb_values = weights.sum(-1, keepdims=True)[..., [0] * 3]
+        bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
+
+        bg_weights = self.bg_volume_rendering(z_vals_bg, bg_sdf)
+
+        bg_rgb_values = torch.sum(bg_weights.unsqueeze(-1) * bg_rgb, 1)
+
+        # Composite foreground and background
+        bg_rgb_values = bg_transmittance.unsqueeze(-1) * bg_rgb_values
+        rgb_values = fg_rgb_values + bg_rgb_values
+
         normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
 
         if self.training:
@@ -570,21 +580,26 @@ class VolSDF(pl.LightningModule):
     def query_od(self, x, cond, smpl_tfs):
         
         x = x.reshape(-1, 3)
-        x_c, others = self.model.deformer(x, cond, smpl_tfs, eval_mode = True)
-        x_c = x_c.squeeze(0)
-        num_point, num_init, num_dim = x_c.shape
+        if self.opt.model.use_smpl_deformer:
+            x_c = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            output = self.model.implicit_network(x_c, cond)[0]
+            sdf = output[:, 0:1]
+        else:
+            x_c, others = self.model.deformer(x, cond, smpl_tfs, eval_mode = True)
+            x_c = x_c.squeeze(0)
+            num_point, num_init, num_dim = x_c.shape
 
-        x_c = x_c.reshape(num_point * num_init, num_dim)
-        output = self.model.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
-        sdf = output[:, :, 0]
-        if others['valid_ids'].ndim == 3:
-            sdf_mask = others['valid_ids'].squeeze(0)
-        elif others['valid_ids'].ndim == 2:
-            sdf_mask = others['valid_ids']
-        sdf[~sdf_mask] = 1.
+            x_c = x_c.reshape(num_point * num_init, num_dim)
+            output = self.model.implicit_network(x_c, cond)[0].reshape(num_point, num_init, -1)
+            sdf = output[:, :, 0]
+            if others['valid_ids'].ndim == 3:
+                sdf_mask = others['valid_ids'].squeeze(0)
+            elif others['valid_ids'].ndim == 2:
+                sdf_mask = others['valid_ids']
+            sdf[~sdf_mask] = 1.
 
-        sdf, _ = torch.min(sdf, dim=1)
-        sdf = sdf.reshape(-1,1)
+            sdf, _ = torch.min(sdf, dim=1)
+            sdf = sdf.reshape(-1,1)
         
         return {'occ': sdf}
     

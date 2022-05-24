@@ -11,14 +11,14 @@ def func1():
 
     target_cam_ids = [4, 28, 52, 77]
 
-    smpl_file_paths = sorted(glob.glob(os.path.join('/home/chen/mocap/Juan_waving/smpl', '*.pkl')))
-    smpl_mesh_paths = sorted(glob.glob(os.path.join('/home/chen/mocap/Juan_waving/smpl', '*.obj')))
+    smpl_file_paths = sorted(glob.glob(os.path.join('/home/chen/disk2/motion_capture/markus/smpl', '*.pkl')))
+    smpl_mesh_paths = sorted(glob.glob(os.path.join('/home/chen/disk2/motion_capture/markus/smpl', '*.ply')))
     smpl_poses = []
     smpl_trans = []
     smpl_betas = []
     normalize_shift_list = []
 
-    cameras = dict(np.load(os.path.join('/home/chen/mocap/Juan_waving/cameras', 'rgb_cameras.npz'))) 
+    cameras = dict(np.load(os.path.join('/home/chen/disk2/motion_capture/markus/cameras', 'rgb_cameras.npz'))) 
 
 
 
@@ -29,9 +29,10 @@ def func1():
         v_max = smpl_verts.max(axis=0)
         v_min = smpl_verts.min(axis=0)
         # pose = matrix_to_axis_angle(smpl_file['full_pose'][0].detach()).reshape(-1).cpu().numpy()
-        pose = np.vstack([smpl_file['global_orient'][0].detach().cpu().numpy().reshape(-1, 1), smpl_file['body_pose'][0].detach().cpu().numpy().reshape(-1, 1)])[:, 0]
-        transl = smpl_file['transl'][0].detach().cpu().numpy()
-        beta = smpl_file['betas'][0].detach().cpu().numpy()
+
+        pose = smpl_file['pose'] # np.vstack([smpl_file['global_orient'][0].detach().cpu().numpy().reshape(-1, 1), smpl_file['body_pose'][0].detach().cpu().numpy().reshape(-1, 1)])[:, 0]
+        transl = smpl_file['trans']
+        beta = smpl_file['betas']
 
         smpl_poses.append(pose)
         smpl_trans.append(transl)
@@ -62,12 +63,12 @@ def func1():
             P = intrinsic @ extrinsic
             cam_dict['cam_%d' % cam_id] = P
 
-    np.save('/home/chen/RGB-PINA/data/mocap_juan_waving/poses.npy', smpl_poses)
-    np.save('/home/chen/RGB-PINA/data/mocap_juan_waving/normalize_trans.npy', smpl_trans)
-    np.save('/home/chen/RGB-PINA/data/mocap_juan_waving/mean_shape.npy', mean_shape)
+    np.save('/home/chen/disk2/motion_capture/markus/poses.npy', smpl_poses)
+    np.save('/home/chen/disk2/motion_capture/markus/normalize_trans.npy', smpl_trans)
+    np.save('/home/chen/disk2/motion_capture/markus/mean_shape.npy', mean_shape)
 
-    np.savez('/home/chen/RGB-PINA/data/mocap_juan_waving/cameras.npz', **cam_dict)
-    np.save('/home/chen/RGB-PINA/data/mocap_juan_waving/normalize_shift.npy', normalize_shift)
+    np.savez('/home/chen/disk2/motion_capture/markus/cameras.npz', **cam_dict)
+    np.save('/home/chen/disk2/motion_capture/markus/normalize_shift.npy', normalize_shift)
 
 def func2():
     from smplx import SMPL
@@ -127,4 +128,4 @@ def func2():
     np.savez('/home/chen/RGB-PINA/data/mocap_ernst/cameras.npz', **cam_dict)
     np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_shift.npy', normalize_shift)
 if __name__ == '__main__':
-    func2()
+    func1()
