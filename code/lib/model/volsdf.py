@@ -210,8 +210,8 @@ class VolSDFNetwork(nn.Module):
 
             cam_loc = cam_loc.unsqueeze(1).repeat(1, N_samples, 1) # [surface_mask]
 
-            # normal = input["normal"].reshape(-1, 3)
-            # surface_normal = normal # [surface_mask]
+            normal = input["normal"].reshape(-1, 3)
+            surface_normal = normal # [surface_mask]
 
             # N = surface_points.shape[0]
 
@@ -281,11 +281,12 @@ class VolSDFNetwork(nn.Module):
         if self.training:
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
+                normal_weight = torch.clamp(normal_weight, 0., 1.)
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
-                # 'surface_normal_gt': surface_normal,
+                'surface_normal_gt': surface_normal,
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
                 'object_mask': object_mask,
