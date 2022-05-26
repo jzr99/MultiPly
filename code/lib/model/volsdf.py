@@ -43,8 +43,8 @@ class VolSDFNetwork(nn.Module):
         gender = 'male'
         self.sdf_bounding_sphere = opt.implicit_network.scene_bounding_sphere
         self.sphere_scale = opt.implicit_network.sphere_scale
-        self.white_bkgd = opt.white_bkgd
-        self.bg_color = torch.tensor([1.0, 1.0, 1.0]).float().cuda()
+        self.with_bkgd = opt.with_bkgd
+        # self.bg_color = torch.tensor([1.0, 1.0, 1.0]).float().cuda()
 
         self.density = LaplaceDensity(**opt.density)
         
@@ -274,9 +274,12 @@ class VolSDFNetwork(nn.Module):
         normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
 
         # white background assumption
-        if self.white_bkgd:
+        if self.with_bkgd:
             acc_map = torch.sum(weights, -1)
-            rgb_values = rgb_values + (1. - acc_map[..., None]) * self.bg_color.unsqueeze(0)
+            # if acc_map.min() < 0.99:
+                # import ipdb
+                # ipdb.set_trace()
+            rgb_values = rgb_values + (1. - acc_map[..., None]) * input['bg_image'][0]
 
         if self.training:
             if differentiable_points.shape[0] > 0:
@@ -672,8 +675,8 @@ class VolSDF(pl.LightningModule):
                                 min((i + 1) * pixel_per_batch, total_pixels)))
             batch_inputs = {"object_mask": inputs["object_mask"][:, indices],
                             "uv": inputs["uv"][:, indices],
-                            "P": inputs["P"],
-                            "C": inputs["C"],
+                            # "P": inputs["P"],
+                            # "C": inputs["C"],
                             "intrinsics": inputs['intrinsics'],
                             "pose": inputs['pose'],
                             "smpl_params": inputs["smpl_params"],

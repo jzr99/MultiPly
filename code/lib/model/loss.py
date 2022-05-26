@@ -138,13 +138,13 @@ class VolSDFLoss(nn.Module):
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss # + self.normal_weight * normal_loss 
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
                 'eikonal_loss': eikonal_loss,
                 'bone_loss': bone_loss,
-                # 'normal_loss': normal_loss,
+                'normal_loss': normal_loss,
             }
 
 class ThreeDLoss(nn.Module):
