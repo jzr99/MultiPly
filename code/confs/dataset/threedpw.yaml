@@ -1,18 +1,18 @@
 train:
     dataset: ThreeDPW
-    subject: "volsdf_smpl_scale_debugged"
+    subject: "downtown_walkDownhill_00_inpainting"
 
     batch_size: 1
     drop_last: False
     shuffle: True
-    worker: 8
+    worker: 0
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : downtown_walkDownhill_00/
     num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "volsdf_smpl_scale_debugged"
+    subject: "downtown_walkDownhill_00_inpainting"
     image_id: 0
 
     batch_size: 1
@@ -20,20 +20,20 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : downtown_walkDownhill_00/
     num_sample : -1
     pixel_per_batch: 512  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "volsdf_smpl_scale_debugged"
+    subject: "downtown_walkDownhill_00_inpainting"
     image_id: 0
 
     batch_size: 1
     drop_last: False
     shuffle: False
-    worker: 8
+    worker: 0
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : downtown_walkDownhill_00/
     num_sample : -1
-    pixel_per_batch: 512 
+    pixel_per_batch: 1024

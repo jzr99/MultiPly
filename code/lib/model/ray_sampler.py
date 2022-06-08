@@ -94,6 +94,7 @@ class ErrorBoundSampler(RaySampler):
 
         self.inverse_sphere_bg = inverse_sphere_bg
         if inverse_sphere_bg:
+            N_samples_inverse_sphere = 32
             self.inverse_sphere_sampler = UniformSampler(1.0, 0.0, N_samples_inverse_sphere, False, far=1.0)
 
     def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):

@@ -111,4 +111,6 @@ if __name__ == "__main__":
         K[1, 2] = camera.cy
         P = K @ extrinsic
         d[f"cam_{i}"] = P
+        import ipdb
+        ipdb.set_trace()
     np.savez("outputs/cameras.npz", **d)

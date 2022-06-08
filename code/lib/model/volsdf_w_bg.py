@@ -35,7 +35,7 @@ class VolSDFNetworkBG(nn.Module):
         self.rendering_network = RenderingNet(opt.rendering_network)
 
         # Background object's networks
-        self.bg_implcit_network = ImplicitNet(opt.bg_implicit_network)
+        self.bg_implicit_network = ImplicitNet(opt.bg_implicit_network)
         self.bg_rendering_network = RenderingNet(opt.bg_rendering_network)
 
         self.sampler = PointInSpace()
@@ -47,13 +47,13 @@ class VolSDFNetworkBG(nn.Module):
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
         gender = 'male'
-        self.sdf_bounding_sphere = 0.0
-        self.sphere_scale = opt.implicit_network.sphere_scale
-
+        self.sdf_bounding_sphere = 3.0
+        # self.sphere_scale = opt.implicit_network.sphere_scale
+        self.with_bkgd = opt.with_bkgd
+        self.using_inpainting = opt.using_inpainting
         self.density = LaplaceDensity(**opt.density)
         self.bg_density = AbsDensity()
-        import ipdb
-        ipdb.set_trace()
+
         self.use_bbox_sampler = opt.use_bbox_sampler
         if self.use_bbox_sampler:
             self.ray_sampler = BBoxSampler(**opt.ray_sampler)
@@ -95,9 +95,10 @@ class VolSDFNetworkBG(nn.Module):
             sdf, index = torch.min(sdf, dim=1)
 
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-            if self.sdf_bounding_sphere > 0.0:
-                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-                sdf = torch.minimum(sdf.unsqueeze(-1), sphere_sdf)
+            if not self.with_bkgd:
+                if self.sdf_bounding_sphere > 0.0:
+                    sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                    sdf = torch.minimum(sdf.unsqueeze(-1), sphere_sdf)
 
             x_c = x_c.reshape(num_point, num_init, num_dim)
             x_c = torch.gather(x_c, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, num_dim))[:, 0, :]
@@ -110,9 +111,10 @@ class VolSDFNetworkBG(nn.Module):
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-            if self.sdf_bounding_sphere > 0.0:
-                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-                sdf = torch.minimum(sdf, sphere_sdf)
+            if not self.with_bkgd:
+                if self.sdf_bounding_sphere > 0.0:
+                    sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                    sdf = torch.minimum(sdf, sphere_sdf)
             feature = output[:, 1:]
 
         return sdf, x_c, feature
@@ -125,7 +127,7 @@ class VolSDFNetworkBG(nn.Module):
         pose = input["pose"]
         uv = input["uv"]
 
-        object_mask = input["object_mask"].reshape(-1)
+        object_mask = None if input["object_mask"] is None else input["object_mask"].reshape(-1)
         if self.use_body_pasing:
             body_parsing = input['body_parsing'].reshape(-1)
 
@@ -185,9 +187,9 @@ class VolSDFNetworkBG(nn.Module):
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
-            sdf_output, canonical_points, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
         else:
-            sdf_output, canonical_points, _ = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
+            sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
 
         # if self.use_smpl_deformer:
@@ -217,16 +219,12 @@ class VolSDFNetworkBG(nn.Module):
         if self.training:
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
-            cam_loc = cam_loc.unsqueeze(1).repeat(1, N_samples, 1) # [surface_mask]
-
             # normal = input["normal"].reshape(-1, 3)
             # surface_normal = normal # [surface_mask]
 
             # N = surface_points.shape[0]
 
             canonical_points = canonical_points.reshape(-1, 3)
-
-            cam_loc = cam_loc.reshape(-1, 3)
 
             # sample canonical SMPL surface pnts for the eikonal loss
             smpl_verts_c = self.smpl_server.verts_c.repeat(batch_size, 1,1)
@@ -270,8 +268,8 @@ class VolSDFNetworkBG(nn.Module):
         view = -dirs.reshape(-1, 3) # view = -ray_dirs[surface_mask]
 
         if differentiable_points.shape[0] > 0:
-            fg_rgb_flat, others = self.get_rbg_value(differentiable_points, view,
-                                                    cond, smpl_tfs, is_training=self.training)                       
+            fg_rgb_flat, others = self.get_rbg_value(points_flat, differentiable_points, view,
+                                                    cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                  
             normal_values = others['normals'] # should we flip the normals? No
 
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
@@ -281,25 +279,31 @@ class VolSDFNetworkBG(nn.Module):
         fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
 
         # Background rendering
-        N_bg_samples = z_vals_bg.shape[1]
-        z_vals_bg = torch.flip(z_vals_bg, dims=[-1, ])  # 1--->0
+        if self.using_inpainting:
+            if input['bg_image'] is not None:
+                bg_rgb_values = input['bg_image'][0] 
+            else:
+                bg_rgb_values = torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
+        else:
+            N_bg_samples = z_vals_bg.shape[1]
+            z_vals_bg = torch.flip(z_vals_bg, dims=[-1, ])  # 1--->0
 
-        bg_dirs = ray_dirs.unsqueeze(1).repeat(1,N_bg_samples,1)
-        bg_locs = cam_loc.unsqueeze(1).repeat(1,N_bg_samples,1)
+            bg_dirs = ray_dirs.unsqueeze(1).repeat(1,N_bg_samples,1)
+            bg_locs = cam_loc.unsqueeze(1).repeat(1,N_bg_samples,1)
 
-        bg_points = self.depth2pts_outside(bg_locs, bg_dirs, z_vals_bg)  # [..., N_samples, 4]
-        bg_points_flat = bg_points.reshape(-1, 4)
-        bg_dirs_flat = bg_dirs.reshape(-1, 3)
+            bg_points = self.depth2pts_outside(bg_locs, bg_dirs, z_vals_bg)  # [..., N_samples, 4]
+            bg_points_flat = bg_points.reshape(-1, 4)
+            bg_dirs_flat = bg_dirs.reshape(-1, 3)
 
-        bg_output = self.bg_implicit_network(bg_points_flat, None)[0]
-        bg_sdf = bg_output[:, :1]
-        bg_feature_vectors = bg_output[:, 1:]
-        bg_rgb_flat = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None)
-        bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
+            bg_output = self.bg_implicit_network(bg_points_flat, None)[0]
+            bg_sdf = bg_output[:, :1]
+            bg_feature_vectors = bg_output[:, 1:]
+            bg_rgb_flat = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None)
+            bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
 
-        bg_weights = self.bg_volume_rendering(z_vals_bg, bg_sdf)
+            bg_weights = self.bg_volume_rendering(z_vals_bg, bg_sdf)
 
-        bg_rgb_values = torch.sum(bg_weights.unsqueeze(-1) * bg_rgb, 1)
+            bg_rgb_values = torch.sum(bg_weights.unsqueeze(-1) * bg_rgb, 1)
 
         # Composite foreground and background
         bg_rgb_values = bg_transmittance.unsqueeze(-1) * bg_rgb_values
@@ -310,11 +314,14 @@ class VolSDFNetworkBG(nn.Module):
         if self.training:
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
+                normal_weight = torch.clamp(normal_weight, 0., 1.)
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
                 # 'surface_normal_gt': surface_normal,
+                'index_outside': input['index_outside'],
+                'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
                 'object_mask': object_mask,
@@ -324,20 +331,22 @@ class VolSDFNetworkBG(nn.Module):
                 'use_smpl_deformer': self.use_smpl_deformer
             }
         else:
+            fg_output_rgb = fg_rgb_values + bg_transmittance.unsqueeze(-1) * torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
+                'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,
                 'sdf_output': sdf_output,
             }
         return output
 
 
-    def get_rbg_value(self, points, view_dirs, cond, tfs, surface_body_parsing=None, is_training=True):
+    def get_rbg_value(self, x, points, view_dirs, cond, tfs, feature_vectors, surface_body_parsing=None, is_training=True):
         pnts_c = points
         others = {}
 
-        _, gradients, feature_vectors = self.forward_gradient(pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
+        _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
         rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
                                           feature_vectors, surface_body_parsing)
@@ -345,7 +354,7 @@ class VolSDFNetworkBG(nn.Module):
         others['normals'] = normals
         return rgb_vals, others
 
-    def forward_gradient(self, pnts_c, cond, tfs, create_graph=True, retain_graph=True):
+    def forward_gradient(self, x, pnts_c, cond, tfs, create_graph=True, retain_graph=True):
         if pnts_c.shape[0] == 0:
             return pnts_c.detach()
         pnts_c.requires_grad_(True)
@@ -370,9 +379,10 @@ class VolSDFNetworkBG(nn.Module):
         output = self.implicit_network(pnts_c, cond)[0]
         sdf = output[:, :1]
 
-        if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - pnts_c.norm(2,1, keepdim=True))
-            sdf = torch.minimum(sdf, sphere_sdf)
+        if not self.with_bkgd:
+            if self.sdf_bounding_sphere > 0.0:
+                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                sdf = torch.minimum(sdf, sphere_sdf)
         
         feature = output[:, 1:]
         d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
@@ -419,6 +429,7 @@ class VolSDFNetworkBG(nn.Module):
         bg_transmittance = torch.exp(-torch.cumsum(bg_shifted_free_energy, dim=-1))  # probability of everything is empty up to now
         bg_weights = bg_alpha * bg_transmittance # probability of the ray hits something here
 
+        return bg_weights
     def depth2pts_outside(self, ray_o, ray_d, depth):
 
         '''
@@ -427,7 +438,7 @@ class VolSDFNetworkBG(nn.Module):
         '''
 
         o_dot_d = torch.sum(ray_d * ray_o, dim=-1)
-        under_sqrt = o_dot_d ** 2 - ((ray_o ** 2).sum(-1) - self.scene_bounding_sphere ** 2)
+        under_sqrt = o_dot_d ** 2 - ((ray_o ** 2).sum(-1) - self.sdf_bounding_sphere ** 2)
         d_sphere = torch.sqrt(under_sqrt) - o_dot_d
         p_sphere = ray_o + d_sphere.unsqueeze(-1) * ray_d
         p_mid = ray_o - o_dot_d.unsqueeze(-1) * ray_d
@@ -435,7 +446,7 @@ class VolSDFNetworkBG(nn.Module):
 
         rot_axis = torch.cross(ray_o, p_sphere, dim=-1)
         rot_axis = rot_axis / torch.norm(rot_axis, dim=-1, keepdim=True)
-        phi = torch.asin(p_mid_norm / self.scene_bounding_sphere)
+        phi = torch.asin(p_mid_norm / self.sdf_bounding_sphere)
         theta = torch.asin(p_mid_norm * depth)  # depth is inside [0, 1]
         rot_angle = (phi - theta).unsqueeze(-1)  # [..., 1]
 
@@ -577,7 +588,7 @@ class VolSDF(pl.LightningModule):
     
         return w
 
-    def query_od(self, x, cond, smpl_tfs):
+    def query_od(self, x, cond, smpl_tfs, smpl_verts):
         
         x = x.reshape(-1, 3)
         if self.opt.model.use_smpl_deformer:
@@ -656,9 +667,10 @@ class VolSDF(pl.LightningModule):
                     out[k] = v
 
             res.append({
-                'points': out['points'].detach(),
+                # 'points': out['points'].detach(),
                 'rgb_values': out['rgb_values'].detach(),
                 'normal_values': out['normal_values'].detach(),
+                'fg_rgb_values': out['fg_rgb_values'].detach(),
                 # 'network_object_mask': out['network_object_mask'].detach(),
                 # 'object_mask': out['object_mask'].detach()
             })
@@ -669,6 +681,7 @@ class VolSDF(pl.LightningModule):
         output.update({
             "rgb_values": model_outputs["rgb_values"].detach().clone(),
             "normal_values": model_outputs["normal_values"].detach().clone(),
+            "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
             **targets,
         })
             
@@ -689,6 +702,9 @@ class VolSDF(pl.LightningModule):
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
 
+        fg_rgb_pred = torch.cat([output["fg_rgb_values"] for output in outputs], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+
         normal_pred = torch.cat([output["normal_values"] for output in outputs], dim=0)
         normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
@@ -704,51 +720,108 @@ class VolSDF(pl.LightningModule):
         rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
         rgb = (rgb * 255).astype(np.uint8)
 
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
+
         normal = (normal * 255).astype(np.uint8)
 
         os.makedirs("rendering", exist_ok=True)
         os.makedirs("normal", exist_ok=True)
+        os.makedirs('fg_rendering', exist_ok=True)
 
         canonical_mesh = outputs[0]['canonical_weighted']
         canonical_mesh.export(f"rendering/{self.current_epoch}.ply")
 
         cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
         cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"fg_rendering/{self.current_epoch}.png", fg_rgb[:, :, ::-1])
     
     def test_step(self, batch, *args, **kwargs):
-        inputs, targets, pixel_per_batch, total_pixels, idx = batch
-        num_batches = (total_pixels + pixel_per_batch -
+        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render = batch
+        num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
-        os.makedirs("test_rendering", exist_ok=True)
-        for i in range(num_batches):
+        if free_view_render:
+            os.makedirs("test_fvr", exist_ok=True)
+        else:
+            os.makedirs("test_rendering", exist_ok=True)
+            os.makedirs("test_fg_rendering", exist_ok=True)
+            os.makedirs("test_normal", exist_ok=True)
+            os.makedirs("test_mesh", exist_ok=True)
+
+            scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
+            smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+            smpl_tfs = smpl_outputs['smpl_tfs']
+            smpl_verts = smpl_outputs['smpl_verts']
+            cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+
+            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+            mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+            mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+
+        for i in range(num_splits):
             print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
-            batch_inputs = {"object_mask": inputs["object_mask"][:, indices],
+            batch_inputs = {"object_mask": inputs["object_mask"][:, indices] if 'object_mask' in inputs.keys() else None,
                             "uv": inputs["uv"][:, indices],
+                            "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
                             "P": inputs["P"],
                             "C": inputs["C"],
-                            "smpl_params": inputs["smpl_params"]}
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:, 4:76],
+                            "smpl_shape": inputs["smpl_params"][:, 76:],
+                            "smpl_trans": inputs["smpl_params"][:, 1:4]}
             if self.opt.model.use_body_parsing:
                 batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
-            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone(),
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
                              "img_size": targets["img_size"]}
 
             # torch.cuda.memory_stats(device="cuda:0")
             torch.cuda.empty_cache()
             with torch.no_grad():
                 model_outputs = self.model(batch_inputs)
-            results.append({'rgb_values':model_outputs["rgb_values"].detach().clone(), 
+            results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
+                            "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
                             **batch_targets})         
+
         img_size = results[0]["img_size"].squeeze(0)
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
-        rgb_pred = (rgb_pred.reshape(*img_size, -1) + 1) / 2
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
 
-        rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-        rgb_gt = (rgb_gt.reshape(*img_size, -1) + 1) / 2
+        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
 
-        rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+        
         rgb = (rgb * 255).astype(np.uint8)
 
-        cv2.imwrite(f"rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
+
+        normal = (normal * 255).astype(np.uint8)
+
+        if free_view_render:
+            cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        else:
+            cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+            cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+            cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])

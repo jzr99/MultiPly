@@ -1,6 +1,6 @@
 train:
     dataset: MoCap
-    subject: "otmar_waiving_start_20_w_bg"
+    subject: "otmar_waiving_w_bg_net_w_reg"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "MoCapVal"
-    subject: "otmar_waiving_start_20_w_bg"
+    subject: "otmar_waiving_w_bg_net_w_reg"
     image_id: 0
 
     batch_size: 1
@@ -26,7 +26,7 @@ valid:
 
 test:
     dataset: "MoCapTest"
-    subject: "otmar_waiving_start_20_w_bg"
+    subject: "otmar_waiving_w_bg_net_w_reg"
     image_id: 0
 
     batch_size: 1

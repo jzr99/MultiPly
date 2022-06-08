@@ -82,7 +82,8 @@ def split_input(model_input, total_pixels, n_pixels = 10000):
         data = model_input.copy()
         data['uv'] = torch.index_select(model_input['uv'], 1, indx)
         data['object_mask'] = torch.index_select(model_input['object_mask'], 1, indx)
-        data['bg_image'] = torch.index_select(model_input['bg_image'], 1, indx)
+        if 'bg_image' in data:
+            data['bg_image'] = torch.index_select(model_input['bg_image'], 1, indx)
         split.append(data)
     return split
 

@@ -1,4 +1,3 @@
-from kornia import torch
 import numpy as np
 import os
 import glob
@@ -7,7 +6,7 @@ import cv2
 import pickle as pkl
 import ipdb
 from tqdm import tqdm
-
+import torch
 from smplx import SMPL
 import warnings
 warnings.filterwarnings("ignore")
@@ -22,21 +21,22 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'courtyard_jumpBench_01'
+seq = 'downtown_walkDownhill_00'
 
+dial_kernel = np.ones((5, 5),np.uint8)
 
-
-img_dir = f'/home/chen/3DPW/imageFiles/{seq}'
-seq_dir = f'/home/chen/3DPW/sequenceFiles/validation/{seq}.pkl'
+img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
+seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
+mask_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
 normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
-mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
-save_dir = '/home/chen/snarf_idr_cg_1/data/courtyard_jumpBench_01'
+# mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
+save_dir = f'/home/chen/RGB-PINA/data/{seq}'
 if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
 if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
-if not os.path.exists(os.path.join(save_dir, 'normal')):
-    os.makedirs(os.path.join(save_dir, 'normal'))
+# if not os.path.exists(os.path.join(save_dir, 'normal')):
+#     os.makedirs(os.path.join(save_dir, 'normal'))
 resize_factor = 4
 
 img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
@@ -62,19 +62,25 @@ K[0, 2] = K[0, 2] / resize_factor
 K[1, 2] = K[1, 2] / resize_factor
 output_trans = []
 output_pose = []
-output_P = []
+output_P = {}
 for idx, img_path in enumerate(tqdm(img_paths)):
     # resize image for speed-up
     img = cv2.imread(img_path)
     img = cv2.resize(img, (img.shape[1] // resize_factor, img.shape[0] // resize_factor))
-    mask = cv2.imread(os.path.join(mask_dir, 'image_%05d_mask.png' % idx))
+
+    frame = int(os.path.basename(img_path)[6:11])
+    mask = cv2.imread(f"{mask_dir}/{frame:04d}.png")
+    # mask = cv2.imread(os.path.join(mask_dir, 'image_%05d_mask.png' % idx))
     mask = cv2.resize(mask, (mask.shape[1] // resize_factor, mask.shape[0] // resize_factor))
-    normal = cv2.imread(os.path.join(normal_dir, 'image_%05d_normal.png' % (idx)))
-    normal = cv2.resize(normal, (normal.shape[1] // resize_factor, normal.shape[0] // resize_factor))
+    # dilate mask
+    mask = cv2.dilate(mask, dial_kernel)
+
+    # normal = cv2.imread(os.path.join(normal_dir, 'image_%05d_normal.png' % (idx)))
+    # normal = cv2.resize(normal, (normal.shape[1] // resize_factor, normal.shape[0] // resize_factor))
 
     cv2.imwrite(os.path.join(save_dir, 'image/%04d.png' % idx), img)
     cv2.imwrite(os.path.join(save_dir, 'mask/%04d.png' % idx), mask)
-    cv2.imwrite(os.path.join(save_dir, 'normal/%04d.png' % idx), normal)
+    # cv2.imwrite(os.path.join(save_dir, 'normal/%04d.png' % idx), normal)
     cam_extrinsics = seq_file['cam_poses'][idx]
 
     smpl_pose = seq_file['poses'][0][idx]
@@ -103,13 +109,13 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     P = K @ target_extrinsic
     output_trans.append(trans)
     output_pose.append(smpl_pose)
-    output_P.append(P)
-# import ipdb
-# ipdb.set_trace()
+    output_P[f"cam_{idx}"] = P
+
 np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
 np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
 np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
-np.save(os.path.join(save_dir, 'cameras.npy'), np.array(output_P))
+# np.save(os.path.join(save_dir, 'cameras.npy'), np.array(output_P))
+np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
 
     # re-project to images to debug
 

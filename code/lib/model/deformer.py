@@ -56,6 +56,29 @@ class SMPLDeformer():
     def query_weights(self, xc, cond):
         weights = self.forward(xc, None, return_weights=True, inverse=False)
         return weights
+
+    def forward_skinning_normal(self, xc, normal, cond, tfs, inverse = False):
+        # if xc.ndim == 2:
+        #     xc = xc.unsqueeze(0)
+        if normal.ndim == 2:
+            normal = normal.unsqueeze(0)
+        w = self.query_weights(xc[0], cond)
+        # num_batch, num_point, num_dim = normal.shape
+        # num_batch, num_point, num_bone = w.shape
+        # num_batch, num_bone, num_dim_h, num_dim_h = tfs.shape
+        # p = p.reshape(num_batch*num_point, num_dim)
+        # w = w.reshape(num_batch*num_point, num_bone)
+        # tfs = tfs.reshape(num_batch*num_point, num_dim_h, num_dim_h)
+        p_h = F.pad(normal, (0, 1), value=0)
+
+        if inverse:
+            # p:num_point, n:num_bone, i,j: num_dim+1
+            tf_w = torch.einsum('bpn,bnij->bpij', w.double(), tfs.double())
+            p_h = torch.einsum('bpij,bpj->bpi', tf_w.inverse(), p_h.double()).float()
+        else:
+            p_h = torch.einsum('bpn, bnij, bpj->bpi', w.double(), tfs.double(), p_h.double()).float()
+        
+        return p_h[:, :, :3]
 # import tinycudann as tcnn
 # with open('config_hash.json') as config_file:
 #     config = json.load(config_file)

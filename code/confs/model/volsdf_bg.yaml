@@ -6,7 +6,8 @@ sched_factor : 0.5
 smpl_init: True
 is_continue: False
 use_body_parsing: False
-white_bkgd: False
+with_bkgd: True
+using_inpainting: True
 use_smpl_deformer: True
 use_bbox_sampler: False
 implicit_network:
@@ -20,6 +21,7 @@ implicit_network:
     weight_norm: True
     multires: 6
     cond: 'smpl'
+    scene_bounding_sphere: 3.0 # 3.0
 rendering_network:
     feature_vector_size: 256
     mode: "idr"
@@ -65,7 +67,7 @@ loss:
     mask_weight : 100.0
     bone_weight : 10.0
     reg_weight : 1.0
-    normal_weight : 0.1
+    normal_weight : 0.
     alpha : 100.0
 deformer:
     softmax_mode: hierarchical

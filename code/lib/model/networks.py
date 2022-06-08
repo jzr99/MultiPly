@@ -20,14 +20,14 @@ class Embedder:
         N_freqs = self.kwargs['num_freqs']
 
         if self.kwargs['log_sampling']:
-            freq_bands = 2.**torch.linspace(0., max_freq, N_freqs)
+            freq_bands = 2. ** torch.linspace(0., max_freq, N_freqs)
         else:
             freq_bands = torch.linspace(2.**0., 2.**max_freq, N_freqs)
 
         for freq in freq_bands:
             for p_fn in self.kwargs['periodic_fns']:
-                embed_fns.append(
-                    lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
+                embed_fns.append(lambda x, p_fn=p_fn,
+                                 freq=freq: p_fn(x * freq))
                 out_dim += d
 
         self.embed_fns = embed_fns
@@ -36,22 +36,18 @@ class Embedder:
     def embed(self, inputs):
         return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
 
-
-def get_embedder(multires):
+def get_embedder(multires, input_dims=3):
     embed_kwargs = {
         'include_input': True,
-        'input_dims': 3,
-        'max_freq_log2': multires - 1,
+        'input_dims': input_dims,
+        'max_freq_log2': multires-1,
         'num_freqs': multires,
         'log_sampling': True,
         'periodic_fns': [torch.sin, torch.cos],
     }
 
     embedder_obj = Embedder(**embed_kwargs)
-
-    def embed(x, eo=embedder_obj):
-        return eo.embed(x)
-
+    def embed(x, eo=embedder_obj): return eo.embed(x)
     return embed, embedder_obj.out_dim
 
 
@@ -65,7 +61,7 @@ class ImplicitNet(nn.Module):
         self.skip_in = opt.skip_in
         self.embed_fn = None
         if opt.multires > 0:
-            embed_fn, input_ch = get_embedder(opt.multires)
+            embed_fn, input_ch = get_embedder(opt.multires, input_dims=opt.d_in)
             self.embed_fn = embed_fn
             dims[0] = input_ch
         self.cond = opt.cond   

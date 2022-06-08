@@ -89,9 +89,10 @@ class VolSDFNetwork(nn.Module):
             sdf, index = torch.min(sdf, dim=1)
 
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-            if self.sdf_bounding_sphere > 0.0:
-                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-                sdf = torch.minimum(sdf.unsqueeze(-1), sphere_sdf)
+            if not self.with_bkgd:
+                if self.sdf_bounding_sphere > 0.0:
+                    sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                    sdf = torch.minimum(sdf.unsqueeze(-1), sphere_sdf)
 
             x_c = x_c.reshape(num_point, num_init, num_dim)
             x_c = torch.gather(x_c, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, num_dim))[:, 0, :]
@@ -104,9 +105,10 @@ class VolSDFNetwork(nn.Module):
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
-            if self.sdf_bounding_sphere > 0.0:
-                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-                sdf = torch.minimum(sdf, sphere_sdf)
+            if not self.with_bkgd:
+                if self.sdf_bounding_sphere > 0.0:
+                    sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                    sdf = torch.minimum(sdf, sphere_sdf)
             feature = output[:, 1:]
 
         return sdf, x_c, feature
@@ -161,11 +163,19 @@ class VolSDFNetwork(nn.Module):
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:    
                 z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+                if self.with_bkgd:
+                    z_vals, _ = z_vals
+                    z_max = z_vals[:, -1]
+                    z_vals = z_vals[:, :-1]
         else:
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:
                 z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
+                if self.with_bkgd:
+                    z_vals, _ = z_vals
+                    z_max = z_vals[:, -1]
+                    z_vals = z_vals[:, :-1]
 
         N_samples = z_vals.shape[1]
 
@@ -176,9 +186,9 @@ class VolSDFNetwork(nn.Module):
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
-            sdf_output, canonical_points, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
         else:
-            sdf_output, canonical_points, _ = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
+            sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
 
         # if self.use_smpl_deformer:
@@ -262,12 +272,15 @@ class VolSDFNetwork(nn.Module):
 
         if differentiable_points.shape[0] > 0:
             rgb_values, others = self.get_rbg_value(points_flat, differentiable_points, view,
-                                                    cond, smpl_tfs, is_training=self.training)                       
+                                                    cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                       
             normal_values = others['normals'] # should we flip the normals? No
 
         rgb_values = rgb_values.reshape(-1, N_samples, 3)
         normal_values = normal_values.reshape(-1, N_samples, 3)
-        weights = self.volume_rendering(z_vals, sdf_output)
+        if self.with_bkgd:
+            weights, bg_transmittance = self.volume_rendering_with_bg(z_vals, z_max, sdf_output)
+        else:
+            weights = self.volume_rendering(z_vals, sdf_output)
 
         rgb_values = torch.sum(weights.unsqueeze(-1) * rgb_values, 1)
         # rgb_values = weights.sum(-1, keepdims=True)[..., [0] * 3]
@@ -275,12 +288,9 @@ class VolSDFNetwork(nn.Module):
 
         # white background assumption
         if self.with_bkgd:
-            acc_map = torch.sum(weights, -1)
-            # if acc_map.min() < 0.99:
-                # import ipdb
-                # ipdb.set_trace()
-            rgb_values = rgb_values + (1. - acc_map[..., None]) * input['bg_image'][0]
-
+            # acc_map = torch.sum(weights, -1)
+            # rgb_values = rgb_values + (1. - acc_map[..., None]) * input['bg_image'][0]
+            rgb_values = rgb_values + bg_transmittance.unsqueeze(-1) * input['bg_image'][0] 
         if self.training:
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
@@ -314,11 +324,12 @@ class VolSDFNetwork(nn.Module):
         return output
 
 
-    def get_rbg_value(self, x, points, view_dirs, cond, tfs, surface_body_parsing=None, is_training=True):
+    def get_rbg_value(self, x, points, view_dirs, cond, tfs, feature_vectors, surface_body_parsing=None, is_training=True):
         pnts_c = points
         others = {}
 
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
+        # gradients = self.extract_normal(pnts_c, cond, tfs)[0]
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
         rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
                                           feature_vectors, surface_body_parsing)
@@ -351,9 +362,10 @@ class VolSDFNetwork(nn.Module):
         output = self.implicit_network(pnts_c, cond)[0]
         sdf = output[:, :1]
 
-        if self.sdf_bounding_sphere > 0.0:
-            sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
-            sdf = torch.minimum(sdf, sphere_sdf)
+        if not self.with_bkgd:
+            if self.sdf_bounding_sphere > 0.0:
+                sphere_sdf = self.sphere_scale * (self.sdf_bounding_sphere - x.norm(2,1, keepdim=True))
+                sdf = torch.minimum(sdf, sphere_sdf)
         
         feature = output[:, 1:]
         d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
@@ -383,6 +395,24 @@ class VolSDFNetwork(nn.Module):
 
         return weights
 
+    def volume_rendering_with_bg(self, z_vals, z_max, sdf):
+        density_flat = self.density(sdf)
+        density = density_flat.reshape(-1, z_vals.shape[1]) # (batch_size * num_pixels) x N_samples
+
+        # included also the dist from the sphere intersection
+        dists = z_vals[:, 1:] - z_vals[:, :-1]
+        dists = torch.cat([dists, z_max.unsqueeze(-1) - z_vals[:, -1:]], -1)
+
+        # LOG SPACE
+        free_energy = dists * density
+        shifted_free_energy = torch.cat([torch.zeros(dists.shape[0], 1).cuda(), free_energy], dim=-1)  # add 0 for transperancy 1 at t_0
+        alpha = 1 - torch.exp(-free_energy)  # probability of it is not empty here
+        transmittance = torch.exp(-torch.cumsum(shifted_free_energy, dim=-1))  # probability of everything is empty up to now
+        fg_transmittance = transmittance[:, :-1]
+        weights = alpha * fg_transmittance  # probability of the ray hits something here
+        bg_transmittance = transmittance[:, -1]  # factor to be multiplied with the bg volume rendering
+
+        return weights, bg_transmittance
 def gradient(inputs, outputs):
 
     d_points = torch.ones_like(outputs, requires_grad=False, device=outputs.device)
@@ -445,49 +475,49 @@ class VolSDF(pl.LightningModule):
         inputs["smpl_pose"] = self.smpl_pose
         inputs["smpl_shape"] = self.smpl_shape
         inputs["smpl_trans"] = self.smpl_trans
-
-        model_outputs = self.model(inputs)
-        # if model_outputs is None:
-        #     for optimizer in self._optimizers:
-        #         optimizer.zero_grad()
-        #     pass
-        # else:
-
-        loss_output = self.loss(model_outputs, targets)
-        for k, v in loss_output.items():
-            if k in ["loss"]:
-                self.log(k, v.item(), prog_bar=True, on_step=True)
-            else:
-                self.log(k, v.item(), prog_bar=True, on_step=True)
-
-            # if self.current_epoch < 10000:
-                # self.model.implicit_network.eval()
-                # self.model.deformer.eval()
-                # for param in self.model.implicit_network.parameters():
-                #     param.requires_grad = False
-                # for param in self.model.deformer.parameters():
-                    # param.requires_grad = False
+        with torch.autograd.set_detect_anomaly(True):
+            model_outputs = self.model(inputs)
+            # if model_outputs is None:
+            #     for optimizer in self._optimizers:
+            #         optimizer.zero_grad()
+            #     pass
             # else:
-                # self.model.implicit_network.train()
-                # self.model.deformer.train()
-                # for param in self.model.deformer.parameters():
-                #     param.requires_grad = False
 
-            # for optimizer in self._optimizers:
-            #     optimizer.zero_grad()
+            loss_output = self.loss(model_outputs, targets)
+            for k, v in loss_output.items():
+                if k in ["loss"]:
+                    self.log(k, v.item(), prog_bar=True, on_step=True)
+                else:
+                    self.log(k, v.item(), prog_bar=True, on_step=True)
 
-            # loss_output["loss"].backward()
-            # self.manual_backward(loss_output["loss"])
-            # for optimizer in self._optimizers:
-            #     optimizer.step()
+                # if self.current_epoch < 10000:
+                    # self.model.implicit_network.eval()
+                    # self.model.deformer.eval()
+                    # for param in self.model.implicit_network.parameters():
+                    #     param.requires_grad = False
+                    # for param in self.model.deformer.parameters():
+                        # param.requires_grad = False
+                # else:
+                    # self.model.implicit_network.train()
+                    # self.model.deformer.train()
+                    # for param in self.model.deformer.parameters():
+                    #     param.requires_grad = False
 
-            # if not os.path.exists("./opt_params"):
-            #     os.makedirs("./opt_params")
-            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
-            #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
-            #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
+                # for optimizer in self._optimizers:
+                #     optimizer.zero_grad()
 
-            # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
+                # loss_output["loss"].backward()
+                # self.manual_backward(loss_output["loss"])
+                # for optimizer in self._optimizers:
+                #     optimizer.step()
+
+                # if not os.path.exists("./opt_params"):
+                #     os.makedirs("./opt_params")
+                # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
+                #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
+                #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
+
+                # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
         return loss_output["loss"]
 
     def training_epoch_end(self, outputs) -> None:

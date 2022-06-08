@@ -3,10 +3,10 @@ alpha_milestones : []
 alpha_factor : 2
 sched_milestones : [40,80]
 sched_factor : 0.5
-smpl_init: False
-is_continue: True
+smpl_init: True
+is_continue: False
 use_body_parsing: False
-with_bkgd: True
+with_bkgd: False
 use_smpl_deformer: True
 use_bbox_sampler: False
 implicit_network:
@@ -57,7 +57,7 @@ loss:
     mask_weight : 100.0
     bone_weight : 10.0
     reg_weight : 1.0
-    normal_weight : 0.1
+    normal_weight : 0.
     alpha : 100.0
 deformer:
     softmax_mode: hierarchical

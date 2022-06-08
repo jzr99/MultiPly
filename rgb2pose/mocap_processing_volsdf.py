@@ -87,8 +87,8 @@ def real_mocap_normal():
 
     for i in range(len(camera_infos['ids'])):
         cam_id = camera_infos["ids"][i]
-        if cam_id not in target_cam_ids: # TODO
-            continue
+        # if cam_id not in target_cam_ids: # TODO
+        #     continue
         intrinsic = camera_infos["intrinsics"][i]
         extrinsic = camera_infos["extrinsics"][i]
         focal_length = torch.tensor([(intrinsic[0, 0]).astype(np.float32),
@@ -203,4 +203,4 @@ def rendered_mocap():
     np.savez('/home/chen/RGB-PINA/data/mocap_ernst/cameras.npz', **cam_dict)
     np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_shift.npy', normalize_shift)
 if __name__ == '__main__':
-    real_mocap()
+    real_mocap_normal()

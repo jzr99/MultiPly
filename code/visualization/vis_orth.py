@@ -14,10 +14,10 @@ from pytorch3d.renderer import (
 
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import Textures
-
+import glob
 import trimesh
 import pickle as pkl
-from tqdm import trange
+from tqdm import trange, tqdm
 class Renderer():
     
     def __init__(self, image_size=512):
@@ -62,7 +62,6 @@ class Renderer():
         self.shader = HardPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
 
         self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)
-        
         
     def render_mesh(self, verts, faces, colors=None, mode='npat', light = None):
         '''
@@ -126,24 +125,28 @@ def render_trimesh(mesh,R,T, light, mode='np'):
     return image
 
 
-i = 0
-step = 5
-frame = 219
-for i in trange(360//step):
-    # i=0
-    R, T = look_at_view_transform(2, 0, i*step%360, device=device)
-    # R[:, :2, :] *= -1.0
-    # T[:, :2] *= -1.0
-    # R = torch.transpose(R, 1, 2)
-    light = camera_position_from_spherical_angles(2,0,i*step%360, device = device)/2
-    T[:,1] = T[:,1] + 0.3
-    # i = i + 1
+if __name__ == '__main__':
+    
+    i = 0
+    step = 5
+    frame = 219
+    for i in trange(360//step):
+        # i=0
+        R, T = look_at_view_transform(2, 0, i*step%360, device=device)
+        # R[:, :2, :] *= -1.0
+        # T[:, :2] *= -1.0
+        # R = torch.transpose(R, 1, 2)
+        light = camera_position_from_spherical_angles(2,0,i*step%360, device = device)/2
+        T[:,1] = T[:,1] + 0.3
+        # i = i + 1
 
-    mesh = trimesh.load('/home/chen/RGB-PINA/code/outputs/BuffMonoSeg/debug_buffmono_all/rendering/1069.ply', process=False)
-    # trans = pkl.load(open('/home/chen/disk2/kinect_capture_results/%s/%s/smoothed_files/refined_smpl_params_%04d.pkl' % (actor, seq, frame), 'rb'))['trans']
-    # mesh.vertices -= trans
-    # rot_mat = trimesh.transformations.rotation_matrix(angle=np.radians(170), direction=[1,0,0], point=mesh.vertices.mean(0))
-    # mesh.apply_transform(rot_mat)
-    rendered_image = render_trimesh(mesh, R, T, light, 'p')
-    # rendered_image_n = rendered_image[420:1500]
-    cv2.imwrite('/home/chen/RGB-PINA/vis_results/BuffMonoSeg/buffmono_all/%04d.png' % i, rendered_image)
+        mesh = trimesh.load('/home/chen/RGB-PINA/code/outputs/BuffMonoSeg/debug_buffmono_all/rendering/1069.ply', process=False)
+        # trans = pkl.load(open('/home/chen/disk2/kinect_capture_results/%s/%s/smoothed_files/refined_smpl_params_%04d.pkl' % (actor, seq, frame), 'rb'))['trans']
+        # mesh.vertices -= trans
+        # rot_mat = trimesh.transformations.rotation_matrix(angle=np.radians(170), direction=[1,0,0], point=mesh.vertices.mean(0))
+        # mesh.apply_transform(rot_mat)
+        rendered_image = render_trimesh(mesh, R, T, light, 'p')
+        # rendered_image_n = rendered_image[420:1500]
+        cv2.imwrite('/home/chen/RGB-PINA/vis_results/BuffMonoSeg/buffmono_all/%04d.png' % i, rendered_image)
+
+
