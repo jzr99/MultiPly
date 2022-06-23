@@ -23,7 +23,7 @@ import torch.optim as optim
 from torch.autograd import grad
 import pytorch_lightning as pl
 import hydra
-import open3d as o3d
+# import open3d as o3d
 import pytorch3d
 
 class VolSDFNetworkBG(nn.Module):
@@ -224,7 +224,7 @@ class VolSDFNetworkBG(nn.Module):
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
+            # index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -374,7 +374,7 @@ class VolSDFNetworkBG(nn.Module):
                 'normal_values': normal_values,
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
-                'index_off_surface': index_off_surface,
+                # 'index_off_surface': index_off_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,

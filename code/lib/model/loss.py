@@ -148,9 +148,9 @@ class VolSDFLoss(nn.Module):
         # normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
         density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'])
         # bg_shadow_loss = self.get_bg_shadow_loss(model_outputs['bg_rgb_values'])
-        off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
+        # off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * off_surface_loss # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss # + self.off_surface_weight * off_surface_loss # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
@@ -158,7 +158,7 @@ class VolSDFLoss(nn.Module):
                 'density_reg_loss': density_reg_loss,
                 # 'bg_shadow_loss': bg_shadow_loss,
                 # 'normal_loss': normal_loss,
-                'off_surface_loss': off_surface_loss,
+                # 'off_surface_loss': off_surface_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])

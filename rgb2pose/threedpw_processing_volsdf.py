@@ -21,9 +21,9 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'outdoors_slalom_00'
+seq = 'outdoors_freestyle_00'
 
-dial_kernel = np.ones((5, 5),np.uint8)
+dial_kernel = np.ones((20, 20),np.uint8)
 
 img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
 seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'

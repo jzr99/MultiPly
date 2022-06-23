@@ -1,6 +1,6 @@
 train:
     dataset: ThreeDPW
-    subject: "outdoors_slalom_00"
+    subject: "outdoors_slalom_00_wo_off_surface"
 
     batch_size: 1
     drop_last: False
@@ -12,7 +12,7 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "outdoors_slalom_00"
+    subject: "outdoors_slalom_00_wo_off_surface"
     image_id: 0
 
     batch_size: 1
@@ -26,7 +26,7 @@ valid:
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "outdoors_slalom_00"
+    subject: "outdoors_slalom_00_wo_off_surface"
     image_id: 0
 
     batch_size: 1
