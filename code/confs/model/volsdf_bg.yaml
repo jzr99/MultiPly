@@ -7,9 +7,11 @@ smpl_init: True
 is_continue: False
 use_body_parsing: False
 with_bkgd: True
-using_inpainting: True
+using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
+num_training_frames: 333 # 110
+dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
     d_in: 3
@@ -43,12 +45,17 @@ bg_implicit_network:
     cond: 'none'
 bg_rendering_network:
     feature_vector_size: 256
-    mode: 'nerf'
+    mode: 'nerf_frame_encoding' # 'nerf'
     d_in: 3
     d_out: 3
     dims: [128]
     weight_norm: False
     multires_view: 4
+shadow_network:
+    d_in: 3
+    d_out: 1
+    dims: [128, 128]
+    weight_norm: False
 density:
     params_init: {beta: 0.1}
     beta_min: 0.0001

@@ -180,7 +180,11 @@ class RenderingNet(nn.Module):
             # embedpos_fn, input_ch = get_embedder(10) # manually set to 10
             # self.embedpos_fn = embedpos_fn
             # dims[0] += (input_ch - 3)
-
+        if self.mode == 'nerf_frame_encoding':
+            # self.num_training_frames = opt.num_training_frames
+            # self.dim_frame_encoding = 32
+            # self.frame_latent_codes = torch.nn.Embedding(self.num_training_frames, self.dim_frame_encoding)  # TODO , sparse=True)
+            dims[0] += 32
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -192,7 +196,7 @@ class RenderingNet(nn.Module):
         self.sigmoid = nn.Sigmoid()
         # self.tanh = nn.Tanh()
         
-    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing):
+    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing, frame_latent_code=None):
         if self.embedview_fn is not None:
             view_dirs = self.embedview_fn(view_dirs)
         # if self.embedpos_fn is not None:
@@ -200,6 +204,10 @@ class RenderingNet(nn.Module):
 
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
+        elif self.mode == 'nerf_frame_encoding':
+            # frame_latent_code = self.frame_latent_codes(frame_idx)
+            frame_latent_code = frame_latent_code.expand(view_dirs.shape[0], -1)
+            rendering_input = torch.cat([view_dirs, frame_latent_code, feature_vectors], dim=-1)
         elif self.mode == 'nerf':
             rendering_input = torch.cat([view_dirs, feature_vectors], dim=-1)
         elif self.mode == 'no_view_dir':
@@ -227,4 +235,38 @@ class RenderingNet(nn.Module):
                 x = self.relu(x)
         # x = self.tanh(x)
         x = self.sigmoid(x)
+        return x
+
+class ShadowNet(nn.Module):
+    def __init__(self, opt):
+        super().__init__()
+
+        dims = [opt.d_in] + list(opt.dims) + [opt.d_out]
+        dims[0] += 32
+        self.num_layers = len(dims)
+        self.scaling = 50
+        for l in range(0, self.num_layers - 1):
+            out_dim = dims[l + 1]
+            lin = nn.Linear(dims[l], out_dim)
+            # torch.nn.init.xavier_uniform_(lin.weight)
+            if opt.weight_norm:
+                lin = nn.utils.weight_norm(lin)
+            setattr(self, "lin" + str(l), lin)
+        self.threshold = 0.05
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+    
+    def forward(self, points, frame_latent_code):
+        frame_latent_code = frame_latent_code.expand(points.shape[0], -1)
+        input = torch.cat([points, frame_latent_code], dim=-1)
+        x = input
+        for l in range(0, self.num_layers - 1):
+            lin = getattr(self, "lin" + str(l))
+            x = lin(x)
+            if l < self.num_layers - 2:
+                x = self.relu(x)
+
+        x = self.sigmoid(x - self.threshold * self.scaling)
+        # x = self.relu(x)
+        
         return x

@@ -102,8 +102,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
-        self.start_frame = 94
-        self.end_frame = 204
+        self.start_frame = 0 # 11 # 94
+        self.end_frame = 333 # 231 # 204
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []
@@ -162,24 +162,24 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     self.parsing_masks.append(parsing)
 
         # bg_images
-        bg_img_dir = os.path.join(root, "bg_partial")
-        bg_img_paths = sorted(glob.glob(f"{bg_img_dir}/*"))
-        for i, bg_img_path in enumerate(bg_img_paths[::self.skip_step]):
-            bg_img = cv2.imread(bg_img_path)
-            assert bg_img.shape[:2] == self.img_sizes[i], "Background image imcompatible with RGB"
+        # bg_img_dir = os.path.join(root, "bg_partial")
+        # bg_img_paths = sorted(glob.glob(f"{bg_img_dir}/*"))
+        # for i, bg_img_path in enumerate(bg_img_paths[::self.skip_step]):
+        #     bg_img = cv2.imread(bg_img_path)
+        #     assert bg_img.shape[:2] == self.img_sizes[i], "Background image imcompatible with RGB"
             
-            # preprocess: BGR -> RGB -> Normalize
-            if normalize_rgb:
-                bg_img = ((bg_img[:, :, ::-1] / 255) - 0.5) * 2
-            else:
-                bg_img = bg_img[:, :, ::-1] / 255
-            self.bg_images.append(bg_img)
+        #     # preprocess: BGR -> RGB -> Normalize
+        #     if normalize_rgb:
+        #         bg_img = ((bg_img[:, :, ::-1] / 255) - 0.5) * 2
+        #     else:
+        #         bg_img = bg_img[:, :, ::-1] / 255
+        #     self.bg_images.append(bg_img)
 
         self.shape = np.load(os.path.join(root, "mean_shape.npy"))
         self.poses = np.load(os.path.join(root, 'poses.npy'))[self.start_frame:self.end_frame] # [::self.skip_step]
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[self.start_frame:self.end_frame] # [::self.skip_step]
         # cameras
-        cameras = np.load(os.path.join(root, "cameras.npy"))[self.start_frame:self.end_frame] # [::self.skip_step]
+        # cameras = np.load(os.path.join(root, "cameras.npy"))[self.start_frame:self.end_frame] # [::self.skip_step]
 
         self.P, self.C = [], []
         # for i in range(cameras.shape[0]):
@@ -236,7 +236,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": self.object_masks[idx],
                 # "parsing_mask": self.parsing_masks[idx],
                 # "normal": self.normals[idx],
-                "bg_image": self.bg_images[idx],
+                # "bg_image": self.bg_images[idx],
             }
             if self.sampling_strategy == "uniform":
                 samples = uniform_sampling(data, img_size, self.num_sample)
@@ -251,7 +251,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
                 # "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
-                'bg_image': samples["bg_image"].astype(np.float32),
+                # 'bg_image': samples["bg_image"].astype(np.float32),
                 "P": self.P[idx],
                 "C": self.C[idx],
                 "intrinsics": self.intrinsics_all[idx],
@@ -267,12 +267,13 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": self.object_masks[idx].reshape(-1) > 0.5,
                 # "body_parsing": self.parsing_masks[idx].reshape(-1).astype(np.int64),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                "bg_image": self.bg_images[idx].reshape(-1, 3).astype(np.float32),
+                # "bg_image": self.bg_images[idx].reshape(-1, 3).astype(np.float32),
                 "P": self.P[idx],
                 "C": self.C[idx],
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
-                "smpl_params": smpl_params
+                "smpl_params": smpl_params,
+                "idx": idx
             }
             images = {
                 "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),
@@ -303,12 +304,13 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             "object_mask": inputs["object_mask"],
             # "body_parsing": inputs["body_parsing"],
             "uv": inputs["uv"],
-            "bg_image": inputs["bg_image"],
+            # "bg_image": inputs["bg_image"],
             "P": inputs["P"],
             "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
-            "smpl_params": inputs["smpl_params"]
+            "smpl_params": inputs["smpl_params"],
+            "idx": inputs['idx']
         }
         images = {
             "rgb": images["rgb"],
@@ -323,11 +325,11 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
     def __init__(self, opt, free_view_render=False):
         self.free_view_render = free_view_render
         if self.free_view_render:
-            start = 0
-            steps = 20
+            start = -40
+            steps = 40
             dataset = ThreeDPWDataset(opt)
             self.new_poses = []
-            image_id = 0
+            image_id = 30
             self.data = dataset[image_id]
             self.img_size = dataset.img_sizes[image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -335,7 +337,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             target_inputs, images = self.data
             from scipy.spatial.transform import Rotation as scipy_R
             for i in range(steps):
-                rot = scipy_R.from_euler('y', start+i*(-2), degrees=True).as_matrix()
+                rot = scipy_R.from_euler('y', start+i*(2), degrees=True).as_matrix()
                 pose = target_inputs['pose'].clone()
                 R, C = pose[:3, :3], pose[:3, 3]
                 T = -R@C
@@ -391,12 +393,13 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             inputs = {
                 "object_mask": inputs["object_mask"],
                 "uv": inputs["uv"],
-                "bg_image": inputs["bg_image"],
+                # "bg_image": inputs["bg_image"],
                 "P": inputs["P"],
                 "C": inputs["C"],
                 "intrinsics": inputs['intrinsics'],
                 "pose": inputs['pose'],
-                "smpl_params": inputs["smpl_params"]
+                "smpl_params": inputs["smpl_params"],
+                "idx": inputs['idx']
             }
             images = {
                 "rgb": images["rgb"],

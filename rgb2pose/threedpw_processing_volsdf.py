@@ -21,12 +21,12 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'downtown_walkDownhill_00'
+seq = 'outdoors_slalom_00'
 
 dial_kernel = np.ones((5, 5),np.uint8)
 
 img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
-seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
+seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
 mask_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
 normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
 # mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
@@ -37,7 +37,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
 # if not os.path.exists(os.path.join(save_dir, 'normal')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
-resize_factor = 4
+resize_factor = 2
 
 img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
 

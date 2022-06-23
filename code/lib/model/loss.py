@@ -99,6 +99,8 @@ class VolSDFLoss(nn.Module):
         self.bone_weight = opt.bone_weight
         self.normal_weight = opt.normal_weight
         self.density_reg_weight = 5e-3
+        self.bg_shadow_weight = 5e-2
+        self.off_surface_weight = 1e-3
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
     
@@ -127,8 +129,16 @@ class VolSDFLoss(nn.Module):
         zero_density_loss = self.l1_loss(acc_map, torch.zeros_like(acc_map)) 
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside], torch.zeros_like(acc_map[index_outside]))
         binary_loss = -1 * (acc_map * (acc_map + 1e-6).log() + (1-acc_map) * (1 - acc_map + 1e-6).log()).mean() 
-        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + binary_loss
+        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * binary_loss
         return density_reg_loss
+
+    def get_off_surface_loss(self, acc_map, index_off_surface):
+        off_surface_loss = self.l1_loss(acc_map[index_off_surface], torch.zeros_like(acc_map[index_off_surface]))  # torch.sum(acc_map[index_off_surface])
+        return off_surface_loss
+
+    def get_bg_shadow_loss(self, bg_rgb_values):
+        bg_shadow_loss = torch.mean(bg_rgb_values)
+        return bg_shadow_loss
 
     def forward(self, model_outputs, ground_truth):
         nan_filter = ~torch.any(model_outputs['rgb_values'].isnan(), dim=1)
@@ -137,14 +147,18 @@ class VolSDFLoss(nn.Module):
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         # normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'])
         density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'])
+        # bg_shadow_loss = self.get_bg_shadow_loss(model_outputs['bg_rgb_values'])
+        off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss # + self.normal_weight * normal_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * off_surface_loss # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
                 'eikonal_loss': eikonal_loss,
                 'density_reg_loss': density_reg_loss,
+                # 'bg_shadow_loss': bg_shadow_loss,
                 # 'normal_loss': normal_loss,
+                'off_surface_loss': off_surface_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])

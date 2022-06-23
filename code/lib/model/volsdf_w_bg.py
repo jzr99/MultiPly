@@ -1,4 +1,4 @@
-from .networks import ImplicitNet, RenderingNet
+from .networks import ImplicitNet, RenderingNet, ShadowNet
 from .ray_tracing import RayTracing
 from .sample_network import SampleNetwork
 from .density import LaplaceDensity, AbsDensity
@@ -38,6 +38,10 @@ class VolSDFNetworkBG(nn.Module):
         self.bg_implicit_network = ImplicitNet(opt.bg_implicit_network)
         self.bg_rendering_network = RenderingNet(opt.bg_rendering_network)
 
+        # Frame encoder
+        self.frame_latent_encoder = nn.Embedding(opt.num_training_frames, opt.dim_frame_encoding)
+
+        # self.shadow_network = ShadowNet(opt.shadow_network)
         self.sampler = PointInSpace()
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
@@ -46,7 +50,7 @@ class VolSDFNetworkBG(nn.Module):
             self.deformer = SMPLDeformer(betas=betas) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'male'
+        gender = 'female'
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -63,7 +67,7 @@ class VolSDFNetworkBG(nn.Module):
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % gender))
+            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % 'male'))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
@@ -118,6 +122,37 @@ class VolSDFNetworkBG(nn.Module):
             feature = output[:, 1:]
 
         return sdf, x_c, feature
+    
+    def check_off_suface_points(self, x, smpl_verts, N_samples, threshold = 0.03):
+        distance_batch, _, _ = pytorch3d.ops.knn_points(x[None], smpl_verts, K=1)
+
+        distance_batch = distance_batch[0]
+
+        batch_size = distance_batch.shape[0] // N_samples
+
+        distance_batch = distance_batch.reshape(batch_size, N_samples, 1)
+
+        minimum_batch = torch.min(distance_batch, 1)[0]
+        index_off_surface = (minimum_batch > threshold).squeeze(1)
+
+        return index_off_surface
+    
+    def check_off_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
+        import kaolin
+        from kaolin.ops.mesh import index_vertices_by_faces
+        smpl_v_cano = self.smpl_server.verts_c
+        smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
+        face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
+        distance, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_cano.unsqueeze(0).contiguous(), face_vertices)
+
+        distance = torch.sqrt(distance) # kaolin outputs squared distance
+        batch_size = x_cano.shape[0] // N_samples
+        distance = distance.reshape(batch_size, N_samples, 1)
+
+        minimum = torch.min(distance, 1)[0]
+        index_off_surface = (minimum > threshold).squeeze(1)
+
+        return index_off_surface
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
@@ -188,6 +223,8 @@ class VolSDFNetworkBG(nn.Module):
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
+            index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -272,7 +309,13 @@ class VolSDFNetworkBG(nn.Module):
                                                     cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                  
             normal_values = others['normals'] # should we flip the normals? No
 
+        frame_latent_code = self.frame_latent_encoder(input['idx'])
+
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
+        if False:
+            shadow_r = self.shadow_network(differentiable_points, frame_latent_code)
+            shadow_r = shadow_r.reshape(-1, N_samples, 1)
+            fg_rgb = (1-shadow_r) * fg_rgb
         normal_values = normal_values.reshape(-1, N_samples, 3)
         weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
 
@@ -285,25 +328,35 @@ class VolSDFNetworkBG(nn.Module):
             else:
                 bg_rgb_values = torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
         else:
-            N_bg_samples = z_vals_bg.shape[1]
-            z_vals_bg = torch.flip(z_vals_bg, dims=[-1, ])  # 1--->0
+            if input['idx'] is not None:
+                N_bg_samples = z_vals_bg.shape[1]
+                z_vals_bg = torch.flip(z_vals_bg, dims=[-1, ])  # 1--->0
 
-            bg_dirs = ray_dirs.unsqueeze(1).repeat(1,N_bg_samples,1)
-            bg_locs = cam_loc.unsqueeze(1).repeat(1,N_bg_samples,1)
+                bg_dirs = ray_dirs.unsqueeze(1).repeat(1,N_bg_samples,1)
+                bg_locs = cam_loc.unsqueeze(1).repeat(1,N_bg_samples,1)
 
-            bg_points = self.depth2pts_outside(bg_locs, bg_dirs, z_vals_bg)  # [..., N_samples, 4]
-            bg_points_flat = bg_points.reshape(-1, 4)
-            bg_dirs_flat = bg_dirs.reshape(-1, 3)
+                bg_points = self.depth2pts_outside(bg_locs, bg_dirs, z_vals_bg)  # [..., N_samples, 4]
+                bg_points_flat = bg_points.reshape(-1, 4)
+                bg_dirs_flat = bg_dirs.reshape(-1, 3)
 
-            bg_output = self.bg_implicit_network(bg_points_flat, None)[0]
-            bg_sdf = bg_output[:, :1]
-            bg_feature_vectors = bg_output[:, 1:]
-            bg_rgb_flat = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None)
-            bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
-
-            bg_weights = self.bg_volume_rendering(z_vals_bg, bg_sdf)
-
-            bg_rgb_values = torch.sum(bg_weights.unsqueeze(-1) * bg_rgb, 1)
+                bg_output = self.bg_implicit_network(bg_points_flat, None)[0]
+                bg_sdf = bg_output[:, :1]
+                bg_feature_vectors = bg_output[:, 1:]
+                
+                bg_rendering_output = self.bg_rendering_network(None, None, bg_dirs_flat, None, bg_feature_vectors, None, frame_latent_code)
+                if bg_rendering_output.shape[-1] == 4:
+                    bg_rgb_flat = bg_rendering_output[..., :-1]
+                    shadow_r = bg_rendering_output[..., -1]
+                    bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
+                    shadow_r = shadow_r.reshape(-1, N_bg_samples, 1)
+                    bg_rgb = (1 - shadow_r) * bg_rgb
+                else:
+                    bg_rgb_flat = bg_rendering_output
+                    bg_rgb = bg_rgb_flat.reshape(-1, N_bg_samples, 3)
+                bg_weights = self.bg_volume_rendering(z_vals_bg, bg_sdf)
+                bg_rgb_values = torch.sum(bg_weights.unsqueeze(-1) * bg_rgb, 1)
+            else:
+                bg_rgb_values = torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
 
         # Composite foreground and background
         bg_rgb_values = bg_transmittance.unsqueeze(-1) * bg_rgb_values
@@ -321,6 +374,8 @@ class VolSDFNetworkBG(nn.Module):
                 'normal_values': normal_values,
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
+                'index_off_surface': index_off_surface,
+                'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
@@ -333,7 +388,7 @@ class VolSDFNetworkBG(nn.Module):
         else:
             fg_output_rgb = fg_rgb_values + bg_transmittance.unsqueeze(-1) * torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
             output = {
-                'points': points,
+                'acc_map': torch.sum(weights, -1),
                 'rgb_values': rgb_values,
                 'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,
@@ -744,6 +799,7 @@ class VolSDF(pl.LightningModule):
         if free_view_render:
             os.makedirs("test_fvr", exist_ok=True)
         else:
+            os.makedirs("test_mask", exist_ok=True)
             os.makedirs("test_rendering", exist_ok=True)
             os.makedirs("test_fg_rendering", exist_ok=True)
             os.makedirs("test_normal", exist_ok=True)
@@ -774,7 +830,8 @@ class VolSDF(pl.LightningModule):
                             "smpl_params": inputs["smpl_params"],
                             "smpl_pose": inputs["smpl_params"][:, 4:76],
                             "smpl_shape": inputs["smpl_params"][:, 76:],
-                            "smpl_trans": inputs["smpl_params"][:, 1:4]}
+                            "smpl_trans": inputs["smpl_params"][:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
             if self.opt.model.use_body_parsing:
                 batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
@@ -787,6 +844,7 @@ class VolSDF(pl.LightningModule):
             results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
                             "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
                             "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
                             **batch_targets})         
 
         img_size = results[0]["img_size"].squeeze(0)
@@ -799,6 +857,8 @@ class VolSDF(pl.LightningModule):
         normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
         normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
         if results[0]['rgb'] is not None:
             rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
             rgb_gt = rgb_gt.reshape(*img_size, -1)
@@ -822,6 +882,7 @@ class VolSDF(pl.LightningModule):
         if free_view_render:
             cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
         else:
+            cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
             cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
             cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
             cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
