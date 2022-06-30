@@ -308,7 +308,9 @@ class VolSDFNetworkBG(nn.Module):
             fg_rgb_flat, others = self.get_rbg_value(points_flat, differentiable_points, view,
                                                     cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                  
             normal_values = others['normals'] # should we flip the normals? No
-
+            if 'shadow_r' in others.keys():
+                shadow_r = others['shadow_r']
+                fg_rgb_flat = (1-shadow_r) * fg_rgb_flat
         frame_latent_code = self.frame_latent_encoder(input['idx'])
 
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
@@ -403,10 +405,12 @@ class VolSDFNetworkBG(nn.Module):
 
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
-        rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
-                                          feature_vectors, surface_body_parsing)
+        fg_rendering_output = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
+                                                     feature_vectors, surface_body_parsing)
         
+        rgb_vals = fg_rendering_output[:, :3]
         others['normals'] = normals
+        others['shadow_r'] = fg_rendering_output[:, 3:] 
         return rgb_vals, others
 
     def forward_gradient(self, x, pnts_c, cond, tfs, create_graph=True, retain_graph=True):

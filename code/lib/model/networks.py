@@ -185,6 +185,10 @@ class RenderingNet(nn.Module):
             # self.dim_frame_encoding = 32
             # self.frame_latent_codes = torch.nn.Embedding(self.num_training_frames, self.dim_frame_encoding)  # TODO , sparse=True)
             dims[0] += 32
+        if self.mode == 'pose_no_view':
+            self.dim_cond_embed = 8
+            self.cond_dim = 69
+            self.lin_pose = torch.nn.Linear(self.cond_dim, self.dim_cond_embed)
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -208,6 +212,11 @@ class RenderingNet(nn.Module):
             # frame_latent_code = self.frame_latent_codes(frame_idx)
             frame_latent_code = frame_latent_code.expand(view_dirs.shape[0], -1)
             rendering_input = torch.cat([view_dirs, frame_latent_code, feature_vectors], dim=-1)
+        elif self.mode == 'pose_no_view':
+            num_points = points.shape[0]
+            body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
+            body_pose = self.lin_pose(body_pose)
+            rendering_input = torch.cat([points, normals, body_pose, feature_vectors], dim=-1)
         elif self.mode == 'nerf':
             rendering_input = torch.cat([view_dirs, feature_vectors], dim=-1)
         elif self.mode == 'no_view_dir':

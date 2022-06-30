@@ -129,18 +129,22 @@ def render_trimesh(mesh,R,T, mode='np'):
     image = (255*image).data.cpu().numpy().astype(np.uint8)
     
     return image
-
+overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'downtown_walkDownhill_00'
-    output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
+    seq = 'Easy_on_me_720p_cut'
+    DIR = '/home/chen/disk2/Youtube_Videos/ROMP'
+    if overlay:
+        output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
+    else:
+        output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
-    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
+    img_dir = f'{DIR}/{seq}_frames'   
+    file_dir = f'{DIR}'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
-    seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
-    gender = seq_file['genders'][0]
+    file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
+    gender = 'm'
 
     if gender == 'f':
         gender = 'female'
@@ -150,17 +154,25 @@ if __name__ == '__main__':
     sys.path.append('/home/chen/RGB-PINA/rgb2pose')
     from smplx import SMPL
     smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
-    smpl_shape = seq_file['betas'][0][:10]
-    cam_intrinsics = seq_file['cam_intrinsics']
+    
     input_img = cv2.imread(img_paths[0])
+    cam_intrinsics = np.eye(3)
+    cam_intrinsics[0,0] = max(input_img.shape[:2])
+    cam_intrinsics[1,1] = max(input_img.shape[:2])
+    cam_intrinsics[0,2] = input_img.shape[1]/2
+    cam_intrinsics[1,2] = input_img.shape[0]/2
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
-
-        smpl_pose = seq_file['poses'][0][idx]
-        smpl_trans = seq_file['trans'][0][idx]
-        cam_extrinsics = seq_file['cam_poses'][idx]
+        seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
+        smpl_pose = seq_file['smpl_thetas'][0]
+        smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
+        smpl_shape = seq_file['smpl_betas'][0][:10]
+        cam = seq_file['cam'][0]
+        cam_trans = seq_file['cam_trans']
+        cam_extrinsics = np.eye(4)
+        cam_extrinsics[:3,3] = cam_trans
         R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
         T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
         smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),
@@ -168,7 +180,7 @@ if __name__ == '__main__':
                                  global_orient=torch.tensor(smpl_pose[:3])[None].float(),
                                  transl=torch.tensor(smpl_trans)[None].float())
         smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
-
+        smpl_verts = seq_file['verts'][0]
         # verts = torch.tensor(smpl_verts).cuda().float()[None]
         # faces = torch.tensor(smpl_model.faces).cuda()[None]
         smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False)
@@ -178,7 +190,14 @@ if __name__ == '__main__':
         else:
             rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
         valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
-        output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-        cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
+        if overlay:
+            output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
+            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
+        else:
+            output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
         # import ipdb
         # ipdb.set_trace()
