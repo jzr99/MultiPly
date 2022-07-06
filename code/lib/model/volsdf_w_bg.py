@@ -306,11 +306,11 @@ class VolSDFNetworkBG(nn.Module):
 
         if differentiable_points.shape[0] > 0:
             fg_rgb_flat, others = self.get_rbg_value(points_flat, differentiable_points, view,
-                                                    cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                  
+                                                     cond, smpl_tfs, feature_vectors=feature_vectors, is_training=self.training)                  
             normal_values = others['normals'] # should we flip the normals? No
-            if 'shadow_r' in others.keys():
-                shadow_r = others['shadow_r']
-                fg_rgb_flat = (1-shadow_r) * fg_rgb_flat
+            # if 'shadow_r' in others.keys():
+            #     shadow_r = others['shadow_r']
+            #     fg_rgb_flat = (1-shadow_r) * fg_rgb_flat
         frame_latent_code = self.frame_latent_encoder(input['idx'])
 
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
@@ -370,12 +370,14 @@ class VolSDFNetworkBG(nn.Module):
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
                 normal_weight = torch.clamp(normal_weight, 0., 1.)
+            index_ground = torch.nonzero(input['ground_mask'][0])
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
+                "index_ground": index_ground,
                 # 'index_off_surface': index_off_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
@@ -410,7 +412,7 @@ class VolSDFNetworkBG(nn.Module):
         
         rgb_vals = fg_rendering_output[:, :3]
         others['normals'] = normals
-        others['shadow_r'] = fg_rendering_output[:, 3:] 
+        # others['shadow_r'] = fg_rendering_output[:, 3:] 
         return rgb_vals, others
 
     def forward_gradient(self, x, pnts_c, cond, tfs, create_graph=True, retain_graph=True):

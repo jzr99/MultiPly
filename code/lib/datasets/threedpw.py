@@ -103,10 +103,11 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
         self.start_frame = 0 # 11 # 94
-        self.end_frame = 160 # 231 # 204
+        self.end_frame = 102 # 231 # 204
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []
+        self.ground_masks = []
         self.normals = []
         self.bg_images = []
         # self.parsing_masks = []
@@ -141,6 +142,17 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
             self.object_masks.append(mask)
         
+        # ground_masks only for scenes with strong shadows
+        ground_mask_dir = os.path.join(root, "ground_mask")
+        ground_mask_paths = sorted(glob.glob(f"{ground_mask_dir}/*"))
+        for i, ground_mask_path in enumerate(ground_mask_paths[self.start_frame:self.end_frame]): # [::self.skip_step]):
+            ground_mask = cv2.imread(ground_mask_path)
+            assert ground_mask.shape[:2] == self.img_sizes[
+                i], "Ground mask image imcompatible with RGB"
+            
+            # preprocess: BGR -> Gray -> Mask -> Tensor
+            ground_mask = cv2.cvtColor(ground_mask, cv2.COLOR_BGR2GRAY) > 0
+            self.ground_masks.append(1 - ground_mask)
         # normals
         # normal_dir = os.path.join(root, "normal")
         # normal_paths = sorted(glob.glob(f"{normal_dir}/*"))
@@ -237,6 +249,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 # "parsing_mask": self.parsing_masks[idx],
                 # "normal": self.normals[idx],
                 # "bg_image": self.bg_images[idx],
+                "ground_mask": self.ground_masks[idx],
             }
             if self.sampling_strategy == "uniform":
                 samples = uniform_sampling(data, img_size, self.num_sample)
@@ -248,6 +261,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             # samples["normal"] = samples["normal"] / np.linalg.norm(samples["normal"], axis=-1)[:, None]
             inputs = {
                 "object_mask": samples["object_mask"] > 0.5,
+                "ground_mask": samples['ground_mask'] > 0.5,
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
                 # "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),

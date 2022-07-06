@@ -28,6 +28,7 @@ dial_kernel = np.ones((20, 20),np.uint8)
 img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
 seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
 mask_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
+ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
 normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
 # mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
 save_dir = f'/home/chen/RGB-PINA/data/{seq}'
@@ -35,6 +36,8 @@ if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
 if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
+if not os.path.exists(os.path.join(save_dir, 'ground_mask')):
+    os.makedirs(os.path.join(save_dir, 'ground_mask'))
 # if not os.path.exists(os.path.join(save_dir, 'normal')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
 resize_factor = 2
@@ -70,16 +73,18 @@ for idx, img_path in enumerate(tqdm(img_paths)):
 
     frame = int(os.path.basename(img_path)[6:11])
     mask = cv2.imread(f"{mask_dir}/{frame:04d}.png")
-    # mask = cv2.imread(os.path.join(mask_dir, 'image_%05d_mask.png' % idx))
     mask = cv2.resize(mask, (mask.shape[1] // resize_factor, mask.shape[0] // resize_factor))
     # dilate mask
     mask = cv2.dilate(mask, dial_kernel)
-
+    # no need to dilate ground mask
+    ground_mask = cv2.imread(f"{ground_mask_dir}/image_{frame:05d}.jpg")
+    ground_mask = cv2.resize(ground_mask, (ground_mask.shape[1] // resize_factor, ground_mask.shape[0] // resize_factor))
     # normal = cv2.imread(os.path.join(normal_dir, 'image_%05d_normal.png' % (idx)))
     # normal = cv2.resize(normal, (normal.shape[1] // resize_factor, normal.shape[0] // resize_factor))
 
     cv2.imwrite(os.path.join(save_dir, 'image/%04d.png' % idx), img)
     cv2.imwrite(os.path.join(save_dir, 'mask/%04d.png' % idx), mask)
+    cv2.imwrite(os.path.join(save_dir, 'ground_mask/%04d.png' % idx), ground_mask)
     # cv2.imwrite(os.path.join(save_dir, 'normal/%04d.png' % idx), normal)
     cam_extrinsics = seq_file['cam_poses'][idx]
 
@@ -111,11 +116,11 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     output_pose.append(smpl_pose)
     output_P[f"cam_{idx}"] = P
 
-np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
-np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
-np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
+# np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
+# np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
+# np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
 # np.save(os.path.join(save_dir, 'cameras.npy'), np.array(output_P))
-np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
+# np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
 
     # re-project to images to debug
 
