@@ -25,7 +25,8 @@ import pytorch_lightning as pl
 import hydra
 # import open3d as o3d
 import pytorch3d
-
+import kaolin
+from kaolin.ops.mesh import index_vertices_by_faces
 class VolSDFNetworkBG(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -50,7 +51,7 @@ class VolSDFNetworkBG(nn.Module):
             self.deformer = SMPLDeformer(betas=betas) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'female'
+        gender = 'male'
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -138,8 +139,6 @@ class VolSDFNetworkBG(nn.Module):
         return index_off_surface
     
     def check_off_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
-        import kaolin
-        from kaolin.ops.mesh import index_vertices_by_faces
         smpl_v_cano = self.smpl_server.verts_c
         smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
         face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
@@ -224,7 +223,7 @@ class VolSDFNetworkBG(nn.Module):
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            # index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
+            index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -378,7 +377,7 @@ class VolSDFNetworkBG(nn.Module):
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
                 "index_ground": index_ground,
-                # 'index_off_surface': index_off_surface,
+                'index_off_surface': index_off_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,

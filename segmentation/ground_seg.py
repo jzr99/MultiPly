@@ -21,8 +21,8 @@ cfg = get_cfg()
 cfg.merge_from_file(model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_101_3x.yaml"))
 cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-PanopticSegmentation/panoptic_fpn_R_101_3x.yaml")
 predictor = DefaultPredictor(cfg)
-image_dir = '/home/chen/disk2/3DPW/imageFiles/outdoors_freestyle_00'
-output_dir = '/home/chen/disk2/3DPW/ground_mask/outdoors_freestyle_00'
+image_dir = '/home/chen/disk2/3DPW/imageFiles/courtyard_bodyScannerMotions_00'
+output_dir = '/home/chen/disk2/3DPW/ground_mask/courtyard_bodyScannerMotions_00'
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 import glob
@@ -34,7 +34,7 @@ for image_path in tqdm(image_paths):
     panoptic_seg, segments_info = predictor(im)["panoptic_seg"]
     segment_ids = []
     for s in segments_info:
-        if s['category_id'] == 44 or s['category_id'] == 47 or s['category_id'] == 51 or s['category_id'] == 13 or s['category_id'] == 52:
+        if s['category_id'] == 44 or s['category_id'] == 43:
             segment_ids.append(s['id'])
     for segment_id in segment_ids:
         groud_index = np.where(panoptic_seg.data.cpu().numpy() == segment_id)
@@ -53,5 +53,5 @@ for image_path in tqdm(image_paths):
 #     im_tmp = im.copy()
 #     index = np.where(panoptic_seg.data.cpu().numpy() == i)
 #     im_tmp[index] = 0
-#     cv2.imwrite(f'image_2_index_{i}.png', im_tmp)
+#     cv2.imwrite(f'image_3_index_{i}.png', im_tmp)
 

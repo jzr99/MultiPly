@@ -8,6 +8,7 @@
 20: river
 34: water
 37: tree
+43: floor
 44: pavement
 46: grass
 47: dirt

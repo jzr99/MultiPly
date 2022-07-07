@@ -130,7 +130,7 @@ def render_trimesh(mesh,R,T, mode='np'):
     
     return image
 
-def get_camera_parameters(pred_cam, bbox, cam_trans):
+def get_camera_parameters(pred_cam, bbox):
     FOCAL_LENGTH = 5000.
     CROP_SIZE = 224
 
@@ -158,6 +158,7 @@ def get_camera_parameters(pred_cam, bbox, cam_trans):
     return cam_intrinsics, cam_extrinsics
 
 overlay = False
+import joblib
 if __name__ == '__main__':
     device = torch.device("cuda:0")
     seq = 'Easy_on_me_720p_cut'
@@ -171,7 +172,7 @@ if __name__ == '__main__':
     img_dir = f'{DIR}/{seq}_frames'   
     file_dir = f'{DIR}'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))[:1]
-    file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))[:1]
+
     gender = 'm'
 
     if gender == 'f':
@@ -188,32 +189,20 @@ if __name__ == '__main__':
     # cam_intrinsics[0,0] = max(input_img.shape[:2])
     # cam_intrinsics[1,1] = max(input_img.shape[:2])
     # cam_intrinsics[0,2] = input_img.shape[1]/2
-    # cam_intrinsics[1,2] = input_img.shape[0]/2    
-
+    # cam_intrinsics[1,2] = input_img.shape[0]/2
+    
+    seq_file = joblib.load('/home/chen/disk2/Youtube_Videos/VIBE/Easy_on_me_720p_cut/vibe_output.pkl')[1]
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
-        seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
-        smpl_pose = seq_file['smpl_thetas'][0]
+        # seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
+        smpl_pose = seq_file['pose'][0]
         smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
-        smpl_shape = seq_file['smpl_betas'][0][:10]
-        cam = seq_file['cam'][0]
-        cam_trans = seq_file['cam_trans'][0]
-        pj2d_org = seq_file['pj2d_org'][0]
-        pj2d_max = pj2d_org.max(axis=0)
-        pj2d_min = pj2d_org.min(axis=0)
-        pj2d_diff = pj2d_max - pj2d_min
-        center_x, center_y = (pj2d_max[0] + pj2d_min[0])/2, (pj2d_max[1] + pj2d_min[1])/2
-        if pj2d_diff[0] >= pj2d_diff[1]:
-            bbox_size = pj2d_diff[0]
-        else:
-            bbox_size = pj2d_diff[1]
-        bbox = [center_x, center_y, bbox_size, bbox_size]
-        cam_intrinsics, cam_extrinsics = get_camera_parameters(cam, bbox, cam_trans)
-        # scale_mat = np.eye(4)
-        # cam_trans = seq_file['cam_trans']
-        # cam_extrinsics = np.eye(4)
-        # cam_extrinsics[:3,3] = cam_trans
-        # cam_extrinsics = cam_extrinsics @ scale_mat
+        smpl_shape = seq_file['betas'][0][:10]
+        cam = seq_file['pred_cam'][0]
+        
+        bbox = seq_file['bboxes'][0]
+        cam_intrinsics, cam_extrinsics = get_camera_parameters(cam, bbox)
+
         import ipdb
         ipdb.set_trace()
         renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)

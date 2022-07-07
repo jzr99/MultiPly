@@ -96,7 +96,7 @@ def broyden(g,
     gx = g(x, mask=ids_val)
     update = -J_inv.bmm(gx)
 
-    x_opt = x
+    x_opt = x.clone()
     gx_norm_opt = torch.linalg.norm(gx.squeeze(-1), dim=-1)
 
     delta_gx = torch.zeros_like(gx)

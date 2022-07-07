@@ -21,7 +21,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'outdoors_freestyle_00'
+seq = 'courtyard_bodyScannerMotions_00'
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
@@ -29,7 +29,7 @@ img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
 seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
 mask_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
 ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
-normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
+# normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
 # mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
 save_dir = f'/home/chen/RGB-PINA/data/{seq}'
 if not os.path.exists(os.path.join(save_dir, 'image')):
@@ -116,11 +116,11 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     output_pose.append(smpl_pose)
     output_P[f"cam_{idx}"] = P
 
-# np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
-# np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
-# np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
+np.save(os.path.join(save_dir, 'poses.npy'), np.array(output_pose))
+np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
+np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
 # np.save(os.path.join(save_dir, 'cameras.npy'), np.array(output_P))
-# np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
+np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
 
     # re-project to images to debug
 
