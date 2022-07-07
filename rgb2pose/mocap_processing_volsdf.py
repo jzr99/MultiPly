@@ -13,19 +13,21 @@ from pytorch3d.renderer.mesh import Textures
 from pytorch3d.renderer.blending import BlendParams
 import trimesh
 # from normal_renderer import Renderer
-
+seq = 'markus'
+target_cam_ids = [0, 1, 4, 5, 8, 9, 12, 16, 17, 20, 21, 24, 25, 28, 29, 32, 33, 36,
+                  37, 40, 41, 44, 45, 48, 49, 52, 53, 56, 57, 60, 61, 64, 65, 68, 69,
+                  72, 73, 76, 77, 80, 81, 84, 85, 88, 89, 92, 93]
 def real_mocap():
 
-    target_cam_ids = [4, 28, 52, 77]
-
-    smpl_file_paths = sorted(glob.glob(os.path.join('/home/chen/disk2/motion_capture/otmar_waving/smpl', '*.pkl')))
-    smpl_mesh_paths = sorted(glob.glob(os.path.join('/home/chen/disk2/motion_capture/otmar_waving/smpl', '*.ply')))
+    # target_cam_ids = [4, 28, 52, 77]
+    smpl_file_paths = sorted(glob.glob(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/smpl', '*.pkl')))
+    smpl_mesh_paths = sorted(glob.glob(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/smpl', '*.ply')))
     smpl_poses = []
     smpl_trans = []
     smpl_betas = []
     normalize_shift_list = []
 
-    cameras = dict(np.load(os.path.join('/home/chen/disk2/motion_capture/otmar_waving/cameras', 'rgb_cameras.npz'))) 
+    cameras = dict(np.load(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/cameras', 'rgb_cameras.npz'))) 
 
     for i, smpl_file_path in enumerate(smpl_file_paths):
 
@@ -57,7 +59,7 @@ def real_mocap():
     mean_shape = smpl_betas.mean(0)
 
     cam_dict = {}
-
+    count = 0
     for i in range(len(cameras['ids'])):
         cam_id = cameras['ids'][i]
         if cam_id in target_cam_ids:
@@ -67,23 +69,41 @@ def real_mocap():
 
             P = intrinsic @ extrinsic
             cam_dict['cam_%d' % cam_id] = P
+            count += 1
+    print(count)
+    np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/poses.npy', smpl_poses)
+    np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/normalize_trans.npy', smpl_trans)
+    np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/mean_shape.npy', mean_shape)
 
-    np.save('/home/chen/RGB-PINA/data/mocap_otmar_waiving/poses.npy', smpl_poses)
-    np.save('/home/chen/RGB-PINA/data/mocap_otmar_waiving/normalize_trans.npy', smpl_trans)
-    np.save('/home/chen/RGB-PINA/data/mocap_otmar_waiving/mean_shape.npy', mean_shape)
+    np.savez(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/cameras.npz', **cam_dict)
+    np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/normalize_shift.npy', normalize_shift)
+    np.savetxt(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/target_cam_ids.txt', target_cam_ids)
+    copy_image_and_mask = False
+    if copy_image_and_mask:
+        import shutil
+        folder_nums = os.listdir(f'/home/chen/disk2/motion_capture/{seq}/images_undistort')
+        for num in folder_nums:
+            num = int(num)
+            if num in target_cam_ids:
+                source_dir = f'/home/chen/disk2/motion_capture/{seq}/images_undistort/{num}'
+                target_dir = f'/home/chen/RGB-PINA/data/mocap_{seq}_full/image_cam{num:03d}'
 
-    np.savez('/home/chen/RGB-PINA/data/mocap_otmar_waiving/cameras.npz', **cam_dict)
-    np.save('/home/chen/RGB-PINA/data/mocap_otmar_waiving/normalize_shift.npy', normalize_shift)
+                shutil.copytree(source_dir, target_dir)
+
+                source_dir = f'/home/chen/disk2/motion_capture/{seq}/scan_mask_undistort/{num}'
+                target_dir = f'/home/chen/RGB-PINA/data/mocap_{seq}_full/mask_cam{num:03d}'
+
+                shutil.copytree(source_dir, target_dir)
 
 def real_mocap_normal():
     device = 'cuda:0'
     image_size=(1280, 940)
-    target_cam_ids = [4, 28, 52, 77]
+    # target_cam_ids = [4, 28, 52, 77]
 
-    scan_file_paths = sorted(glob.glob(os.path.join('/home/chen/disk2/motion_capture/otmar_waving/meshes_vis', '*.ply')))
-    camera_infos = dict(np.load(os.path.join('/home/chen/disk2/motion_capture/otmar_waving/cameras', 'rgb_cameras.npz'))) 
+    scan_file_paths = sorted(glob.glob(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/meshes_vis', '*.ply')))
+    camera_infos = dict(np.load(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/cameras', 'rgb_cameras.npz'))) 
     cameras = {}
-    normal_output_dir = '/home/chen/disk2/motion_capture/otmar_waving/scan_rendered_normal'
+    normal_output_dir = f'/home/chen/disk2/motion_capture/{seq}/scan_rendered_normal'
 
     for i in range(len(camera_infos['ids'])):
         cam_id = camera_infos["ids"][i]
@@ -145,62 +165,62 @@ def real_mocap_normal():
                          '{}.png'.format(scan_fn.zfill(6))), image_normal * 255)
 
 
-def rendered_mocap():
-    from smplx import SMPL
-    import json
-    smpl_faces = np.load('/home/chen/IPNet/faces.npy')
-    gender = 'male'
-    smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
-    target_cam_ids = [0, 2, 4, 7]
+# def rendered_mocap():
+#     from smplx import SMPL
+#     import json
+#     smpl_faces = np.load('/home/chen/IPNet/faces.npy')
+#     gender = 'male'
+#     smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
+#     target_cam_ids = [0, 2, 4, 7]
 
-    normalize_shift_list = []
-    image_dir = '/home/chen/disk2/motion_capture/Ernst/images/0'
-    image_0_paths = sorted(os.listdir(image_dir))
-    smpl_params = np.load('/home/chen/disk2/motion_capture/Ernst/smpl_params.npz')
-    smpl_poses = smpl_params['pose'][0]
-    smpl_trans = smpl_params['trans'][0]
-    smpl_betas = smpl_params['betas'][0]
-    mean_shape = smpl_betas.mean(0)
+#     normalize_shift_list = []
+#     image_dir = '/home/chen/disk2/motion_capture/Ernst/images/0'
+#     image_0_paths = sorted(os.listdir(image_dir))
+#     smpl_params = np.load('/home/chen/disk2/motion_capture/Ernst/smpl_params.npz')
+#     smpl_poses = smpl_params['pose'][0]
+#     smpl_trans = smpl_params['trans'][0]
+#     smpl_betas = smpl_params['betas'][0]
+#     mean_shape = smpl_betas.mean(0)
 
-    for i in range(smpl_poses.shape[0]):
-        frame = int(image_0_paths[i].split('.')[0])
-        smpl_output = smpl_model(betas = torch.tensor(mean_shape)[None].float(),
-                                 body_pose = torch.tensor(smpl_poses[i][3:])[None].float(),
-                                 global_orient = torch.tensor(smpl_poses[i][:3])[None].float(),
-                                 transl = torch.tensor(smpl_trans[i])[None].float())    
+#     for i in range(smpl_poses.shape[0]):
+#         frame = int(image_0_paths[i].split('.')[0])
+#         smpl_output = smpl_model(betas = torch.tensor(mean_shape)[None].float(),
+#                                  body_pose = torch.tensor(smpl_poses[i][3:])[None].float(),
+#                                  global_orient = torch.tensor(smpl_poses[i][:3])[None].float(),
+#                                  transl = torch.tensor(smpl_trans[i])[None].float())    
         
-        smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
-        smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_faces, process=False)
-        _ = smpl_mesh.export('/home/chen/disk2/motion_capture/Ernst/smpl/mesh-f%05d_smpl.obj' % frame)
-        v_max = smpl_verts.max(axis=0)
-        v_min = smpl_verts.min(axis=0)
+#         smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
+#         smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_faces, process=False)
+#         _ = smpl_mesh.export('/home/chen/disk2/motion_capture/Ernst/smpl/mesh-f%05d_smpl.obj' % frame)
+#         v_max = smpl_verts.max(axis=0)
+#         v_min = smpl_verts.min(axis=0)
 
-        tmp_normalize_shift = -(v_max + v_min) / 2.
+#         tmp_normalize_shift = -(v_max + v_min) / 2.
 
-        normalize_shift_list.append(tmp_normalize_shift)
+#         normalize_shift_list.append(tmp_normalize_shift)
     
-    normalize_shift_array = np.array(normalize_shift_list)
+#     normalize_shift_array = np.array(normalize_shift_list)
 
-    normalize_shift = normalize_shift_array.mean(0)
+#     normalize_shift = normalize_shift_array.mean(0)
 
-    smpl_trans += normalize_shift
+#     smpl_trans += normalize_shift
 
-    cameras = json.load(open('/home/chen/disk2/motion_capture/Ernst/calibration.json', 'r'))
+#     cameras = json.load(open('/home/chen/disk2/motion_capture/Ernst/calibration.json', 'r'))
 
-    cam_dict = {}
-    for idx, cam_id in enumerate(target_cam_ids):
+#     cam_dict = {}
+#     for idx, cam_id in enumerate(target_cam_ids):
 
-        cam = cameras['%d' % cam_id]
-        intrinsic = np.array(cam['K'])
-        extrinsic = np.array(cam['RT'])
-        extrinsic[:3, -1] = extrinsic[:3, -1] - (extrinsic[:3, :3] @ normalize_shift)
-        P = intrinsic @ extrinsic
-        cam_dict['cam_%d' % idx] = P
-    np.save('/home/chen/RGB-PINA/data/mocap_ernst/poses.npy', smpl_poses)
-    np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_trans.npy', smpl_trans)
-    np.save('/home/chen/RGB-PINA/data/mocap_ernst/mean_shape.npy', mean_shape)
+#         cam = cameras['%d' % cam_id]
+#         intrinsic = np.array(cam['K'])
+#         extrinsic = np.array(cam['RT'])
+#         extrinsic[:3, -1] = extrinsic[:3, -1] - (extrinsic[:3, :3] @ normalize_shift)
+#         P = intrinsic @ extrinsic
+#         cam_dict['cam_%d' % idx] = P
+#     np.save('/home/chen/RGB-PINA/data/mocap_ernst/poses.npy', smpl_poses)
+#     np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_trans.npy', smpl_trans)
+#     np.save('/home/chen/RGB-PINA/data/mocap_ernst/mean_shape.npy', mean_shape)
 
-    np.savez('/home/chen/RGB-PINA/data/mocap_ernst/cameras.npz', **cam_dict)
-    np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_shift.npy', normalize_shift)
+#     np.savez('/home/chen/RGB-PINA/data/mocap_ernst/cameras.npz', **cam_dict)
+#     np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_shift.npy', normalize_shift)
 if __name__ == '__main__':
-    real_mocap_normal()
+    real_mocap()

@@ -46,6 +46,11 @@ def uniform_sampling_continuous(data, img_size, num_sample):
         output[key] = new_val
     return output
 
+def get_index_outside_of_bbox(samples_uniform, bbox_min, bbox_max):
+    samples_uniform_row = samples_uniform[:, 0]
+    samples_uniform_col = samples_uniform[:, 1]
+    index_outside = np.where((samples_uniform_row < bbox_min[0]) | (samples_uniform_row > bbox_max[0]) | (samples_uniform_col < bbox_min[1]) | (samples_uniform_col > bbox_max[1]))[0]
+    return index_outside
 
 def weighted_sampling(data, img_size, num_sample):
     # calculate bounding box
@@ -62,6 +67,9 @@ def weighted_sampling(data, img_size, num_sample):
     samples_uniform = np.random.rand(num_sample_uniform, 2)
     samples_uniform *= (img_size[0] - 1, img_size[1] - 1)
 
+    # get indices for uniform samples outside of bbox
+    index_outside = get_index_outside_of_bbox(samples_uniform, bbox_min, bbox_max) + num_sample_bbox
+
     indices = np.concatenate([samples_bbox, samples_uniform], axis=0)
     output = {}
     for key, val in data.items():
@@ -74,7 +82,20 @@ def weighted_sampling(data, img_size, num_sample):
             new_val = bilinear_interpolation(indices[:, 0], indices[:, 1], val)
         new_val = new_val.reshape(-1, *val.shape[2:])
         output[key] = new_val
-    return output
+    
+    # debug
+    # img = data['rgb'][:,:,[2,1,0]].copy() * 255.
+    # for j in range(0, num_sample):    
+    #     pix = output['uv'].astype(np.int32)[j]
+    #     if j in index_outside:
+    #         output_img = cv2.circle(img, tuple(pix.astype(np.int32)), 3, (0,255,255), -1)
+    #     else:
+    #         output_img = cv2.circle(img, tuple(pix.astype(np.int32)), 3, (0,0,255), -1)
+    #     cv2.imwrite('/home/chen/Desktop/sampling_debug.png', output_img)
+    # import ipdb
+    # ipdb.set_trace()
+
+    return output, index_outside
 
 class MoCapDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
@@ -84,7 +105,7 @@ class MoCapDataset(torch.utils.data.Dataset):
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
         target_cam_ids = np.loadtxt(os.path.join(root, "target_cam_ids.txt"))
         self.num_cam = len(camera_dict) // 2
-        self.num_frames = 15
+        self.num_frames = 1
         self.start_frame = 20
         # import pdb
         # pdb.set_trace()
@@ -126,31 +147,31 @@ class MoCapDataset(torch.utils.data.Dataset):
                 self.object_masks.append(mask)
         
             # normals
-            normal_dir = os.path.join(root, f"normal_cam{int(target_cam_ids[cam]):03d}")
-            normal_paths = sorted(glob.glob(f"{normal_dir}/*"))[self.start_frame:self.start_frame+self.num_frames]
+            # normal_dir = os.path.join(root, f"normal_cam{int(target_cam_ids[cam]):03d}")
+            # normal_paths = sorted(glob.glob(f"{normal_dir}/*"))[self.start_frame:self.start_frame+self.num_frames]
 
-            for i, normal_path in enumerate(normal_paths):
-                normal = cv2.imread(normal_path)
-                assert normal.shape[:2] == self.img_sizes[
-                    i], "Normal image imcompatible with RGB"
-                normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
-                self.normals.append(normal)
+            # for i, normal_path in enumerate(normal_paths):
+            #     normal = cv2.imread(normal_path)
+            #     assert normal.shape[:2] == self.img_sizes[
+            #         i], "Normal image imcompatible with RGB"
+            #     normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
+            #     self.normals.append(normal)
             
             # bg_images
-            bg_img_dir = os.path.join(root, f"bg_image_cam{int(target_cam_ids[cam]):03d}")
-            bg_img_paths = sorted(glob.glob(f"{bg_img_dir}/*"))[self.start_frame:self.start_frame+self.num_frames]
+            # bg_img_dir = os.path.join(root, f"bg_image_cam{int(target_cam_ids[cam]):03d}")
+            # bg_img_paths = sorted(glob.glob(f"{bg_img_dir}/*"))[self.start_frame:self.start_frame+self.num_frames]
 
-            for i, bg_img_path in enumerate(bg_img_paths):
-                bg_img = cv2.imread(bg_img_path)
-                assert bg_img.shape[:2] == self.img_sizes[
-                    i], "Background image imcompatible with RGB"
+            # for i, bg_img_path in enumerate(bg_img_paths):
+            #     bg_img = cv2.imread(bg_img_path)
+            #     assert bg_img.shape[:2] == self.img_sizes[
+            #         i], "Background image imcompatible with RGB"
                 
-                # preprocess: BGR -> RGB -> Normalize
-                if normalize_rgb:
-                    bg_img = ((bg_img[:, :, ::-1] / 255) - 0.5) * 2
-                else:
-                    bg_img = bg_img[:, :, ::-1] / 255
-                self.bg_images.append(bg_img)
+            #     # preprocess: BGR -> RGB -> Normalize
+            #     if normalize_rgb:
+            #         bg_img = ((bg_img[:, :, ::-1] / 255) - 0.5) * 2
+            #     else:
+            #         bg_img = bg_img[:, :, ::-1] / 255
+            #     self.bg_images.append(bg_img)
         # SMPL
         # smpl_dir = os.path.join(root, "smpl")
         # smpl_paths = sorted(glob.glob(f"{smpl_dir}/*"))
@@ -211,8 +232,8 @@ class MoCapDataset(torch.utils.data.Dataset):
                 "rgb": self.images[idx],
                 "uv": uv,
                 "object_mask": self.object_masks[idx],
-                "normal": self.normals[idx],
-                "bg_image": self.bg_images[idx],
+                # "normal": self.normals[idx],
+                # "bg_image": self.bg_images[idx],
             }
             if self.sampling_strategy == "uniform":
                 samples = uniform_sampling(data, img_size, self.num_sample)
@@ -220,17 +241,18 @@ class MoCapDataset(torch.utils.data.Dataset):
                 samples = uniform_sampling_continuous(data, img_size,
                                                       self.num_sample)
             elif self.sampling_strategy == "weighted":
-                samples = weighted_sampling(data, img_size, self.num_sample)
+                samples, index_outside = weighted_sampling(data, img_size, self.num_sample)
             inputs = {
                 "object_mask": samples["object_mask"].astype(bool),
-                "normal": samples["normal"].astype(np.float32),
+                # "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
-                'bg_image': samples["bg_image"].astype(np.float32),
+                # 'bg_image': samples["bg_image"].astype(np.float32),
                 # "P": self.P[idx//self.num_frames],
                 # "C": self.C[idx//self.num_frames],
                 "intrinsics": self.intrinsics_all[idx//self.num_frames],
                 "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params,
+                'index_outside': index_outside,
                 'idx': idx
             }
             images = {"rgb": samples["rgb"].astype(np.float32)}
@@ -239,16 +261,17 @@ class MoCapDataset(torch.utils.data.Dataset):
             inputs = {
                 "object_mask": self.object_masks[idx].reshape(-1).astype(bool),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                "bg_image": self.bg_images[idx].reshape(-1, 3).astype(np.float32),
+                # "bg_image": self.bg_images[idx].reshape(-1, 3).astype(np.float32),
                 # "P": self.P[idx//self.num_frames],
                 # "C": self.C[idx//self.num_frames],
                 "intrinsics": self.intrinsics_all[idx//self.num_frames],
                 "pose": self.pose_all[idx//self.num_frames],
-                "smpl_params": smpl_params
+                "smpl_params": smpl_params,
+                'idx': idx
             }
             images = {
                 "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),
-                "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
+                # "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
                 "img_size": self.img_sizes[idx]
             }
             return inputs, images
@@ -273,16 +296,17 @@ class MoCapValDataset(torch.utils.data.Dataset):
         inputs = {
             "object_mask": inputs["object_mask"],
             "uv": inputs["uv"],
-            "bg_image": inputs["bg_image"],
+            # "bg_image": inputs["bg_image"],
             # "P": inputs["P"],
             # "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
-            "smpl_params": inputs["smpl_params"]
+            "smpl_params": inputs["smpl_params"],
+            'idx': inputs['idx']
         }
         images = {
             "rgb": images["rgb"],
-            "normal": images["normal"],
+            # "normal": images["normal"],
             "img_size": images["img_size"],
             'pixel_per_batch': self.pixel_per_batch,
             'total_pixels': self.total_pixels
@@ -307,16 +331,17 @@ class MoCapTestDataset(torch.utils.data.Dataset):
         inputs = {
             "object_mask": inputs["object_mask"],
             "uv": inputs["uv"],
-            "bg_image": inputs["bg_image"],
+            # "bg_image": inputs["bg_image"],
             # "P": inputs["P"],
             # "C": inputs["C"],
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
-            "smpl_params": inputs["smpl_params"]
+            "smpl_params": inputs["smpl_params"],
+            'idx': inputs['idx']
         }
         images = {
             "rgb": images["rgb"],
-            "normal": images["normal"],
+            # "normal": images["normal"],
             "img_size": images["img_size"]
         }
         return inputs, images, self.pixel_per_batch, self.total_pixels, idx

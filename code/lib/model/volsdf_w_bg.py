@@ -369,7 +369,7 @@ class VolSDFNetworkBG(nn.Module):
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
                 normal_weight = torch.clamp(normal_weight, 0., 1.)
-            index_ground = torch.nonzero(input['ground_mask'][0])
+            index_ground = None # torch.nonzero(input['ground_mask'][0])
             output = {
                 'points': points,
                 'rgb_values': rgb_values,

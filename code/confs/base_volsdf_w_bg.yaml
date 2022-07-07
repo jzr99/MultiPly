@@ -4,7 +4,7 @@ hydra:
 
 defaults:
   - model: volsdf_bg
-  - dataset: threedpw
+  - dataset: mocap
   - _self_
 
 seed: 42
