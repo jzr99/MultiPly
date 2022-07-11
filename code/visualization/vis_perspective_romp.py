@@ -157,6 +157,22 @@ def get_camera_parameters(pred_cam, bbox, cam_trans):
 
     return cam_intrinsics, cam_extrinsics
 
+def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np.array([512.,512.]), proj_mat=None, cam_dist=None):
+    if proj_mat is None:
+        camK = np.eye(3)
+        camK[0,0], camK[1,1] = focal_length, focal_length
+        camK[:2,2] = img_size//2
+    else:
+        camK = proj_mat
+    ret, rvec, tvec,inliers = cv2.solvePnPRansac(joints_3d, joints_2d, camK, cam_dist,\
+                              flags=cv2.SOLVEPNP_EPNP,reprojectionError=20,iterationsCount=100)
+
+    if inliers is None:
+        return INVALID_TRANS
+    else:
+        tra_pred = tvec[:,0]            
+        return tra_pred
+
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
@@ -170,8 +186,8 @@ if __name__ == '__main__':
         os.makedirs(output_dir)
     img_dir = f'{DIR}/{seq}_frames'   
     file_dir = f'{DIR}'
-    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))[:1]
-    file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))[:1]
+    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
     gender = 'm'
 
     if gender == 'f':
@@ -184,11 +200,14 @@ if __name__ == '__main__':
     smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
     
     input_img = cv2.imread(img_paths[0])
-    cam_intrinsics = np.eye(3)
+    # cam_intrinsics = np.eye(3)
     # cam_intrinsics[0,0] = max(input_img.shape[:2])
     # cam_intrinsics[1,1] = max(input_img.shape[:2])
     # cam_intrinsics[0,2] = input_img.shape[1]/2
     # cam_intrinsics[1,2] = input_img.shape[0]/2    
+    focal_length = 1280 # 995.55555556
+    cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length,360.],[0.,0.,1.]])
+    renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
@@ -197,37 +216,32 @@ if __name__ == '__main__':
         smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
         smpl_shape = seq_file['smpl_betas'][0][:10]
         cam = seq_file['cam'][0]
-        cam_trans = seq_file['cam_trans'][0]
+        smpl_verts = seq_file['verts'][0]
+        # cam_trans = seq_file['cam_trans'][0]
         pj2d_org = seq_file['pj2d_org'][0]
-        pj2d_max = pj2d_org.max(axis=0)
-        pj2d_min = pj2d_org.min(axis=0)
-        pj2d_diff = pj2d_max - pj2d_min
-        center_x, center_y = (pj2d_max[0] + pj2d_min[0])/2, (pj2d_max[1] + pj2d_min[1])/2
-        if pj2d_diff[0] >= pj2d_diff[1]:
-            bbox_size = pj2d_diff[0]
-        else:
-            bbox_size = pj2d_diff[1]
-        bbox = [center_x, center_y, bbox_size, bbox_size]
-        cam_intrinsics, cam_extrinsics = get_camera_parameters(cam, bbox, cam_trans)
-        # scale_mat = np.eye(4)
-        # cam_trans = seq_file['cam_trans']
-        # cam_extrinsics = np.eye(4)
-        # cam_extrinsics[:3,3] = cam_trans
-        # cam_extrinsics = cam_extrinsics @ scale_mat
-        import ipdb
-        ipdb.set_trace()
-        renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
+        joints3d = seq_file['joints'][0]
+        tra_pred = estimate_translation_cv2(joints3d, pj2d_org, proj_mat=cam_intrinsics)
+
+        cam_extrinsics = np.eye(4)
+        cam_extrinsics[:3, 3] = tra_pred # cam_trans
+
+        v_max = smpl_verts.max(axis=0)
+        v_min = smpl_verts.min(axis=0)
+        normalize_shift = -(v_max + v_min) / 2.
+        smpl_verts += normalize_shift
+        cam_extrinsics[:3, 3] = cam_extrinsics[:3, 3] - (cam_extrinsics[:3, :3] @ normalize_shift)
+        P = cam_intrinsics @ cam_extrinsics[:3, :]
+        
 
         R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
         T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
-        smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),
-                                 body_pose=torch.tensor(smpl_pose[3:])[None].float(),
-                                 global_orient=torch.tensor(smpl_pose[:3])[None].float(),
-                                 transl=torch.tensor(smpl_trans)[None].float())
-        smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
-        smpl_verts = seq_file['verts'][0]
-        # verts = torch.tensor(smpl_verts).cuda().float()[None]
-        # faces = torch.tensor(smpl_model.faces).cuda()[None]
+        # smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),
+        #                          body_pose=torch.tensor(smpl_pose[3:])[None].float(),
+        #                          global_orient=torch.tensor(smpl_pose[:3])[None].float(),
+        #                          transl=torch.tensor(smpl_trans)[None].float())
+        # smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
+        
+
         smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False)
         rendered_image = render_trimesh(smpl_mesh, R, T, 'n')
         if input_img.shape[0] < input_img.shape[1]:
@@ -242,7 +256,8 @@ if __name__ == '__main__':
             output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-
-            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
+            output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
+            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
+            # cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
         # import ipdb
         # ipdb.set_trace()

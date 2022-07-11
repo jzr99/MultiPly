@@ -102,8 +102,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
-        self.start_frame = 11 # 11 # 94
-        self.end_frame = 231 # 231 # 204
+        self.start_frame = 0 # 11 # 94
+        self.end_frame = 100 # 231 # 204
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []

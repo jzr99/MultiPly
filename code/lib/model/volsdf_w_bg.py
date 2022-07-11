@@ -24,6 +24,7 @@ from torch.autograd import grad
 import pytorch_lightning as pl
 import hydra
 # import open3d as o3d
+import json
 import pytorch3d
 import kaolin
 from kaolin.ops.mesh import index_vertices_by_faces
@@ -51,7 +52,7 @@ class VolSDFNetworkBG(nn.Module):
             self.deformer = SMPLDeformer(betas=betas) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'male'
+        gender = 'female'
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -73,6 +74,15 @@ class VolSDFNetworkBG(nn.Module):
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
+        smpl_seg = json.load(open(hydra.utils.to_absolute_path('../misc/smpl_vert_segmentation.json'), 'rb'))
+        foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
+        self.foot_vert_ids = []
+        for foot_part_label in foot_part_labels:
+            self.foot_vert_ids += smpl_seg[foot_part_label]
+
+        self.smpl_v_cano = self.smpl_server.verts_c
+        self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
+        self.smpl_face_vertices = index_vertices_by_faces(self.smpl_v_cano, self.smpl_f_cano)
     def extract_normal(self, x_c, cond, tfs):
         
         x_c = x_c.unsqueeze(0)
@@ -139,16 +149,19 @@ class VolSDFNetworkBG(nn.Module):
         return index_off_surface
     
     def check_off_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
-        smpl_v_cano = self.smpl_server.verts_c
-        smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
-        face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
-        distance, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_cano.unsqueeze(0).contiguous(), face_vertices)
+        # smpl_v_cano = self.smpl_server.verts_c
+        # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
+        # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
+        distance, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_cano.unsqueeze(0).contiguous(), self.smpl_face_vertices)
 
         distance = torch.sqrt(distance) # kaolin outputs squared distance
+        sign = kaolin.ops.mesh.check_sign(self.smpl_v_cano, self.smpl_f_cano, x_cano.unsqueeze(0)).float()
+        sign = 1 - 2 * sign
+        signed_distance = sign * distance
         batch_size = x_cano.shape[0] // N_samples
-        distance = distance.reshape(batch_size, N_samples, 1)
+        signed_distance = signed_distance.reshape(batch_size, N_samples, 1)
 
-        minimum = torch.min(distance, 1)[0]
+        minimum = torch.min(signed_distance, 1)[0]
         index_off_surface = (minimum > threshold).squeeze(1)
 
         return index_off_surface
@@ -274,6 +287,18 @@ class VolSDFNetworkBG(nn.Module):
             grad_theta = gradient(sample, local_pred)
 
             differentiable_points = canonical_points 
+            # regularization near feet
+            # smpl_foot_verts_c = smpl_verts_c[:, self.foot_vert_ids, :]
+            # foot_sample_indices = torch.randperm(smpl_foot_verts_c.shape[1])[:num_pixels].cuda()
+            # foot_sample_verts_c = torch.index_select(smpl_foot_verts_c, 1, foot_sample_indices)
+            # foot_sample = self.sampler.get_points(foot_sample_verts_c, local_sigma=0.05, global_ratio=0.)
+            # foot_sample.requires_grad_()
+            # foot_sample_sdf_pd = self.implicit_network(foot_sample, cond)[..., 0:1]
+            # foot_sample_df_gt, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(foot_sample.contiguous(), self.smpl_face_vertices)
+            # foot_sample_df_gt = torch.sqrt(foot_sample_df_gt) # kaolin outputs squared distance
+            # foot_sample_sign_gt = kaolin.ops.mesh.check_sign(self.smpl_v_cano, self.smpl_f_cano, foot_sample).float()
+            # foot_sample_sign_gt = 1 - 2 * foot_sample_sign_gt
+            # foot_sample_sdf_gt = foot_sample_sign_gt * foot_sample_df_gt
 
             # pts_c_sdf, sdf_gt = self.sampler_bone.get_points(self.smpl_server.joints_c.expand(1, -1, -1))
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
@@ -385,8 +410,11 @@ class VolSDFNetworkBG(nn.Module):
                 'object_mask': object_mask,
                 "w_pd": w_pd,
                 "w_gt": w_gt,
+                # 'foot_sample_sdf_pd': foot_sample_sdf_pd,
+                # 'foot_sample_sdf_gt': foot_sample_sdf_gt,
                 'grad_theta': grad_theta,
-                'use_smpl_deformer': self.use_smpl_deformer
+                'use_smpl_deformer': self.use_smpl_deformer,
+                'epoch': input['current_epoch'],
             }
         else:
             fg_output_rgb = fg_rgb_values + bg_transmittance.unsqueeze(-1) * torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
@@ -582,7 +610,7 @@ class VolSDF(pl.LightningModule):
         inputs["smpl_pose"] = self.smpl_pose
         inputs["smpl_shape"] = self.smpl_shape
         inputs["smpl_trans"] = self.smpl_trans
-
+        inputs['current_epoch'] = self.current_epoch
         model_outputs = self.model(inputs)
         # if model_outputs is None:
         #     for optimizer in self._optimizers:

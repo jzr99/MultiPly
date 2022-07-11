@@ -105,8 +105,8 @@ class MoCapDataset(torch.utils.data.Dataset):
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
         target_cam_ids = np.loadtxt(os.path.join(root, "target_cam_ids.txt"))
         self.num_cam = len(camera_dict) // 2
-        self.num_frames = 1
-        self.start_frame = 20
+        self.num_frames = 2
+        self.start_frame = 0
         # import pdb
         # pdb.set_trace()
         self.images, self.img_sizes = [], []
@@ -253,7 +253,7 @@ class MoCapDataset(torch.utils.data.Dataset):
                 "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params,
                 'index_outside': index_outside,
-                'idx': idx
+                'idx': idx%self.num_frames
             }
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
@@ -267,7 +267,7 @@ class MoCapDataset(torch.utils.data.Dataset):
                 "intrinsics": self.intrinsics_all[idx//self.num_frames],
                 "pose": self.pose_all[idx//self.num_frames],
                 "smpl_params": smpl_params,
-                'idx': idx
+                'idx': idx%self.num_frames
             }
             images = {
                 "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),

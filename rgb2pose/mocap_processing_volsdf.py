@@ -26,7 +26,7 @@ def real_mocap():
     smpl_trans = []
     smpl_betas = []
     normalize_shift_list = []
-
+    target_cam_ids_end = []
     cameras = dict(np.load(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/cameras', 'rgb_cameras.npz'))) 
 
     for i, smpl_file_path in enumerate(smpl_file_paths):
@@ -66,9 +66,23 @@ def real_mocap():
             intrinsic = cameras['intrinsics'][i]
             extrinsic = cameras['extrinsics'][i]
             extrinsic[:3, -1] = extrinsic[:3, -1] - (extrinsic[:3, :3] @ normalize_shift)
-
+            import ipdb
+            ipdb.set_trace()
             P = intrinsic @ extrinsic
+            """
+            # img = cv2.imread(f'/home/chen/disk2/motion_capture/markus/images_undistort/{cam_id}/000125.jpg')
+            # for j in range(0, smpl_verts.shape[0]):
+            #     padded_v = np.pad(smpl_verts[j] + normalize_shift, (0,1), 'constant', constant_values=(0,1))
+            #     temp = P @ padded_v.T # np.load('/home/chen/snarf_idr_cg_1/data/buff_new/cameras.npz')['cam_0'] @ padded_v.T
+            #     pix = (temp/temp[2])[:2]
+                
+            #     output_img = cv2.circle(img, tuple(pix.astype(np.int32)), 3, (0,255,255), -1)
+            # cv2.imwrite('/home/chen/Desktop/test_projcam_3dpw_norm_new.png', output_img)
+            # import ipdb
+            # ipdb.set_trace()
+            """
             cam_dict['cam_%d' % cam_id] = P
+            target_cam_ids_end += [cam_id]
             count += 1
     print(count)
     np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/poses.npy', smpl_poses)
@@ -77,7 +91,7 @@ def real_mocap():
 
     np.savez(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/cameras.npz', **cam_dict)
     np.save(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/normalize_shift.npy', normalize_shift)
-    np.savetxt(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/target_cam_ids.txt', target_cam_ids)
+    np.savetxt(f'/home/chen/RGB-PINA/data/mocap_{seq}_full/target_cam_ids.txt', target_cam_ids_end)
     copy_image_and_mask = False
     if copy_image_and_mask:
         import shutil
@@ -222,5 +236,20 @@ def real_mocap_normal():
 
 #     np.savez('/home/chen/RGB-PINA/data/mocap_ernst/cameras.npz', **cam_dict)
 #     np.save('/home/chen/RGB-PINA/data/mocap_ernst/normalize_shift.npy', normalize_shift)
+
+def cam_debug():
+    # re-project to images to debug
+    smpl_mesh_paths = sorted(glob.glob(os.path.join(f'/home/chen/disk2/motion_capture/{seq}/smpl', '*.ply')))
+
+    # _ = trimesh.Trimesh(smpl_verts).export('/home/chen/Desktop/threedpw.ply')
+
+    for j in range(0, smpl_verts.shape[0]):
+        padded_v = np.pad(smpl_verts[j], (0,1), 'constant', constant_values=(0,1))
+        temp = P @ padded_v.T # np.load('/home/chen/snarf_idr_cg_1/data/buff_new/cameras.npz')['cam_0'] @ padded_v.T
+        pix = (temp/temp[2])[:2]
+        output_img = cv2.circle(img, tuple(pix.astype(np.int32)), 3, (0,255,255), -1)
+    ipdb.set_trace()
+    cv2.imwrite('/home/chen/Desktop/test_projcam_3dpw_norm_new.png', output_img)
+
 if __name__ == '__main__':
     real_mocap()

@@ -100,7 +100,8 @@ class VolSDFLoss(nn.Module):
         self.normal_weight = opt.normal_weight
         self.density_reg_weight = 5e-3
         self.bg_shadow_weight = 5e-2
-        self.off_surface_weight = 1e-3
+        self.off_surface_weight = 3e-3
+        self.foot_reg_weight = 1e-3
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
     
@@ -124,13 +125,16 @@ class VolSDFLoss(nn.Module):
     def get_bone_loss(self, w_pd, w_gt):
         bone_loss = self.l2_loss(w_pd, w_gt)
         return bone_loss
-    
+    def get_foot_reg_loss(self, foot_sample_sdf_pd, foot_sample_sdf_gt):
+        foot_reg_loss = self.l2_loss(foot_sample_sdf_pd, foot_sample_sdf_gt)
+        return foot_reg_loss
+
     def get_density_reg_loss(self, acc_map, index_outside, index_ground):
         zero_density_loss = self.l1_loss(acc_map, torch.zeros_like(acc_map)) 
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside[0]], torch.zeros_like(acc_map[index_outside[0]]))
         # ground_density_loss = self.l1_loss(acc_map[index_ground[:, 0]], torch.zeros_like(acc_map[index_ground[:, 0]]))
         binary_loss = -1 * (acc_map * (acc_map + 1e-6).log() + (1-acc_map) * (1 - acc_map + 1e-6).log()).mean() 
-        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 1 * binary_loss # + 0.1 * ground_density_loss
+        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * binary_loss # + 0.1 * ground_density_loss
         return density_reg_loss
 
     def get_off_surface_loss(self, acc_map, index_off_surface):
@@ -150,8 +154,9 @@ class VolSDFLoss(nn.Module):
         density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'], model_outputs['index_ground'])
         # bg_shadow_loss = self.get_bg_shadow_loss(model_outputs['bg_rgb_values'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
+        # foot_reg_loss = self.get_foot_reg_loss(model_outputs['foot_sample_sdf_pd'], model_outputs['foot_sample_sdf_gt'])
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * off_surface_loss # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + model_outputs['epoch'] ** 1.5 / 40) * off_surface_loss # + self.foot_reg_weight * foot_reg_loss #  # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
@@ -160,6 +165,7 @@ class VolSDFLoss(nn.Module):
                 # 'bg_shadow_loss': bg_shadow_loss,
                 # 'normal_loss': normal_loss,
                 'off_surface_loss': off_surface_loss,
+                # 'foot_reg_loss': foot_reg_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
