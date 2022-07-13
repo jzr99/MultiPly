@@ -152,7 +152,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             
             # preprocess: BGR -> Gray -> Mask -> Tensor
             ground_mask = cv2.cvtColor(ground_mask, cv2.COLOR_BGR2GRAY) > 0
-            self.ground_masks.append(1 - ground_mask)
+            self.ground_masks.append(ground_mask)
         # normals
         # normal_dir = os.path.join(root, "normal")
         # normal_paths = sorted(glob.glob(f"{normal_dir}/*"))
