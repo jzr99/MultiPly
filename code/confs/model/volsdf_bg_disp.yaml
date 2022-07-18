@@ -10,7 +10,7 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 619 # 110
+num_training_frames: 100 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -20,6 +20,18 @@ implicit_network:
     geometric_init: True
     bias: 0.6
     skip_in: [4]
+    weight_norm: True
+    multires: 6
+    cond: 'smpl'
+    scene_bounding_sphere: 3.0 # 3.0
+disp_network:
+    feature_vector_size: 0
+    d_in: 3
+    d_out: 3
+    dims: [ 256, 256, 256, 256]
+    geometric_init: False
+    bias: 0.6
+    skip_in: [2]
     weight_norm: True
     multires: 6
     cond: 'smpl'

@@ -36,6 +36,9 @@ class VolSDFNetworkBG(nn.Module):
         self.implicit_network = ImplicitNet(opt.implicit_network)
         self.rendering_network = RenderingNet(opt.rendering_network)
 
+        # Displacement network
+        self.disp_network = ImplicitNet(opt.disp_network)
+
         # Background object's networks
         self.bg_implicit_network = ImplicitNet(opt.bg_implicit_network)
         self.bg_rendering_network = RenderingNet(opt.bg_rendering_network)
@@ -52,7 +55,7 @@ class VolSDFNetworkBG(nn.Module):
             self.deformer = SMPLDeformer(betas=betas) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'male'
+        gender = 'female'
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -123,6 +126,8 @@ class VolSDFNetworkBG(nn.Module):
     def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts):
         if hasattr(self, "deformer"):
             x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            disp_c = self.disp_network(x_c, cond)[0]
+            x_c = x_c + disp_c
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
@@ -132,7 +137,7 @@ class VolSDFNetworkBG(nn.Module):
                     sdf = torch.minimum(sdf, sphere_sdf)
             feature = output[:, 1:]
 
-        return sdf, x_c, feature
+        return sdf, x_c, feature, disp_c
     
     def check_off_suface_points(self, x, smpl_verts, N_samples, threshold = 0.03):
         distance_batch, _, _ = pytorch3d.ops.knn_points(x[None], smpl_verts, K=1)
@@ -234,9 +239,9 @@ class VolSDFNetworkBG(nn.Module):
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
-            sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            sdf_output, canonical_points, feature_vectors, disp_c = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
+            # index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -402,7 +407,7 @@ class VolSDFNetworkBG(nn.Module):
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
                 "index_ground": index_ground,
-                'index_off_surface': index_off_surface,
+                # 'index_off_surface': index_off_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
@@ -414,6 +419,7 @@ class VolSDFNetworkBG(nn.Module):
                 # 'foot_sample_sdf_gt': foot_sample_sdf_gt,
                 'grad_theta': grad_theta,
                 'use_smpl_deformer': self.use_smpl_deformer,
+                'disp_c': disp_c,
                 'epoch': input['current_epoch'],
             }
         else:
