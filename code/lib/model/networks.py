@@ -202,7 +202,10 @@ class RenderingNet(nn.Module):
         
     def forward(self, points, normals, view_dirs, body_pose, feature_vectors, surface_body_parsing, frame_latent_code=None):
         if self.embedview_fn is not None:
-            view_dirs = self.embedview_fn(view_dirs)
+            if self.mode == 'nerf_frame_encoding':
+                view_dirs = self.embedview_fn(view_dirs)
+            elif self.mode == 'pose_no_view':
+                normals = self.embedview_fn(normals)
         # if self.embedpos_fn is not None:
         #     points = self.embedpos_fn(points)
 
