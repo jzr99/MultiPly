@@ -176,17 +176,17 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Easy_on_me_720p_cut'
-    DIR = '/home/chen/disk2/Youtube_Videos/ROMP'
+    seq = 'Invisible'
+    DIR = '/home/chen/disk2/Youtube_Videos'
     if overlay:
         output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
     else:
-        output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
+        output_dir = f'{DIR}/{seq}/init_mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    img_dir = f'{DIR}/{seq}_frames'   
-    file_dir = f'{DIR}'
-    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    img_dir = f'{DIR}/{seq}/frames'   
+    file_dir = f'{DIR}/{seq}/ROMP'
+    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
     gender = 'm'
 
@@ -205,8 +205,8 @@ if __name__ == '__main__':
     # cam_intrinsics[1,1] = max(input_img.shape[:2])
     # cam_intrinsics[0,2] = input_img.shape[1]/2
     # cam_intrinsics[1,2] = input_img.shape[0]/2    
-    focal_length = 1280 # 995.55555556
-    cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length,360.],[0.,0.,1.]])
+    focal_length = 1920 # 1280 # 995.55555556
+    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):
@@ -225,12 +225,8 @@ if __name__ == '__main__':
         cam_extrinsics = np.eye(4)
         cam_extrinsics[:3, 3] = tra_pred # cam_trans
 
-        v_max = smpl_verts.max(axis=0)
-        v_min = smpl_verts.min(axis=0)
-        normalize_shift = -(v_max + v_min) / 2.
-        smpl_verts += normalize_shift
-        cam_extrinsics[:3, 3] = cam_extrinsics[:3, 3] - (cam_extrinsics[:3, :3] @ normalize_shift)
-        P = cam_intrinsics @ cam_extrinsics[:3, :]
+        # cam_extrinsics[:3, 3] = cam_extrinsics[:3, 3] - (cam_extrinsics[:3, :3] @ normalize_shift)
+        # P = cam_intrinsics @ cam_extrinsics[:3, :]
         
 
         R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
@@ -253,11 +249,11 @@ if __name__ == '__main__':
             output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
             cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
         else:
-            output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
-            output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
-            # cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
+            # output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
+            # if not os.path.exists(output_dir):
+            #     os.makedirs(output_dir)
+            # output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
+            # cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
+            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
         # import ipdb
         # ipdb.set_trace()

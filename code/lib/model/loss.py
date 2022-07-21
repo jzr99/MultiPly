@@ -155,8 +155,9 @@ class VolSDFLoss(nn.Module):
         # bg_shadow_loss = self.get_bg_shadow_loss(model_outputs['bg_rgb_values'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         # foot_reg_loss = self.get_foot_reg_loss(model_outputs['foot_sample_sdf_pd'], model_outputs['foot_sample_sdf_gt'])
+        epoch_for_off_surface = min(200, model_outputs['epoch'])
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + model_outputs['epoch'] ** 1.5 / 40) * off_surface_loss # + self.foot_reg_weight * foot_reg_loss #  # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss # + self.foot_reg_weight * foot_reg_loss #  # + self.bg_shadow_weight * bg_shadow_loss # + self.normal_weight * normal_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,

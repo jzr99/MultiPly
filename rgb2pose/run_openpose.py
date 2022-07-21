@@ -65,7 +65,7 @@ try:
 
     # Flags
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_dir", default="/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/ROMP/Easy_on_me_720p_cut_frames", help="Process a directory of images. Read all standard formats (jpg, png, bmp, etc.).")
+    parser.add_argument("--image_dir", default="/home/chen/disk2/Youtube_Videos/Invisible/frames", help="Process a directory of images. Read all standard formats (jpg, png, bmp, etc.).")
     parser.add_argument("--no_display", default=False, help="Enable to disable the visual display.")
     args = parser.parse_known_args()
 
@@ -86,8 +86,11 @@ try:
     # Read frames on directory
     imagePaths = op.get_images_on_directory(args[0].image_dir)
     import glob
-    maskPaths = sorted(glob.glob('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/smpl_mask/*.png'))
+    maskPaths = sorted(glob.glob(f'{args[0].image_dir}/../init_mask/*.png'))
     start = time.time()
+
+    if not os.path.exists(f'{args[0].image_dir}/../openpose'):
+        os.makedirs(f'{args[0].image_dir}/../openpose')
 
     # Process and display images
     nbrs = NearestNeighbors(n_neighbors=1)
@@ -107,10 +110,10 @@ try:
 
         actor = nbrs.kneighbors(bbox_center.reshape(1, -1), return_distance=False).ravel()[0]
         poseKeypoints = poseKeypoints[actor]
-        np.save('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/openpose/%04d.npy' % idx, poseKeypoints)
+        np.save(f'{args[0].image_dir}/../openpose/%04d.npy' % idx, poseKeypoints)
         for jth in range(0, poseKeypoints.shape[0]):
             output_img = cv2.circle(imageToProcess, tuple(poseKeypoints.astype(np.int32)[jth, :2]), 3, (0,0,255), -1)
-        cv2.imwrite('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/openpose/%04d.png' % idx, output_img)
+        cv2.imwrite(f'{args[0].image_dir}/../openpose/%04d.png' % idx, output_img)
 
         # cv2.imwrite('/home/chen/disk2/Youtube_Videos/Easy_on_me/openpose/%04d.png' % idx, datum.cvOutputData)
     end = time.time()

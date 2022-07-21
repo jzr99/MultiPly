@@ -25,13 +25,13 @@ seq = 'courtyard_bodyScannerMotions_00'
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Easy_on_me_720p_cut'
+seq = 'Invisible'
 DIR = '/home/chen/disk2/Youtube_Videos'
 
-img_dir = f'{DIR}/{seq}/ROMP/{seq}_frames'
-seq_dir = f'/home/chen/disk2/Youtube_Videos/{seq}/init_refined_smpl_files'
-mask_dir = f'/home/chen/disk2/Youtube_Videos/{seq}/init_refined_mask'
-ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
+img_dir = f'{DIR}/{seq}/frames'
+seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
+mask_dir = f'{DIR}/{seq}/init_refined_mask'
+# ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
 # normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
 # mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
 save_dir = f'/home/chen/RGB-PINA/data/{seq}'
@@ -45,7 +45,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
 resize_factor = 2
 
-img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
 seq_file_paths = sorted(glob.glob(f"{seq_dir}/*.pkl"))
 
@@ -57,10 +57,10 @@ elif gender == 'm':
 
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
 # we use the betas from naked body not "clothed"
-smpl_shape = np.load('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/mean_shape.npy')
+smpl_shape = np.load(f'{DIR}/{seq}/mean_shape.npy')
 T_hip = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape)[None].float()).squeeze().cpu().numpy()
-focal_length = 1280 # 995.55555556
-cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length,360.],[0.,0.,1.]])
+focal_length = 1920 # 1280 # 995.55555556
+cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
 cam_extrinsics = np.eye(4)
 
 K = np.eye(4)

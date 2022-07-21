@@ -14,7 +14,8 @@ def get_loss_weights():
     loss_weight = {'J2D_Loss': lambda cst, it: 1e-2 * cst, # / (1 + 1 * it),
                    'Prior_Loss': lambda cst, it: 2e-3 * cst, # / (1 + it), # 1e-4 for BodyFusion else 2e-5 for others
                    'Prior_Shape': lambda cst, it: 1. * cst, # / (1 + it),
-                   'Temporal_Loss': lambda cst, it: 2e0 * cst,
+                   'Temporal_Loss': lambda cst, it: 5e0 * cst,
+                   'FOOT_Prior_Loss': lambda cst, it: 1e-1 * cst,
                   }
     return loss_weight
 
@@ -31,3 +32,7 @@ def pose_prior_loss(body_pose=None, betas=None):
 def pose_temporal_loss(last_pose, param_pose):
     temporal_loss = torch.mean(torch.square(last_pose - param_pose))
     return temporal_loss
+
+def foot_prior_loss(foot_pose=None):
+    foot_prior_loss = torch.max((foot_pose)**2)
+    return foot_prior_loss

@@ -28,7 +28,7 @@ import glob
 import pickle as pkl
 from tqdm import tqdm
 from utils import smpl_to_pose, PerspectiveCamera
-from loss import joints_2d_loss, pose_temporal_loss, pose_prior_loss, get_loss_weights
+from loss import joints_2d_loss, pose_temporal_loss, pose_prior_loss, foot_prior_loss, get_loss_weights
 smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
                                             use_face_contour=False, openpose_format='coco25'), dtype=torch.long).cuda()
 
@@ -156,15 +156,18 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Easy_on_me_720p_cut'
+    seq = 'Invisible'
     DIR = '/home/chen/disk2/Youtube_Videos'
-    output_dir = '/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/smpl_mask_init' # f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
-    openpose_dir = '/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/openpose'
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    img_dir = f'{DIR}/{seq}/ROMP/{seq}_frames'   
+    openpose_dir = f'{DIR}/{seq}/openpose'
+    if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):
+        os.makedirs(f'{DIR}/{seq}/init_refined_smpl')
+    if not os.path.exists(f'{DIR}/{seq}/init_refined_mask'):
+        os.makedirs(f'{DIR}/{seq}/init_refined_mask')
+    if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl_files'):
+        os.makedirs(f'{DIR}/{seq}/init_refined_smpl_files')
+    img_dir = f'{DIR}/{seq}/frames'   
     file_dir = f'{DIR}/{seq}/ROMP'
-    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
     openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
     gender = 'm'
@@ -180,8 +183,8 @@ if __name__ == '__main__':
     
     input_img = cv2.imread(img_paths[0])
 
-    focal_length = 1280 # 995.55555556
-    cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length,360.],[0.,0.,1.]])
+    focal_length = 1920 # 1280 # 995.55555556
+    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     cam_extrinsics = np.eye(4)
     render_R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
     render_T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
@@ -215,7 +218,7 @@ if __name__ == '__main__':
             smpl_trans = tra_pred
             P = cam_intrinsics @ cam_extrinsics[:3, :]
             
-            num_iters=200
+            num_iters=150
 
             openpose_j2d = torch.tensor(openpose[:, :2][None], dtype=torch.float32, requires_grad=False, device=device)
             openpose_conf = torch.tensor(openpose[:, -1][None], dtype=torch.float32, requires_grad=False, device=device)
@@ -224,9 +227,9 @@ if __name__ == '__main__':
             opt_pose = torch.tensor(smpl_pose[None], dtype=torch.float32, requires_grad=True, device=device)
             opt_trans = torch.tensor(smpl_trans[None], dtype=torch.float32, requires_grad=True, device=device)
 
-            opt_params = [{'params': opt_betas, 'lr': 1e-4},
-                        {'params': opt_pose, 'lr': 1e-3},
-                        {'params': opt_trans, 'lr': 1e-3}]
+            opt_params = [{'params': opt_betas, 'lr': 1e-3},
+                          {'params': opt_pose, 'lr': 1e-3},
+                          {'params': opt_trans, 'lr': 1e-3}]
             optimizer = torch.optim.Adam(opt_params, lr=2e-3, betas=(0.9, 0.999))
             if idx == 0:
                 last_pose = [opt_pose.detach().clone()]
@@ -245,11 +248,12 @@ if __name__ == '__main__':
                 
                 # for jth in range(0, smpl_joints_2d.shape[1]):
                 #     output_img = cv2.circle(tmp_img, tuple(smpl_joints_2d[0].data.cpu().numpy().astype(np.int32)[jth, :2]), 3, (0,0,255), -1)
-                # cv2.imwrite('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl/smpl_2d_%04d.png' % it, output_img)
+                # cv2.imwrite('{DIR}/{seq}/init_refined_smpl/smpl_2d_%04d.png' % it, output_img)
 
                 loss = dict()
                 loss['J2D_Loss'] = joints_2d_loss(openpose_j2d, smpl_joints_2d, openpose_conf)
                 loss['Temporal_Loss'] = pose_temporal_loss(last_pose[0], opt_pose)
+                # loss['FOOT_Prior_Loss'] = foot_prior_loss(opt_pose[:, 21:27])
                 # loss['Prior_Loss'] = pose_prior_loss(opt_pose[:, 3:], opt_betas)
                 w_loss = dict()
                 for k in loss:
@@ -266,7 +270,7 @@ if __name__ == '__main__':
                     loop.set_description(l_str)     
                 # smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False)
 
-                # smpl_mesh.export('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl/%04d.ply' % it)
+                # smpl_mesh.export('{DIR}/{seq}/init_refined_smpl/%04d.ply' % it)
                 # rendered_image = render_trimesh(smpl_mesh, R, T, 'n')
                 # if input_img.shape[0] < input_img.shape[1]:
                 #     rendered_image = rendered_image[abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2,...] 
@@ -275,7 +279,7 @@ if __name__ == '__main__':
                 # valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 # if overlay:
                 #     output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-                #     cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl_iters', '%04d.png' % it), output_img)
+                #     cv2.imwrite(os.path.join('{DIR}/{seq}/init_refined_smpl_iters', '%04d.png' % it), output_img)
             
             smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False)
             rendered_image = render_trimesh(smpl_mesh, render_R, render_T, 'n')
@@ -287,8 +291,8 @@ if __name__ == '__main__':
             valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
             if overlay:
                 output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl', '%04d.png' % idx), output_img)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_mask', '%04d.png' % idx), valid_mask*255)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_refined_smpl', '%04d.png' % idx), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_refined_mask', '%04d.png' % idx), valid_mask*255)
             last_pose.pop(0)
             last_pose.append(opt_pose.detach().clone())
             smpl_dict = {}
@@ -297,18 +301,18 @@ if __name__ == '__main__':
             smpl_dict['shape'] = opt_betas.data.squeeze().cpu().numpy()
 
             mean_shape.append(smpl_dict['shape'])
-            pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl_files', '%04d.pkl' % idx), 'wb'))
+            pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_refined_smpl_files', '%04d.pkl' % idx), 'wb'))
 
         mean_shape = np.array(mean_shape) # can only include the shape where the poses are correct
-        np.save('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/mean_shape.npy', mean_shape.mean(0))
+        np.save(f'{DIR}/{seq}/mean_shape.npy', mean_shape.mean(0))
 
     if smooth:
         from scipy.spatial.transform import Rotation as R
         results_p = []
         results_t = []
         images = []
-        init_smpl_paths = sorted(glob.glob('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_refined_smpl_files/*.pkl'))
-        mean_sahpe = np.load('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/mean_shape.npy')
+        init_smpl_paths = sorted(glob.glob(f'{DIR}/{seq}/init_refined_smpl_files/*.pkl'))
+        mean_sahpe = np.load('{DIR}/{seq}/mean_shape.npy')
         for frame, init_smpl_path in enumerate(init_smpl_paths):
             img_path = img_paths[frame]
             input_img = cv2.imread(img_path)
@@ -329,7 +333,7 @@ if __name__ == '__main__':
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
 
-                pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl_files', '%04d.pkl' % (frame-2)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-2)), 'wb'))
 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -345,7 +349,7 @@ if __name__ == '__main__':
                     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[0] * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
                 
                 avg_thetas = R.from_quat((r_0.as_quat() + r_2.as_quat()) * 0.25 + r_1.as_quat() * 0.5).as_rotvec().reshape((-1))
                 avg_trans = (results_t[0] + results_t[2]) * 0.25 + results_t[1] * 0.5
@@ -354,7 +358,7 @@ if __name__ == '__main__':
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
 
-                pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join('{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
                 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -370,7 +374,7 @@ if __name__ == '__main__':
                     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
                 
             elif frame == len(init_smpl_paths) - 1:
                 r_2 = R.from_rotvec(results_p[2].reshape((24, 3)))
@@ -383,7 +387,7 @@ if __name__ == '__main__':
                 smpl_dict = {}
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
-                pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -399,14 +403,14 @@ if __name__ == '__main__':
                     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
 
                 avg_thetas = R.from_quat((r_2.as_quat() + r_3.as_quat()) * 0.25 + r_4.as_quat() * 0.5).as_rotvec().reshape((-1))
                 avg_trans = (results_t[2] + results_t[3]) * 0.25 + results_t[4] * 0.5
                 smpl_dict = {}
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
-                pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl_files', '%04d.pkl' % (frame)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame)), 'wb'))
 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -422,7 +426,7 @@ if __name__ == '__main__':
                     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl', '%04d.png' % (frame)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame)), output_img)
             
             if len(results_p) == 5:
                 r_0 = R.from_rotvec(results_p[0].reshape((24, 3)))
@@ -435,7 +439,7 @@ if __name__ == '__main__':
                 smpl_dict = {}
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
-                pkl.dump(smpl_dict, open(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl_files', '%04d.pkl' % (frame-2)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-2)), 'wb'))
 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -451,7 +455,7 @@ if __name__ == '__main__':
                     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]   
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
-                cv2.imwrite(os.path.join('/home/chen/disk2/Youtube_Videos/Easy_on_me_720p_cut/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
 
                 results_p.pop(0)
                 results_t.pop(0)
