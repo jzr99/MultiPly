@@ -21,11 +21,10 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'courtyard_bodyScannerMotions_00'
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Invisible'
+seq = 'Lost_in_Wanderland_p2'
 DIR = '/home/chen/disk2/Youtube_Videos'
 
 img_dir = f'{DIR}/{seq}/frames'

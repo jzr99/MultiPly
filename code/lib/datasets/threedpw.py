@@ -103,7 +103,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
         self.start_frame = 0 # 11 # 94
-        self.end_frame = 658 # 231 # 204
+        self.end_frame = 658 # 462 # 231 # 204
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []
@@ -116,7 +116,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
 
         # images
         img_dir = os.path.join(root, "image")
-        img_paths = sorted(glob.glob(f"{img_dir}/*"))
+        img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
         
         for img_path in img_paths[self.start_frame:self.end_frame]: # [::self.skip_step]:
             img = cv2.imread(img_path)
@@ -155,16 +155,16 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     self.ground_masks.append(ground_mask)
         
         # normals
-        # normal_dir = os.path.join(root, "normal")
-        # normal_paths = sorted(glob.glob(f"{normal_dir}/*"))
+        normal_dir = os.path.join(root, "normal")
+        normal_paths = sorted(glob.glob(f"{normal_dir}/*.png"))
         
-        # for i, normal_path in enumerate(normal_paths[::self.skip_step]):
-        #     normal = cv2.imread(normal_path)
-        #     assert normal.shape[:2] == self.img_sizes[
-        #         i], "Normal image imcompatible with RGB"
-        #     normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
-        #     # normal = normal / np.linalg.norm(normal, axis=-1)[:, :, None]
-        #     self.normals.append(normal)
+        for i, normal_path in enumerate(normal_paths[self.start_frame:self.end_frame]):
+            normal = cv2.imread(normal_path)
+            assert normal.shape[:2] == self.img_sizes[
+                i], "Normal image imcompatible with RGB"
+            normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
+            # normal = normal / np.linalg.norm(normal, axis=-1)[:, :, None]
+            self.normals.append(normal)
 
         # body parsing
         # parsing_dir = os.path.join(root, "body_parsing")
@@ -248,7 +248,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "uv": uv,
                 "object_mask": self.object_masks[idx],
                 # "parsing_mask": self.parsing_masks[idx],
-                # "normal": self.normals[idx],
+                "normal": self.normals[idx],
                 # "bg_image": self.bg_images[idx],
                 # "ground_mask": self.ground_masks[idx],
             }
@@ -264,7 +264,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": samples["object_mask"] > 0.5,
                 # "ground_mask": samples['ground_mask'] > 0.5,
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
-                # "normal": samples["normal"].astype(np.float32),
+                "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
                 # 'bg_image': samples["bg_image"].astype(np.float32),
                 "P": self.P[idx],
@@ -292,7 +292,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             }
             images = {
                 "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),
-                # "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
+                "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
                 "img_size": self.img_sizes[idx]
             }
             return inputs, images
@@ -329,7 +329,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         }
         images = {
             "rgb": images["rgb"],
-            # "normal": images["normal"],
+            "normal": images["normal"],
             "img_size": images["img_size"],
             'pixel_per_batch': self.pixel_per_batch,
             'total_pixels': self.total_pixels
@@ -380,6 +380,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
+        idx += 612
         if self.free_view_render:
             uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
             uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
@@ -418,7 +419,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             }
             images = {
                 "rgb": images["rgb"],
-                # "normal": images["normal"],
+                "normal": images["normal"],
                 "img_size": images["img_size"]
             }
         return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render

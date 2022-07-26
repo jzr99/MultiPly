@@ -15,3 +15,5 @@ code/training_log
 data
 code/test_log
 mocap_data_copy
+pifuhd
+lightweight-human-pose-estimation.pytorch

@@ -268,8 +268,8 @@ class VolSDFNetworkBG(nn.Module):
         if self.training:
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
-            # normal = input["normal"].reshape(-1, 3)
-            # surface_normal = normal # [surface_mask]
+            normal = input["normal"].reshape(-1, 3)
+            surface_normal = normal # [surface_mask]
 
             # N = surface_points.shape[0]
 
@@ -399,7 +399,7 @@ class VolSDFNetworkBG(nn.Module):
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
-                # 'surface_normal_gt': surface_normal,
+                'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
                 "index_ground": index_ground,
                 'index_off_surface': index_off_surface,

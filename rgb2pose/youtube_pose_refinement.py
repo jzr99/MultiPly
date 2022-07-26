@@ -156,7 +156,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Invisible'
+    seq = 'Lost_in_Wanderland_p2'
     DIR = '/home/chen/disk2/Youtube_Videos'
     openpose_dir = f'{DIR}/{seq}/openpose'
     if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):

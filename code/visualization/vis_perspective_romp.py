@@ -176,12 +176,9 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Invisible'
+    seq = 'Lost_in_Wanderland_p2'
     DIR = '/home/chen/disk2/Youtube_Videos'
-    if overlay:
-        output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
-    else:
-        output_dir = f'{DIR}/{seq}/init_mask'
+    output_dir = f'{DIR}/{seq}/init_mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     img_dir = f'{DIR}/{seq}/frames'   
