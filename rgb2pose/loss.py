@@ -14,7 +14,7 @@ def get_loss_weights():
     loss_weight = {'J2D_Loss': lambda cst, it: 1e-2 * cst, # / (1 + 1 * it),
                    'Prior_Loss': lambda cst, it: 2e-3 * cst, # / (1 + it), # 1e-4 for BodyFusion else 2e-5 for others
                    'Prior_Shape': lambda cst, it: 1. * cst, # / (1 + it),
-                   'Temporal_Loss': lambda cst, it: 5e0 * cst,
+                   'Temporal_Loss': lambda cst, it: 6e0 * cst,
                    'FOOT_Prior_Loss': lambda cst, it: 1e-1 * cst,
                   }
     return loss_weight

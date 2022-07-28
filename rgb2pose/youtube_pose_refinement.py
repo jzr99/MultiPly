@@ -156,7 +156,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Lost_in_Wanderland_p2'
+    seq = 'Invisible'
     DIR = '/home/chen/disk2/Youtube_Videos'
     openpose_dir = f'{DIR}/{seq}/openpose'
     if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):
@@ -195,15 +195,15 @@ if __name__ == '__main__':
                             center=torch.tensor(cam_intrinsics[0:2, 2]).unsqueeze(0)).to(device)
     weight_dict = get_loss_weights()
     overlay = True
-    smooth = False
-    skip_optim = False
+    smooth = True
+    skip_optim = True
     mean_shape = []
     if not skip_optim:
         for idx, img_path in enumerate(tqdm(img_paths)):
             input_img = cv2.imread(img_path)
             seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
             openpose = np.load(openpose_paths[idx])
-            openpose[:, -1][openpose[:, -1] < 0.4] = 0.
+            openpose[:, -1][openpose[:, -1] < 0.3] = 0.
 
             smpl_pose = seq_file['smpl_thetas'][0]
             # smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
@@ -211,9 +211,9 @@ if __name__ == '__main__':
             smpl_verts = seq_file['verts'][0]
             pj2d_org = seq_file['pj2d_org'][0]
             joints3d = seq_file['joints'][0]
+            # tranform to perspective projection
             tra_pred = estimate_translation_cv2(joints3d, pj2d_org, proj_mat=cam_intrinsics)
 
-            
             # cam_extrinsics[:3, 3] = tra_pred # cam_trans
             smpl_trans = tra_pred
             P = cam_intrinsics @ cam_extrinsics[:3, :]
@@ -307,12 +307,18 @@ if __name__ == '__main__':
         np.save(f'{DIR}/{seq}/mean_shape.npy', mean_shape.mean(0))
 
     if smooth:
+        if not os.path.exists(f'{DIR}/{seq}/init_smoothed_smpl_files'):
+            os.makedirs(f'{DIR}/{seq}/init_smoothed_smpl_files')
+        if not os.path.exists(f'{DIR}/{seq}/init_smoothed_smpl'):
+            os.makedirs(f'{DIR}/{seq}/init_smoothed_smpl')
+        if not os.path.exists(f'{DIR}/{seq}/init_smoothed_mask'):
+            os.makedirs(f'{DIR}/{seq}/init_smoothed_mask')
         from scipy.spatial.transform import Rotation as R
         results_p = []
         results_t = []
         images = []
         init_smpl_paths = sorted(glob.glob(f'{DIR}/{seq}/init_refined_smpl_files/*.pkl'))
-        mean_sahpe = np.load('{DIR}/{seq}/mean_shape.npy')
+        mean_sahpe = np.load(f'{DIR}/{seq}/mean_shape.npy')
         for frame, init_smpl_path in enumerate(init_smpl_paths):
             img_path = img_paths[frame]
             input_img = cv2.imread(img_path)
@@ -350,6 +356,7 @@ if __name__ == '__main__':
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[0] * (1 - valid_mask)).astype(np.uint8)
                 cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_mask', '%04d.png' % (frame-2)), valid_mask*255)
                 
                 avg_thetas = R.from_quat((r_0.as_quat() + r_2.as_quat()) * 0.25 + r_1.as_quat() * 0.5).as_rotvec().reshape((-1))
                 avg_trans = (results_t[0] + results_t[2]) * 0.25 + results_t[1] * 0.5
@@ -358,7 +365,7 @@ if __name__ == '__main__':
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
 
-                pkl.dump(smpl_dict, open(os.path.join('{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
+                pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl_files', '%04d.pkl' % (frame-1)), 'wb'))
                 
                 smpl_output = smpl_model(betas=torch.tensor(mean_sahpe)[None].cuda().float(),
                                          body_pose=torch.tensor(smpl_dict['pose'][3:])[None].cuda().float(),
@@ -375,6 +382,7 @@ if __name__ == '__main__':
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
                 cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_mask', '%04d.png' % (frame-1)), valid_mask*255)
                 
             elif frame == len(init_smpl_paths) - 1:
                 r_2 = R.from_rotvec(results_p[2].reshape((24, 3)))
@@ -382,7 +390,7 @@ if __name__ == '__main__':
                 r_4 = R.from_rotvec(results_p[4].reshape((24, 3)))
                 
                 avg_thetas = R.from_quat((r_2.as_quat() + r_4.as_quat()) * 0.25 + r_3.as_quat() * 0.5).as_rotvec().reshape((-1))
-                avg_trans = (results_t[2] + results_t[4]) * 0.25 + results_t[3] * 0.5# (results_t[2] + results_t[3] + results_t[4]) / 3.
+                avg_trans = (results_t[2] + results_t[4]) * 0.25 + results_t[3] * 0.5 # (results_t[2] + results_t[3] + results_t[4]) / 3.
                 
                 smpl_dict = {}
                 smpl_dict['pose'] = avg_thetas
@@ -404,6 +412,7 @@ if __name__ == '__main__':
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
                 cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-1)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_mask', '%04d.png' % (frame-1)), valid_mask*255)
 
                 avg_thetas = R.from_quat((r_2.as_quat() + r_3.as_quat()) * 0.25 + r_4.as_quat() * 0.5).as_rotvec().reshape((-1))
                 avg_trans = (results_t[2] + results_t[3]) * 0.25 + results_t[4] * 0.5
@@ -427,6 +436,7 @@ if __name__ == '__main__':
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
                 cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_mask', '%04d.png' % (frame)), valid_mask*255)
             
             if len(results_p) == 5:
                 r_0 = R.from_rotvec(results_p[0].reshape((24, 3)))
@@ -434,8 +444,8 @@ if __name__ == '__main__':
                 r_2 = R.from_rotvec(results_p[2].reshape((24, 3)))
                 r_3 = R.from_rotvec(results_p[3].reshape((24, 3)))
                 r_4 = R.from_rotvec(results_p[4].reshape((24, 3)))
-                avg_thetas = R.from_quat((r_0.as_quat() + r_1.as_quat() + r_3.as_quat() + r_4.as_quat()) * 0.05 + r_2.as_quat() * 0.8).as_rotvec().reshape((-1))
-                avg_trans = (results_t[0] + results_t[1] + results_t[3] + results_t[4]) * 0.05 + results_t[2] * 0.8
+                avg_thetas = R.from_quat((r_0.as_quat() + r_1.as_quat() + r_3.as_quat() + r_4.as_quat()) * 0.1 + r_2.as_quat() * 0.6).as_rotvec().reshape((-1))
+                avg_trans = (results_t[0] + results_t[1] + results_t[3] + results_t[4]) * 0.1 + results_t[2] * 0.6
                 smpl_dict = {}
                 smpl_dict['pose'] = avg_thetas
                 smpl_dict['trans'] = avg_trans
@@ -456,6 +466,7 @@ if __name__ == '__main__':
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
                 output_img = (rendered_image[:,:,:-1] * valid_mask + images[1] * (1 - valid_mask)).astype(np.uint8)
                 cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_smpl', '%04d.png' % (frame-2)), output_img)
+                cv2.imwrite(os.path.join(f'{DIR}/{seq}/init_smoothed_mask', '%04d.png' % (frame-2)), valid_mask*255)
 
                 results_p.pop(0)
                 results_t.pop(0)

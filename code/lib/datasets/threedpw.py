@@ -229,6 +229,9 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.images)
 
+    def load_body_model_params(self):
+        body_model_params = {}
+        return body_model_params
     def __getitem__(self, idx):
         img_size = self.img_sizes[idx]
 
