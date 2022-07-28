@@ -340,16 +340,16 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=False):
+    def __init__(self, opt, free_view_render=True):
         self.free_view_render = free_view_render
         if self.free_view_render:
             start = -40
             steps = 40
             dataset = ThreeDPWDataset(opt)
             self.new_poses = []
-            image_id = 30
-            self.data = dataset[image_id]
-            self.img_size = dataset.img_sizes[image_id]
+            self.image_id = 53
+            self.data = dataset[self.image_id]
+            self.img_size = dataset.img_sizes[self.image_id]
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
             target_inputs, images = self.data
@@ -383,7 +383,6 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-        idx += 612
         if self.free_view_render:
             uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
             uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
@@ -401,7 +400,8 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 "pose": self.new_poses[idx], # target_inputs['pose'], # self.pose_all[idx],
                 'P': target_inputs['P'],
                 'C': target_inputs['C'],
-                "smpl_params": target_inputs["smpl_params"]
+                "smpl_params": target_inputs["smpl_params"],
+                'image_id': self.image_id
             }
             images = {
                     "img_size": self.img_size}

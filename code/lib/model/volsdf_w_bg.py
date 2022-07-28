@@ -335,7 +335,10 @@ class VolSDFNetworkBG(nn.Module):
             # if 'shadow_r' in others.keys():
             #     shadow_r = others['shadow_r']
             #     fg_rgb_flat = (1-shadow_r) * fg_rgb_flat
-        frame_latent_code = self.frame_latent_encoder(input['idx'])
+        if 'image_id' in input.keys():
+            frame_latent_code = self.frame_latent_encoder(input['image_id'])
+        else:
+            frame_latent_code = self.frame_latent_encoder(input['idx'])
 
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
         if False:
@@ -865,6 +868,8 @@ class VolSDF(pl.LightningModule):
                             "smpl_shape": inputs["smpl_params"][:, 76:],
                             "smpl_trans": inputs["smpl_params"][:, 1:4],
                             "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+            if free_view_render:
+                batch_inputs.update({'image_id': inputs['image_id']})
             if self.opt.model.use_body_parsing:
                 batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
