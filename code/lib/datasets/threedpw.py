@@ -102,8 +102,9 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
     def __init__(self, opt):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
-        self.start_frame = 0 # 11 # 94
-        self.end_frame = 658 # 462 # 231 # 204
+
+        self.start_frame = opt.start_frame # 0 # 11 # 94
+        self.end_frame = opt.end_frame # 5 # 658 # 462 # 231 # 204
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []
@@ -342,36 +343,24 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
     def __init__(self, opt, free_view_render=True):
         self.free_view_render = free_view_render
+        self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
-            start = -40
-            steps = 40
-            dataset = ThreeDPWDataset(opt)
+            start = 80
+            steps = 80
             self.new_poses = []
             self.image_id = 53
-            self.data = dataset[self.image_id]
-            self.img_size = dataset.img_sizes[self.image_id]
+            self.data = self.dataset[self.image_id]
+            self.img_size = self.dataset.img_sizes[self.image_id]
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
             target_inputs, images = self.data
             from scipy.spatial.transform import Rotation as scipy_R
             for i in range(steps):
-                rot = scipy_R.from_euler('y', start+i*(2), degrees=True).as_matrix()
+                rotation_angle_y = start+i*(2)
                 pose = target_inputs['pose'].clone()
-                R, C = pose[:3, :3], pose[:3, 3]
-                T = -R@C
-                temp_P = np.eye(4)
-                temp_P[:3,:3] = R
-                temp_P[:3, 3]= T
-                transform_P = np.eye(4)
-                transform_P[:3,:3] = rot
-                final_P = temp_P @ transform_P
-                out = cv2.decomposeProjectionMatrix(final_P[:3, :4])
-                new_pose = np.eye(4, dtype=np.float32)
-                new_pose[:3, :3] = out[1].transpose()
-                new_pose[:3, 3] = (out[2][:3] / out[2][3])[:,0]
+                new_pose = rend_util.get_new_cam_pose_fvr(pose, rotation_angle_y)
                 self.new_poses.append(new_pose)
         else:
-            self.dataset = ThreeDPWDataset(opt)
             self.img_size = self.dataset.img_sizes[0]
 
             self.total_pixels = np.prod(self.img_size)

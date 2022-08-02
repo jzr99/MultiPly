@@ -5,6 +5,7 @@ import cv2
 import torch
 from torch.nn import functional as F
 import trimesh
+from scipy.spatial.transform import Rotation as scipy_R
 
 def get_psnr(img1, img2, normalize_rgb=False):
     if normalize_rgb: # [-1,1] --> [0,1]
@@ -239,4 +240,34 @@ def get_bbox_intersection(cam_loc, ray_directions, smpl_mesh):
 
         padded_ray_dirs = torch.tensor(ray_dirs_np).cuda().float()
         return torch.tensor(near).cuda().float(), torch.tensor(far).cuda().float(), padded_ray_dirs
-    
+
+# alternative to cv2.decomposeProjectionMatrix
+# https://stackoverflow.com/questions/55814640/decomposeprojectionmatrix-gives-unexpected-result
+def decomposeP(P):
+    M = P[0:3,0:3]
+    Q = np.eye(3)[::-1]
+    P_b = Q @ M @ M.T @ Q
+    K_h = Q @ np.linalg.cholesky(P_b) @ Q
+    K = K_h / K_h[2,2]
+    A = np.linalg.inv(K) @ M
+    l = (1/np.linalg.det(A)) ** (1/3)
+    R = l * A
+    t = l * np.linalg.inv(K) @ P[0:3,3]
+    return K, R, t
+
+def get_new_cam_pose_fvr(pose, rotation_angle_y):
+    rot = scipy_R.from_euler('y', rotation_angle_y, degrees=True).as_matrix() # start+i*(2)
+    R, C = pose[:3, :3], pose[:3, 3]
+    T = -R@C
+    temp_P = np.eye(4, dtype=np.float32)
+    temp_P[:3,:3] = R
+    temp_P[:3, 3] = T
+    transform_P = np.eye(4)
+    transform_P[:3,:3] = rot
+    final_P = temp_P @ transform_P
+    out = decomposeP(final_P[:3, :4]) # cv2.decomposeProjectionMatrix(final_P[:3, :4])
+
+    new_pose = np.eye(4, dtype=np.float32)
+    new_pose[:3, :3] = out[1].transpose()
+    new_pose[:3, 3] = out[2][[2,1,0]] * [-1, 1, -1] # (out[2][:3] / out[2][3])[:,0]
+    return new_pose
