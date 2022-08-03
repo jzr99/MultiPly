@@ -1,3 +1,4 @@
+# https://github.com/JanaldoChen/Anim-NeRF
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,8 +51,10 @@ class BodyModelParams(nn.Module):
                 setattr(self, param_name, param)
     
     def init_parameters(self, param_name, data, requires_grad=False):
-        if param_name == 'betas':
-            data = torch.mean(data, dim=0, keepdim=True)
+        # if param_name == 'betas':
+            # import ipdb
+            # ipdb.set_trace()
+            # data = torch.mean(data, dim=0, keepdim=True)
         getattr(self, param_name).weight.data = data[..., :self.params_dim[param_name]]
         getattr(self, param_name).weight.requires_grad = requires_grad
 

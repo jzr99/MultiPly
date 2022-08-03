@@ -5,6 +5,7 @@ from .density import LaplaceDensity, AbsDensity
 from .ray_sampler import ErrorBoundSampler, BBoxSampler
 from .deformer import ForwardDeformer, SMPLDeformer
 from .smpl import SMPLServer
+from .body_model_params import BodyModelParams
 from .sampler import PointInSpace, PointOnBones
 from .loss import VolSDFLoss
 from ..utils import idr_utils
@@ -74,11 +75,11 @@ class VolSDFNetworkBG(nn.Module):
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
-        smpl_seg = json.load(open(hydra.utils.to_absolute_path('../misc/smpl_vert_segmentation.json'), 'rb'))
-        foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
-        self.foot_vert_ids = []
-        for foot_part_label in foot_part_labels:
-            self.foot_vert_ids += smpl_seg[foot_part_label]
+        # smpl_seg = json.load(open(hydra.utils.to_absolute_path('../misc/smpl_vert_segmentation.json'), 'rb'))
+        # foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
+        # self.foot_vert_ids = []
+        # for foot_part_label in foot_part_labels:
+        #     self.foot_vert_ids += smpl_seg[foot_part_label]
 
         self.smpl_v_cano = self.smpl_server.verts_c
         self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
@@ -568,15 +569,36 @@ class VolSDF(pl.LightningModule):
         super().__init__()
         # self.automatic_optimization = False
         self.model = VolSDFNetworkBG(opt.model, betas_path)
-        self.loss = VolSDFLoss(opt.model.loss)
-        self.training_modules = ["model"]
-        # self.smpl_pose = nn.Parameter(torch.zeros(1, 72))
-        # self.smpl_shape = nn.Parameter(torch.zeros(1, 10))
-        # self.smpl_trans = nn.Parameter(torch.zeros(1, 3))
-        self.smpl_pose = torch.tensor(np.zeros([1, 72]), requires_grad=True, dtype=torch.float32)
-        self.smpl_shape = torch.tensor(np.zeros([1, 10]), requires_grad=True, dtype=torch.float32)
-        self.smpl_trans = torch.tensor(np.zeros([1, 3]), requires_grad=True, dtype=torch.float32)
         self.opt = opt
+        self.num_training_frames = opt.model.num_training_frames
+        self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
+        self.load_body_model_params()
+        self.opt_smpl = False
+        self.training_modules = ["model"]
+        if self.opt_smpl:
+            optim_params = self.body_model_params.param_names
+            for param_name in optim_params:
+                self.body_model_params.set_requires_grad(param_name, requires_grad=True)
+            self.training_modules += ['body_model_params']
+        
+        self.loss = VolSDFLoss(opt.model.loss)
+        
+        # self.smpl_pose = torch.tensor(np.zeros([1, 72]), requires_grad=True, dtype=torch.float32)
+        # self.smpl_shape = torch.tensor(np.zeros([1, 10]), requires_grad=True, dtype=torch.float32)
+        # self.smpl_trans = torch.tensor(np.zeros([1, 3]), requires_grad=True, dtype=torch.float32)
+
+    def load_body_model_params(self):
+        body_model_params = {param_name: [] for param_name in self.body_model_params.param_names}
+        data_root = os.path.join('../data', self.opt.dataset.train.data_dir)
+        data_root = hydra.utils.to_absolute_path(data_root)
+
+        body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[:self.num_training_frames, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[:self.num_training_frames, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[:self.num_training_frames], dtype=torch.float32)
+
+        for param_name in body_model_params.keys():
+            self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 
 
     def configure_optimizers(self):
         params = chain(*[
@@ -598,23 +620,33 @@ class VolSDF(pl.LightningModule):
         
         device = inputs["smpl_params"].device
         if self.current_epoch < 10000:
-            reference_pose = inputs["smpl_params"][:, 4:76]
-            reference_shape = inputs["smpl_params"][:, 76:]
-            reference_trans = inputs["smpl_params"][:, 1:4]
-            self.smpl_pose.data = reference_pose
-            self.smpl_shape.data = reference_shape
-            self.smpl_trans.data = reference_trans
+            if False:
+                body_model_params = self.body_model_params(batch_idx)
+                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                inputs['smpl_shape'] = body_model_params['betas']
+                inputs['smpl_trans'] = body_model_params['transl']
+            else:
+                # reference_pose = inputs["smpl_params"][:, 4:76]
+                # reference_shape = inputs["smpl_params"][:, 76:]
+                # reference_trans = inputs["smpl_params"][:, 1:4]
+                # self.smpl_pose.data = reference_pose
+                # self.smpl_shape.data = reference_shape
+                # self.smpl_trans.data = reference_trans
+                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
         else:
             smpl_params = np.load(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz")
             self.smpl_pose.data = torch.from_numpy(smpl_params["smpl_pose"]).to(device)
             self.smpl_shape.data = torch.from_numpy(smpl_params["smpl_shape"]).to(device)
             self.smpl_trans.data = torch.from_numpy(smpl_params["smpl_trans"]).to(device)
 
-        inputs["smpl_pose"] = self.smpl_pose
-        inputs["smpl_shape"] = self.smpl_shape
-        inputs["smpl_trans"] = self.smpl_trans
+        # inputs["smpl_pose"] = self.smpl_pose
+        # inputs["smpl_shape"] = self.smpl_shape
+        # inputs["smpl_trans"] = self.smpl_trans
         inputs['current_epoch'] = self.current_epoch
         model_outputs = self.model(inputs)
+
         # if model_outputs is None:
         #     for optimizer in self._optimizers:
         #         optimizer.zero_grad()
