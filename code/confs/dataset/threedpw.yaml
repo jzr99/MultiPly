@@ -1,6 +1,6 @@
 train:
     dataset: ThreeDPW
-    subject: "Invisible_off_weight_2_w_opt_smpl"
+    subject: "Invisible_off_weight_2_w_opt_smpl_less_lr"
     start_frame: 0
     end_frame: 658
     batch_size: 1
@@ -13,7 +13,7 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Invisible_off_weight_2_w_opt_smpl"
+    subject: "Invisible_off_weight_2_w_opt_smpl_less_lr"
     start_frame: 0
     end_frame: 658
     image_id: 0
@@ -29,7 +29,7 @@ valid:
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Invisible_off_weight_2_w_opt_smpl"
+    subject: "Invisible_off_weight_2_w_opt_smpl_less_lr"
     start_frame: 0
     end_frame: 658
     image_id: 0

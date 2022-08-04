@@ -109,7 +109,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.images, self.img_sizes = [], []
         self.object_masks = []
         # self.ground_masks = []
-        self.normals = []
+        # self.normals = []
         self.bg_images = []
         # self.parsing_masks = []
 
@@ -156,16 +156,16 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     self.ground_masks.append(ground_mask)
         
         # normals
-        normal_dir = os.path.join(root, "normal")
-        normal_paths = sorted(glob.glob(f"{normal_dir}/*.png"))
+        # normal_dir = os.path.join(root, "normal")
+        # normal_paths = sorted(glob.glob(f"{normal_dir}/*.png"))
         
-        for i, normal_path in enumerate(normal_paths[self.start_frame:self.end_frame]):
-            normal = cv2.imread(normal_path)
-            assert normal.shape[:2] == self.img_sizes[
-                i], "Normal image imcompatible with RGB"
-            normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
-            # normal = normal / np.linalg.norm(normal, axis=-1)[:, :, None]
-            self.normals.append(normal)
+        # for i, normal_path in enumerate(normal_paths[self.start_frame:self.end_frame]):
+        #     normal = cv2.imread(normal_path)
+        #     assert normal.shape[:2] == self.img_sizes[
+        #         i], "Normal image imcompatible with RGB"
+        #     normal = ((normal / 255.0)[:, :, ::-1] - 0.5) / 0.5
+        #     # normal = normal / np.linalg.norm(normal, axis=-1)[:, :, None]
+        #     self.normals.append(normal)
 
         # body parsing
         # parsing_dir = os.path.join(root, "body_parsing")
@@ -252,7 +252,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "uv": uv,
                 "object_mask": self.object_masks[idx],
                 # "parsing_mask": self.parsing_masks[idx],
-                "normal": self.normals[idx],
+                # "normal": self.normals[idx],
                 # "bg_image": self.bg_images[idx],
                 # "ground_mask": self.ground_masks[idx],
             }
@@ -268,7 +268,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "object_mask": samples["object_mask"] > 0.5,
                 # "ground_mask": samples['ground_mask'] > 0.5,
                 # "body_parsing": samples["parsing_mask"].astype(np.int64),
-                "normal": samples["normal"].astype(np.float32),
+                # "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
                 # 'bg_image': samples["bg_image"].astype(np.float32),
                 "P": self.P[idx],
@@ -296,7 +296,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             }
             images = {
                 "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),
-                "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
+                # "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
                 "img_size": self.img_sizes[idx]
             }
             return inputs, images
@@ -329,11 +329,12 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             "intrinsics": inputs['intrinsics'],
             "pose": inputs['pose'],
             "smpl_params": inputs["smpl_params"],
+            'image_id': image_id,
             "idx": inputs['idx']
         }
         images = {
             "rgb": images["rgb"],
-            "normal": images["normal"],
+            # "normal": images["normal"],
             "img_size": images["img_size"],
             'pixel_per_batch': self.pixel_per_batch,
             'total_pixels': self.total_pixels
@@ -411,7 +412,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             }
             images = {
                 "rgb": images["rgb"],
-                "normal": images["normal"],
+                # "normal": images["normal"],
                 "img_size": images["img_size"]
             }
         return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render

@@ -129,7 +129,7 @@ class VolSDFLoss(nn.Module):
         foot_reg_loss = self.l2_loss(foot_sample_sdf_pd, foot_sample_sdf_gt)
         return foot_reg_loss
 
-    def get_density_reg_loss(self, acc_map, index_outside, index_ground):
+    def get_density_reg_loss(self, acc_map, index_outside):
         zero_density_loss = self.l1_loss(acc_map, torch.zeros_like(acc_map)) 
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside[0]], torch.zeros_like(acc_map[index_outside[0]]))
         # ground_density_loss = self.l1_loss(acc_map[index_ground[:, 0]], torch.zeros_like(acc_map[index_ground[:, 0]]))
@@ -150,10 +150,10 @@ class VolSDFLoss(nn.Module):
         rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
-        density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'], model_outputs['index_ground'])
+        density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         epoch_for_off_surface = min(200, model_outputs['epoch'])
-        if model_outputs['epoch'] >= 199:
+        if model_outputs['epoch'] >= 10000:
             normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'], model_outputs['acc_map'])
             if model_outputs['use_smpl_deformer']:
                 loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + self.normal_loss_weight * normal_loss
@@ -176,10 +176,8 @@ class VolSDFLoss(nn.Module):
                     'rgb_loss': rgb_loss,
                     'eikonal_loss': eikonal_loss,
                     'density_reg_loss': density_reg_loss,
-                    # 'bg_shadow_loss': bg_shadow_loss,
                     # 'normal_loss': normal_loss,
                     'off_surface_loss': off_surface_loss,
-                    # 'foot_reg_loss': foot_reg_loss,
                 }
             else:
                 bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
