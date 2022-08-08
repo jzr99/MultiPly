@@ -19,7 +19,7 @@ def render_trimesh(mesh,R,T, mode='np'):
     return image
 device = torch.device("cuda:0")
 
-checkpoint = torch.load('/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_off_weight_2_w_opt_smpl_0.2/checkpoints/epoch=0549-loss=0.013226576149463654.ckpt')
+checkpoint = torch.load('/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_off_weight_2_w_opt_smpl_less_lr/checkpoints/epoch=0999-loss=0.012769849970936775.ckpt')
 
 betas = checkpoint['state_dict']['body_model_params.betas.weight']
 global_orient = checkpoint['state_dict']['body_model_params.global_orient.weight']
@@ -73,4 +73,4 @@ for i in trange(global_orient.shape[0]):
 
     valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]  
     output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-    cv2.imwrite(os.path.join(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_off_weight_2_w_opt_smpl_0.2/joint_opt_smpl_549', '%04d.png' % i), output_img)
+    cv2.imwrite(os.path.join(f'{DIR}/{seq}/joint_opt_smpl_999', '%04d.png' % i), output_img)

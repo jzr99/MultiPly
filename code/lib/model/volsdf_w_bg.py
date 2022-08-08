@@ -871,12 +871,17 @@ class VolSDF(pl.LightningModule):
         cv2.imwrite(f"fg_rendering/{self.current_epoch}.png", fg_rgb[:, :, ::-1])
     
     def test_step(self, batch, *args, **kwargs):
-        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render = batch
+        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render, canonical_vis = batch
         num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
         if free_view_render:
             os.makedirs("test_fvr", exist_ok=True)
+            os.makedirs("test_fvr_normal", exist_ok=True)
+        if canonical_vis:
+            os.makedirs("test_canonical_fvr", exist_ok=True)
+            os.makedirs("test_canonical_fvr_normal", exist_ok=True)
+            # os.makedirs("test_canonical_rendering", exist_ok=True)
         else:
             os.makedirs("test_mask", exist_ok=True)
             os.makedirs("test_rendering", exist_ok=True)
@@ -911,15 +916,16 @@ class VolSDF(pl.LightningModule):
                             "smpl_shape": inputs["smpl_params"][:, 76:],
                             "smpl_trans": inputs["smpl_params"][:, 1:4],
                             "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
-            if self.opt_smpl:
-                if free_view_render:
-                    body_model_params = self.body_model_params(inputs['image_id'])
-                else:
-                    body_model_params = self.body_model_params(inputs['idx'])
+            if not canonical_vis:
+                if self.opt_smpl:
+                    if free_view_render:
+                        body_model_params = self.body_model_params(inputs['image_id'])
+                    else:
+                        body_model_params = self.body_model_params(inputs['idx'])
 
-                batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
-                batch_inputs.update({'smpl_shape': body_model_params['betas']})
-                batch_inputs.update({'smpl_trans': body_model_params['transl']})
+                    batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                    batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                    batch_inputs.update({'smpl_trans': body_model_params['transl']})
             if free_view_render:
                 batch_inputs.update({'image_id': inputs['image_id']})
             if self.opt.model.use_body_parsing:
@@ -969,8 +975,14 @@ class VolSDF(pl.LightningModule):
 
         normal = (normal * 255).astype(np.uint8)
 
+        
         if free_view_render:
-            cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
+                cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
+            else:
+                cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
         else:
             cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
             cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])

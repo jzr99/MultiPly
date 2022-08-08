@@ -302,10 +302,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             return inputs, images
 
 class ThreeDPWValDataset(torch.utils.data.Dataset):
-    def __init__(self, opt):
+    def __init__(self, opt, canonical_vis=True):
         self.dataset = ThreeDPWDataset(opt)
         image_id = opt.image_id
-
+        self.canonical_vis = canonical_vis
         self.img_size = self.dataset.img_sizes[image_id]
 
         self.total_pixels = np.prod(self.img_size)
@@ -339,15 +339,21 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
             'pixel_per_batch': self.pixel_per_batch,
             'total_pixels': self.total_pixels
         }
+        if self.canonical_vis:
+            cano_smpl_params = inputs["smpl_params"].clone()
+            cano_smpl_params[1:73] = 0 
+            inputs.update({'smpl_params': cano_smpl_params})
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=True):
+    def __init__(self, opt, free_view_render=True, canonical_vis=True):
         self.free_view_render = free_view_render
+        self.canonical_vis = canonical_vis
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
-            start = 80
-            steps = 120
+            start = -90
+            steps = 90
+            step_size = 4
             self.new_poses = []
             self.image_id = 542
             self.data = self.dataset[self.image_id]
@@ -357,7 +363,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             target_inputs, images = self.data
             from scipy.spatial.transform import Rotation as scipy_R
             for i in range(steps):
-                rotation_angle_y = start+i*(2)
+                rotation_angle_y = start+i*(step_size)
                 pose = target_inputs['pose'].clone()
                 new_pose = rend_util.get_new_cam_pose_fvr(pose, rotation_angle_y)
                 self.new_poses.append(new_pose)
@@ -395,6 +401,13 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             }
             images = {
                     "img_size": self.img_size}
+            if self.canonical_vis:
+                cano_smpl_params = inputs["smpl_params"].clone()
+                cano_smpl_params[4:76] = 0 
+                cano_smpl_params[9] = np.pi/6
+                cano_smpl_params[12] = -np.pi/6
+                cano_smpl_params
+                inputs.update({'smpl_params': cano_smpl_params})
         else:
             data = self.dataset[idx]
 
@@ -415,4 +428,4 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 # "normal": images["normal"],
                 "img_size": images["img_size"]
             }
-        return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render
+        return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render, self.canonical_vis
