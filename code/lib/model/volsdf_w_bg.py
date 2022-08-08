@@ -437,7 +437,7 @@ class VolSDFNetworkBG(nn.Module):
 
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
-        fg_rendering_output = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
+        fg_rendering_output = self.rendering_network(pnts_c, normals, view_dirs, cond['smpl'],
                                                      feature_vectors, surface_body_parsing)
         
         rgb_vals = fg_rendering_output[:, :3]

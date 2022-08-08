@@ -347,9 +347,9 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
             start = 80
-            steps = 80
+            steps = 120
             self.new_poses = []
-            self.image_id = 53
+            self.image_id = 542
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_sizes[self.image_id]
             self.total_pixels = np.prod(self.img_size)
