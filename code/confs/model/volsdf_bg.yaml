@@ -50,7 +50,7 @@ bg_rendering_network:
     d_out: 3
     dims: [128]
     weight_norm: False
-    multires_view: -1
+    multires_view: 4
 shadow_network:
     d_in: 3
     d_out: 1
