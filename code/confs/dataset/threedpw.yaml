@@ -1,8 +1,8 @@
 train:
     dataset: ThreeDPW
-    subject: "Invisible_off_weight_2_w_opt_smpl_normal_wo_detach"
-    start_frame: 0
-    end_frame: 658
+    subject: "Invisible_200to660_w_insurf"
+    start_frame: 200
+    end_frame: 660
     batch_size: 1
     drop_last: False
     shuffle: True
@@ -13,9 +13,9 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Invisible_off_weight_2_w_opt_smpl_normal_wo_detach"
-    start_frame: 0
-    end_frame: 658
+    subject: "Invisible_200to660_w_insurf"
+    start_frame: 200
+    end_frame: 660
     image_id: 0
 
     batch_size: 1
@@ -29,9 +29,9 @@ valid:
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Invisible_off_weight_2_w_opt_smpl_normal_wo_detach"
-    start_frame: 0
-    end_frame: 658
+    subject: "Invisible_200to660_w_insurf"
+    start_frame: 200
+    end_frame: 660
     image_id: 0
 
     batch_size: 1

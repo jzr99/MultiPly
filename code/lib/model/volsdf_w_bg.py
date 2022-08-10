@@ -571,6 +571,9 @@ class VolSDF(pl.LightningModule):
         self.model = VolSDFNetworkBG(opt.model, betas_path)
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
+        self.start_frame = 200
+        self.end_frame = 660
+        assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
         self.load_body_model_params()
         self.opt_smpl = True
@@ -593,9 +596,9 @@ class VolSDF(pl.LightningModule):
         data_root = hydra.utils.to_absolute_path(data_root)
 
         body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
-        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[:self.num_training_frames, :3], dtype=torch.float32)
-        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[:self.num_training_frames, 3:], dtype=torch.float32)
-        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[:self.num_training_frames], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.start_frame:self.end_frame], dtype=torch.float32)
 
         for param_name in body_model_params.keys():
             self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 
