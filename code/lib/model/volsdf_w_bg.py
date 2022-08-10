@@ -149,7 +149,7 @@ class VolSDFNetworkBG(nn.Module):
 
         return index_off_surface
     
-    def check_off_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
+    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
         # smpl_v_cano = self.smpl_server.verts_c
         # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
         # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
@@ -164,8 +164,8 @@ class VolSDFNetworkBG(nn.Module):
 
         minimum = torch.min(signed_distance, 1)[0]
         index_off_surface = (minimum > threshold).squeeze(1)
-
-        return index_off_surface
+        index_in_surface = (minimum <= 0.).squeeze(1)
+        return index_off_surface, index_in_surface
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
@@ -237,7 +237,7 @@ class VolSDFNetworkBG(nn.Module):
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
+            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -406,6 +406,7 @@ class VolSDFNetworkBG(nn.Module):
                 'index_outside': input['index_outside'],
                 "index_ground": index_ground,
                 'index_off_surface': index_off_surface,
+                'index_in_surface': index_in_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
