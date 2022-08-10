@@ -237,7 +237,6 @@ class VolSDFNetworkBG(nn.Module):
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -267,6 +266,7 @@ class VolSDFNetworkBG(nn.Module):
         # ipdb.set_trace()
 
         if self.training:
+            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
             # normal = input["normal"].reshape(-1, 3)
@@ -877,29 +877,37 @@ class VolSDF(pl.LightningModule):
                        1) // pixel_per_batch
         results = []
         if free_view_render:
-            os.makedirs("test_fvr", exist_ok=True)
-            os.makedirs("test_fvr_normal", exist_ok=True)
-        if canonical_vis:
-            os.makedirs("test_canonical_fvr", exist_ok=True)
-            os.makedirs("test_canonical_fvr_normal", exist_ok=True)
-            # os.makedirs("test_canonical_rendering", exist_ok=True)
+
+            if canonical_vis:
+                os.makedirs("test_canonical_fvr", exist_ok=True)
+                os.makedirs("test_canonical_fvr_normal", exist_ok=True)
+            else:
+                os.makedirs("test_fvr", exist_ok=True)
+                os.makedirs("test_fvr_normal", exist_ok=True)
+                os.makedirs("test_fvr_mask", exist_ok=True)
+        
         else:
-            os.makedirs("test_mask", exist_ok=True)
-            os.makedirs("test_rendering", exist_ok=True)
-            os.makedirs("test_fg_rendering", exist_ok=True)
-            os.makedirs("test_normal", exist_ok=True)
-            os.makedirs("test_mesh", exist_ok=True)
+            if canonical_vis:
+                os.makedirs("test_canonical_rendering", exist_ok=True)
+                os.makedirs("test_canonical_normal", exist_ok=True)
+                os.makedirs("test_canonical_fg_rendering", exist_ok=True)
+            else:
+                os.makedirs("test_mask", exist_ok=True)
+                os.makedirs("test_rendering", exist_ok=True)
+                os.makedirs("test_fg_rendering", exist_ok=True)
+                os.makedirs("test_normal", exist_ok=True)
+                os.makedirs("test_mesh", exist_ok=True)
 
-            scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
-            smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
-            smpl_tfs = smpl_outputs['smpl_tfs']
-            smpl_verts = smpl_outputs['smpl_verts']
-            cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+                scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
+                smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+                smpl_tfs = smpl_outputs['smpl_tfs']
+                smpl_verts = smpl_outputs['smpl_verts']
+                cond = {'smpl': smpl_pose[:, 3:]/np.pi}
 
-            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-            mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-            mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
-            mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+                mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
 
         for i in range(num_splits):
             print("current batch:", i)
@@ -984,8 +992,14 @@ class VolSDF(pl.LightningModule):
             else:
                 cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
                 cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
         else:
-            cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-            cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-            cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-            cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            else:
+                cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+                cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])

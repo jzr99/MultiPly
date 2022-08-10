@@ -346,7 +346,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=True, canonical_vis=True):
+    def __init__(self, opt, free_view_render=False, canonical_vis=True):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.dataset = ThreeDPWDataset(opt)
@@ -428,4 +428,11 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 # "normal": images["normal"],
                 "img_size": images["img_size"]
             }
+            if self.canonical_vis:
+                cano_smpl_params = inputs["smpl_params"].clone()
+                cano_smpl_params[4:76] = 0 
+                cano_smpl_params[9] = np.pi/6
+                cano_smpl_params[12] = -np.pi/6
+                cano_smpl_params
+                inputs.update({'smpl_params': cano_smpl_params})
         return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render, self.canonical_vis
