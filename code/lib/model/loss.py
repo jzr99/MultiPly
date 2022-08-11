@@ -97,7 +97,7 @@ class VolSDFLoss(nn.Module):
         super().__init__()
         self.eikonal_weight = opt.eikonal_weight
         self.bone_weight = opt.bone_weight
-        self.normal_loss_weight = opt.norm_weight
+        # self.normal_loss_weight = opt.norm_weight
         self.density_reg_weight = 5e-3
         self.bg_shadow_weight = 5e-2
         self.off_surface_weight = 3e-3

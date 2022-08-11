@@ -5,6 +5,7 @@ from .density import LaplaceDensity, AbsDensity
 from .ray_sampler import ErrorBoundSampler, BBoxSampler
 from .deformer import ForwardDeformer, SMPLDeformer
 from .smpl import SMPLServer
+from .body_model_params import BodyModelParams
 from .sampler import PointInSpace, PointOnBones
 from .loss import VolSDFLoss
 from ..utils import idr_utils
@@ -55,7 +56,7 @@ class VolSDFNetworkBG(nn.Module):
             self.deformer = SMPLDeformer(betas=betas) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'female'
+        gender = 'male'
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -153,7 +154,7 @@ class VolSDFNetworkBG(nn.Module):
 
         return index_off_surface
     
-    def check_off_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
+    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
         # smpl_v_cano = self.smpl_server.verts_c
         # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
         # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
@@ -168,13 +169,17 @@ class VolSDFNetworkBG(nn.Module):
 
         minimum = torch.min(signed_distance, 1)[0]
         index_off_surface = (minimum > threshold).squeeze(1)
-
-        return index_off_surface
+        index_in_surface = (minimum <= 0.).squeeze(1)
+        return index_off_surface, index_in_surface
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
-        # for param in self.deformer.parameters():
-        #     param.requires_grad = False
+        if input['current_epoch'] < 100:
+            for param in self.disp_network.parameters():
+                param.requires_grad = False
+        else:
+            for param in self.disp_network.parameters():
+                param.requires_grad = True
         intrinsics = input["intrinsics"]
         pose = input["pose"]
         uv = input["uv"]
@@ -241,7 +246,6 @@ class VolSDFNetworkBG(nn.Module):
         if self.use_smpl_deformer:
             sdf_output, canonical_points, feature_vectors, disp_c = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
-            # index_off_surface = self.check_off_suface_points_cano(canonical_points, N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
         sdf_output = sdf_output.unsqueeze(1)
@@ -271,10 +275,11 @@ class VolSDFNetworkBG(nn.Module):
         # ipdb.set_trace()
 
         if self.training:
+            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
             # normal = input["normal"].reshape(-1, 3)
-            # surface_normal = normal # [surface_mask]
+            # surface_normal = normal
 
             # N = surface_points.shape[0]
 
@@ -324,7 +329,6 @@ class VolSDFNetworkBG(nn.Module):
             # gt_skinning_values = gt_skinning_values[surface_mask].reshape(-1, lbs_weight.shape[1])
             # skinning_values = lbs_weight
             # gt_skinning_values = gt_lbs_weight
-            normal_weight = torch.zeros(points_flat.shape[0]).float().cuda()
         else:
             differentiable_points = canonical_points.reshape(num_pixels, N_samples, 3).reshape(-1, 3)
             grad_theta = None
@@ -340,7 +344,10 @@ class VolSDFNetworkBG(nn.Module):
             # if 'shadow_r' in others.keys():
             #     shadow_r = others['shadow_r']
             #     fg_rgb_flat = (1-shadow_r) * fg_rgb_flat
-        frame_latent_code = self.frame_latent_encoder(input['idx'])
+        if 'image_id' in input.keys():
+            frame_latent_code = self.frame_latent_encoder(input['image_id'])
+        else:
+            frame_latent_code = self.frame_latent_encoder(input['idx'])
 
         fg_rgb = fg_rgb_flat.reshape(-1, N_samples, 3)
         if False:
@@ -407,7 +414,8 @@ class VolSDFNetworkBG(nn.Module):
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
                 "index_ground": index_ground,
-                # 'index_off_surface': index_off_surface,
+                'index_off_surface': index_off_surface,
+                'index_in_surface': index_in_surface,
                 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
@@ -419,7 +427,6 @@ class VolSDFNetworkBG(nn.Module):
                 # 'foot_sample_sdf_gt': foot_sample_sdf_gt,
                 'grad_theta': grad_theta,
                 'use_smpl_deformer': self.use_smpl_deformer,
-                'disp_c': disp_c,
                 'epoch': input['current_epoch'],
             }
         else:
@@ -440,7 +447,7 @@ class VolSDFNetworkBG(nn.Module):
 
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
-        fg_rendering_output = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
+        fg_rendering_output = self.rendering_network(pnts_c, normals, view_dirs, cond['smpl'],
                                                      feature_vectors, surface_body_parsing)
         
         rgb_vals = fg_rendering_output[:, :3]
@@ -571,28 +578,54 @@ class VolSDF(pl.LightningModule):
         super().__init__()
         # self.automatic_optimization = False
         self.model = VolSDFNetworkBG(opt.model, betas_path)
-        self.loss = VolSDFLoss(opt.model.loss)
-        self.training_modules = ["model"]
-        # self.smpl_pose = nn.Parameter(torch.zeros(1, 72))
-        # self.smpl_shape = nn.Parameter(torch.zeros(1, 10))
-        # self.smpl_trans = nn.Parameter(torch.zeros(1, 3))
-        self.smpl_pose = torch.tensor(np.zeros([1, 72]), requires_grad=True, dtype=torch.float32)
-        self.smpl_shape = torch.tensor(np.zeros([1, 10]), requires_grad=True, dtype=torch.float32)
-        self.smpl_trans = torch.tensor(np.zeros([1, 3]), requires_grad=True, dtype=torch.float32)
         self.opt = opt
+        self.num_training_frames = opt.model.num_training_frames
+        self.start_frame = 0
+        self.end_frame = 658
+        assert (self.end_frame - self.start_frame) == self.num_training_frames
+        self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
+        self.load_body_model_params()
+        self.opt_smpl = True
+        self.training_modules = ["model"]
+        if self.opt_smpl:
+            optim_params = self.body_model_params.param_names
+            for param_name in optim_params:
+                self.body_model_params.set_requires_grad(param_name, requires_grad=True)
+            self.training_modules += ['body_model_params']
+        
+        self.loss = VolSDFLoss(opt.model.loss)
+        
+        # self.smpl_pose = torch.tensor(np.zeros([1, 72]), requires_grad=True, dtype=torch.float32)
+        # self.smpl_shape = torch.tensor(np.zeros([1, 10]), requires_grad=True, dtype=torch.float32)
+        # self.smpl_trans = torch.tensor(np.zeros([1, 3]), requires_grad=True, dtype=torch.float32)
+
+    def load_body_model_params(self):
+        body_model_params = {param_name: [] for param_name in self.body_model_params.param_names}
+        data_root = os.path.join('../data', self.opt.dataset.train.data_dir)
+        data_root = hydra.utils.to_absolute_path(data_root)
+
+        body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.start_frame:self.end_frame], dtype=torch.float32)
+
+        for param_name in body_model_params.keys():
+            self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 
 
     def configure_optimizers(self):
-        params = chain(*[
-            getattr(self, module).parameters()
-            for module in self.training_modules
-        ])
-
-        self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate)
+        # params = chain(*[
+        #     getattr(self, module).parameters()
+        #     for module in self.training_modules
+        # ])
+        params = [{'params': self.model.parameters(), 'lr':self.opt.model.learning_rate}]
+        if self.opt_smpl:
+            params.append({'params': self.body_model_params.parameters(), 'lr':self.opt.model.learning_rate*0.1})
+        self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate, eps=1e-8)
         # self.pose_optimizer = optim.Adam([self.smpl_pose , self.smpl_shape, self.smpl_trans], lr=1e-4) 
         self.scheduler = optim.lr_scheduler.MultiStepLR(
             self.optimizer, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
-        # self._optimizers = [self.optimizer]
-        return [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}]
+        # self._optimizers = [self.optimizer, self.pose_optimizer]
+        return [self.optimizer], [self.scheduler] # [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}]
 
     def training_step(self, batch):
         inputs, targets = batch
@@ -601,23 +634,33 @@ class VolSDF(pl.LightningModule):
         
         device = inputs["smpl_params"].device
         if self.current_epoch < 10000:
-            reference_pose = inputs["smpl_params"][:, 4:76]
-            reference_shape = inputs["smpl_params"][:, 76:]
-            reference_trans = inputs["smpl_params"][:, 1:4]
-            self.smpl_pose.data = reference_pose
-            self.smpl_shape.data = reference_shape
-            self.smpl_trans.data = reference_trans
+            if self.opt_smpl:
+                body_model_params = self.body_model_params(batch_idx)
+                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                inputs['smpl_shape'] = body_model_params['betas']
+                inputs['smpl_trans'] = body_model_params['transl']
+            else:
+                # reference_pose = inputs["smpl_params"][:, 4:76]
+                # reference_shape = inputs["smpl_params"][:, 76:]
+                # reference_trans = inputs["smpl_params"][:, 1:4]
+                # self.smpl_pose.data = reference_pose
+                # self.smpl_shape.data = reference_shape
+                # self.smpl_trans.data = reference_trans
+                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
         else:
             smpl_params = np.load(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz")
             self.smpl_pose.data = torch.from_numpy(smpl_params["smpl_pose"]).to(device)
             self.smpl_shape.data = torch.from_numpy(smpl_params["smpl_shape"]).to(device)
             self.smpl_trans.data = torch.from_numpy(smpl_params["smpl_trans"]).to(device)
 
-        inputs["smpl_pose"] = self.smpl_pose
-        inputs["smpl_shape"] = self.smpl_shape
-        inputs["smpl_trans"] = self.smpl_trans
+        # inputs["smpl_pose"] = self.smpl_pose
+        # inputs["smpl_shape"] = self.smpl_shape
+        # inputs["smpl_trans"] = self.smpl_trans
         inputs['current_epoch'] = self.current_epoch
         model_outputs = self.model(inputs)
+
         # if model_outputs is None:
         #     for optimizer in self._optimizers:
         #         optimizer.zero_grad()
@@ -717,20 +760,30 @@ class VolSDF(pl.LightningModule):
 
         device = inputs["smpl_params"].device
         if self.current_epoch < 10000:
-            reference_pose = inputs["smpl_params"][:, 4:76]
-            reference_shape = inputs["smpl_params"][:, 76:]
-            reference_trans = inputs["smpl_params"][:, 1:4]
-            val_smpl_pose = reference_pose
-            val_smpl_shape = reference_shape
-            val_smpl_trans = reference_trans
+            if self.opt_smpl:
+                body_model_params = self.body_model_params(inputs['image_id'])
+                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                inputs['smpl_shape'] = body_model_params['betas']
+                inputs['smpl_trans'] = body_model_params['transl']
+                # reference_pose = inputs["smpl_params"][:, 4:76]
+                # reference_shape = inputs["smpl_params"][:, 76:]
+                # reference_trans = inputs["smpl_params"][:, 1:4]
+                # val_smpl_pose = reference_pose
+                # val_smpl_shape = reference_shape
+                # val_smpl_trans = reference_trans
+            else:
+                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+
         else:
             val_smpl_params = np.load(f"./opt_params/smpl_params_0000.npz")
             val_smpl_pose = torch.from_numpy(val_smpl_params["smpl_pose"]).to(device)
             val_smpl_shape = torch.from_numpy(val_smpl_params["smpl_shape"]).to(device)
             val_smpl_trans = torch.from_numpy(val_smpl_params["smpl_trans"]).to(device)
-        inputs["smpl_pose"] = val_smpl_pose
-        inputs["smpl_shape"] = val_smpl_shape
-        inputs["smpl_trans"] = val_smpl_trans
+        # inputs["smpl_pose"] = val_smpl_pose
+        # inputs["smpl_shape"] = val_smpl_shape
+        # inputs["smpl_trans"] = val_smpl_trans
 
         cond = {'smpl': inputs["smpl_pose"][:, 3:]/np.pi}
         mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
@@ -831,29 +884,42 @@ class VolSDF(pl.LightningModule):
         cv2.imwrite(f"fg_rendering/{self.current_epoch}.png", fg_rgb[:, :, ::-1])
     
     def test_step(self, batch, *args, **kwargs):
-        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render = batch
+        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render, canonical_vis = batch
         num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
         if free_view_render:
-            os.makedirs("test_fvr", exist_ok=True)
+
+            if canonical_vis:
+                os.makedirs("test_canonical_fvr", exist_ok=True)
+                os.makedirs("test_canonical_fvr_normal", exist_ok=True)
+            else:
+                os.makedirs("test_fvr", exist_ok=True)
+                os.makedirs("test_fvr_normal", exist_ok=True)
+                os.makedirs("test_fvr_mask", exist_ok=True)
+        
         else:
-            os.makedirs("test_mask", exist_ok=True)
-            os.makedirs("test_rendering", exist_ok=True)
-            os.makedirs("test_fg_rendering", exist_ok=True)
-            os.makedirs("test_normal", exist_ok=True)
-            os.makedirs("test_mesh", exist_ok=True)
+            if canonical_vis:
+                os.makedirs("test_canonical_rendering", exist_ok=True)
+                os.makedirs("test_canonical_normal", exist_ok=True)
+                os.makedirs("test_canonical_fg_rendering", exist_ok=True)
+            else:
+                os.makedirs("test_mask", exist_ok=True)
+                os.makedirs("test_rendering", exist_ok=True)
+                os.makedirs("test_fg_rendering", exist_ok=True)
+                os.makedirs("test_normal", exist_ok=True)
+                os.makedirs("test_mesh", exist_ok=True)
 
-            scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
-            smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
-            smpl_tfs = smpl_outputs['smpl_tfs']
-            smpl_verts = smpl_outputs['smpl_verts']
-            cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+                scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
+                smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+                smpl_tfs = smpl_outputs['smpl_tfs']
+                smpl_verts = smpl_outputs['smpl_verts']
+                cond = {'smpl': smpl_pose[:, 3:]/np.pi}
 
-            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-            mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-            mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
-            mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+                mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
 
         for i in range(num_splits):
             print("current batch:", i)
@@ -871,6 +937,18 @@ class VolSDF(pl.LightningModule):
                             "smpl_shape": inputs["smpl_params"][:, 76:],
                             "smpl_trans": inputs["smpl_params"][:, 1:4],
                             "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+            if not canonical_vis:
+                if self.opt_smpl:
+                    if free_view_render:
+                        body_model_params = self.body_model_params(inputs['image_id'])
+                    else:
+                        body_model_params = self.body_model_params(inputs['idx'])
+
+                    batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                    batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                    batch_inputs.update({'smpl_trans': body_model_params['transl']})
+            if free_view_render:
+                batch_inputs.update({'image_id': inputs['image_id']})
             if self.opt.model.use_body_parsing:
                 batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
@@ -918,10 +996,22 @@ class VolSDF(pl.LightningModule):
 
         normal = (normal * 255).astype(np.uint8)
 
+        
         if free_view_render:
-            cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
+                cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
+            else:
+                cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
         else:
-            cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-            cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-            cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-            cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            else:
+                cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+                cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])

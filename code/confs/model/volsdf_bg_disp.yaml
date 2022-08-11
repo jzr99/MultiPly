@@ -1,16 +1,16 @@
 learning_rate : 5.0e-4
 alpha_milestones : []
 alpha_factor : 2
-sched_milestones : [40,80]
+sched_milestones : [200,500]
 sched_factor : 0.5
-smpl_init: True
+smpl_init: False
 is_continue: False
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 100 # 110
+num_training_frames: 658 # 462 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -21,8 +21,8 @@ implicit_network:
     bias: 0.6
     skip_in: [4]
     weight_norm: True
-    multires: 6
-    cond: 'smpl'
+    multires: 4
+    cond: 'none'
     scene_bounding_sphere: 3.0 # 3.0
 disp_network:
     feature_vector_size: 0
