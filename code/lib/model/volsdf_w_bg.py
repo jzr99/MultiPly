@@ -175,7 +175,6 @@ class VolSDFNetworkBG(nn.Module):
         pose = input["pose"]
         uv = input["uv"]
 
-        object_mask = None if input["object_mask"] is None else input["object_mask"].reshape(-1)
         if self.use_body_pasing:
             body_parsing = input['body_parsing'].reshape(-1)
 
@@ -195,20 +194,7 @@ class VolSDFNetworkBG(nn.Module):
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
-        """
-        # self.implicit_network.eval()
-        # with torch.no_grad():
-        #     points, network_object_mask, dists = self.ray_tracer(
-        #         sdf=lambda x: self.sdf_func(x, cond, smpl_tfs, eval_mode=True)[0],
-        #         cam_loc=cam_loc,
-        #         object_mask=object_mask,
-        #         ray_directions=ray_dirs,
-        #         smpl_mesh = smpl_mesh)
-        # self.implicit_network.train()
 
-        # points = (cam_loc.unsqueeze(1) +
-        #           dists.reshape(batch_size, num_pixels, 1) * ray_dirs).reshape(-1, 3)
-        """
         cam_loc = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape(-1, 3)
         ray_dirs = ray_dirs.reshape(-1, 3)
 
@@ -411,7 +397,6 @@ class VolSDFNetworkBG(nn.Module):
                 'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
-                'object_mask': object_mask,
                 "w_pd": w_pd,
                 "w_gt": w_gt,
                 # 'foot_sample_sdf_pd': foot_sample_sdf_pd,
@@ -571,8 +556,8 @@ class VolSDF(pl.LightningModule):
         self.model = VolSDFNetworkBG(opt.model, betas_path)
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
-        self.start_frame = 200
-        self.end_frame = 660
+        self.start_frame = 0
+        self.end_frame = 658
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
         self.load_body_model_params()
@@ -791,7 +776,7 @@ class VolSDF(pl.LightningModule):
             'canonical_weighted':mesh_canonical
         })
 
-        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0,0] * targets["img_size"][0,1]))
+        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0] * targets["img_size"][1]))
 
         res = []
         for s in split:
@@ -809,8 +794,6 @@ class VolSDF(pl.LightningModule):
                 'rgb_values': out['rgb_values'].detach(),
                 'normal_values': out['normal_values'].detach(),
                 'fg_rgb_values': out['fg_rgb_values'].detach(),
-                # 'network_object_mask': out['network_object_mask'].detach(),
-                # 'object_mask': out['object_mask'].detach()
             })
         batch_size = targets['rgb'].shape[0]
 
@@ -835,7 +818,7 @@ class VolSDF(pl.LightningModule):
         return batch_parts
 
     def validation_epoch_end(self, outputs) -> None:
-        img_size = outputs[0]["img_size"].squeeze(0)
+        img_size = outputs[0]["img_size"]
 
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
@@ -916,8 +899,7 @@ class VolSDF(pl.LightningModule):
             print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
-            batch_inputs = {"object_mask": inputs["object_mask"][:, indices] if 'object_mask' in inputs.keys() else None,
-                            "uv": inputs["uv"][:, indices],
+            batch_inputs = {"uv": inputs["uv"][:, indices],
                             "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
                             "P": inputs["P"],
                             "C": inputs["C"],

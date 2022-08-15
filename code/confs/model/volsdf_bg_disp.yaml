@@ -1,6 +1,4 @@
 learning_rate : 5.0e-4
-alpha_milestones : []
-alpha_factor : 2
 sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: False
@@ -17,23 +15,26 @@ implicit_network:
     d_in: 3
     d_out: 1
     dims: [ 256, 256, 256, 256, 256, 256, 256, 256 ]
-    geometric_init: True
+    init: 'geometry'
     bias: 0.6
     skip_in: [4]
     weight_norm: True
-    multires: 4
+    embedder_mode: 'fourier'
+    multires: 6
     cond: 'none'
-    scene_bounding_sphere: 3.0 # 3.0
 disp_network:
     feature_vector_size: 0
     d_in: 3
     d_out: 3
     dims: [ 256, 256, 256, 256]
-    geometric_init: False
+    init: 'zero'
     bias: 0.6
     skip_in: [2]
-    weight_norm: True
-    multires: 6
+    weight_norm: False
+    embedder_mode: 'hann'
+    kick_in_epoch: 50
+    full_band_epoch: 200
+    multires: 4
     cond: 'smpl'
     scene_bounding_sphere: 3.0 # 3.0
 rendering_network:
@@ -49,10 +50,11 @@ bg_implicit_network:
     d_in: 4
     d_out: 1
     dims: [ 256, 256, 256, 256, 256, 256, 256, 256 ]
-    geometric_init: False
+    init: 'none'
     bias: 0.0
     skip_in: [4]
     weight_norm: False
+    embedder_mode: 'fourier'
     multires: 10
     cond: 'none'
 bg_rendering_network:
@@ -100,7 +102,7 @@ deformer:
     skip_in: []
     cond_layer: []
     dim_cond_embed: 0
-    weight_norm: true
-    geometric_init: false
+    weight_norm: True
+    init: 'none'
     bias: 1
     cond: 'none'

@@ -113,35 +113,35 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.bg_images = []
         # self.parsing_masks = []
 
-        normalize_rgb = False
+        self.normalize_rgb = False
 
         # images
         img_dir = os.path.join(root, "image")
-        img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
-        
-        for img_path in img_paths[self.start_frame:self.end_frame]: # [::self.skip_step]:
-            img = cv2.imread(img_path)
-            img_size = img.shape[:2]
-            self.img_sizes.append(img_size)
+        self.img_paths = sorted(glob.glob(f"{img_dir}/*.png"))[self.start_frame:self.end_frame]
+        self.img_size = cv2.imread(self.img_paths[0]).shape[:2]
+        # for img_path in img_paths[self.start_frame:self.end_frame]: # [::self.skip_step]:
+        #     img = cv2.imread(img_path)
+        #     img_size = img.shape[:2]
+        #     self.img_sizes.append(img_size)
 
-            # preprocess: BGR -> RGB -> Normalize
-            if normalize_rgb:
-                img = ((img[:, :, ::-1] / 255) - 0.5) * 2
-            else:
-                img = img[:, :, ::-1] / 255
-            self.images.append(img)
-        self.n_images = len(img_paths)
+        #     # preprocess: BGR -> RGB -> Normalize
+        #     if self.normalize_rgb:
+        #         img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+        #     else:
+        #         img = img[:, :, ::-1] / 255
+        #     self.images.append(img)
+        self.n_images = len(self.img_paths)
         # masks
         mask_dir = os.path.join(root, "mask")
-        mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
-        for i, mask_path in enumerate(mask_paths[self.start_frame:self.end_frame]): # [::self.skip_step]:
-            mask = cv2.imread(mask_path)
-            assert mask.shape[:2] == self.img_sizes[
-                i], "Mask image imcompatible with RGB"
+        self.mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))[self.start_frame:self.end_frame]
+        # for i, mask_path in enumerate(mask_paths[self.start_frame:self.end_frame]): # [::self.skip_step]:
+        #     mask = cv2.imread(mask_path)
+        #     assert mask.shape[:2] == self.img_sizes[
+        #         i], "Mask image imcompatible with RGB"
 
-            # preprocess: BGR -> Gray -> Mask -> Tensor
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
-            self.object_masks.append(mask)
+        #     # preprocess: BGR -> Gray -> Mask -> Tensor
+        #     mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
+        #     self.object_masks.append(mask)
         
         # ground_masks only for scenes with strong shadows
         # ground_mask_dir = os.path.join(root, "ground_mask")
@@ -183,7 +183,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     assert bg_img.shape[:2] == self.img_sizes[i], "Background image imcompatible with RGB"
             
         #     # preprocess: BGR -> RGB -> Normalize
-        #     if normalize_rgb:
+        #     if self.normalize_rgb:
         #         bg_img = ((bg_img[:, :, ::-1] / 255) - 0.5) * 2
         #     else:
         #         bg_img = bg_img[:, :, ::-1] / 255
@@ -220,21 +220,32 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
             self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
             self.pose_all.append(torch.from_numpy(pose).float())
-        assert len(self.intrinsics_all) == len(self.pose_all) == len(self.images)
+        assert len(self.intrinsics_all) == len(self.pose_all) # == len(self.images)
 
         # other properties
         self.num_sample = opt.num_sample
-        self.img_sizes = np.array(self.img_sizes)
+        # self.img_sizes = np.array(self.img_sizes)
         self.sampling_strategy = "weighted"
 
     def __len__(self):
-        return len(self.images)
+        return self.n_images # len(self.images)
 
     def load_body_model_params(self):
         body_model_params = {}
         return body_model_params
     def __getitem__(self, idx):
-        img_size = self.img_sizes[idx]
+        img = cv2.imread(self.img_paths[idx])
+        # preprocess: BGR -> RGB -> Normalize
+        if self.normalize_rgb:
+            img = ((img[:, :, ::-1] / 255) - 0.5) * 2
+        else:
+            img = img[:, :, ::-1] / 255
+
+        mask = cv2.imread(self.mask_paths[idx])
+        # preprocess: BGR -> Gray -> Mask -> Tensor
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
+
+        img_size = self.img_size # [idx]
 
         uv = np.mgrid[:img_size[0], :img_size[1]].astype(np.int32)
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
@@ -248,13 +259,11 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
 
         if self.num_sample > 0:
             data = {
-                "rgb": self.images[idx],
+                "rgb": img, # self.images[idx],
                 "uv": uv,
-                "object_mask": self.object_masks[idx],
-                # "parsing_mask": self.parsing_masks[idx],
+                "object_mask": mask, # self.object_masks[idx],
                 # "normal": self.normals[idx],
                 # "bg_image": self.bg_images[idx],
-                # "ground_mask": self.ground_masks[idx],
             }
             if self.sampling_strategy == "uniform":
                 samples = uniform_sampling(data, img_size, self.num_sample)
@@ -265,9 +274,6 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 samples, index_outside = weighted_sampling(data, img_size, self.num_sample)
             # samples["normal"] = samples["normal"] / np.linalg.norm(samples["normal"], axis=-1)[:, None]
             inputs = {
-                "object_mask": samples["object_mask"] > 0.5,
-                # "ground_mask": samples['ground_mask'] > 0.5,
-                # "body_parsing": samples["parsing_mask"].astype(np.int64),
                 # "normal": samples["normal"].astype(np.float32),
                 "uv": samples["uv"].astype(np.float32),
                 # 'bg_image': samples["bg_image"].astype(np.float32),
@@ -283,8 +289,6 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
             return inputs, images
         else:
             inputs = {
-                "object_mask": self.object_masks[idx].reshape(-1) > 0.5,
-                # "body_parsing": self.parsing_masks[idx].reshape(-1).astype(np.int64),
                 "uv": uv.reshape(-1, 2).astype(np.float32),
                 # "bg_image": self.bg_images[idx].reshape(-1, 3).astype(np.float32),
                 "P": self.P[idx],
@@ -295,9 +299,9 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "idx": idx
             }
             images = {
-                "rgb": self.images[idx].reshape(-1, 3).astype(np.float32),
+                "rgb": img, # self.images[idx].reshape(-1, 3).astype(np.float32),
                 # "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
-                "img_size": self.img_sizes[idx]
+                "img_size": self.img_size # [idx]
             }
             return inputs, images
 
@@ -306,7 +310,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         self.dataset = ThreeDPWDataset(opt)
         image_id = opt.image_id
         self.canonical_vis = canonical_vis
-        self.img_size = self.dataset.img_sizes[image_id]
+        self.img_size = self.dataset.img_size # img_sizes[image_id]
 
         self.total_pixels = np.prod(self.img_size)
         self.pixel_per_batch = opt.pixel_per_batch
@@ -320,8 +324,6 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         inputs, images = self.data
 
         inputs = {
-            "object_mask": inputs["object_mask"],
-            # "body_parsing": inputs["body_parsing"],
             "uv": inputs["uv"],
             # "bg_image": inputs["bg_image"],
             "P": inputs["P"],
@@ -357,7 +359,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             self.new_poses = []
             self.image_id = 542
             self.data = self.dataset[self.image_id]
-            self.img_size = self.dataset.img_sizes[self.image_id]
+            self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
             target_inputs, images = self.data
@@ -368,7 +370,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 new_pose = rend_util.get_new_cam_pose_fvr(pose, rotation_angle_y)
                 self.new_poses.append(new_pose)
         else:
-            self.img_size = self.dataset.img_sizes[0]
+            self.img_size = self.dataset.img_size # [0]
 
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
@@ -383,12 +385,6 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
             uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
             target_inputs, images = self.data
-
-            # import ipdb
-            # ipdb.set_trace()
-
-            # new_P = transform_P @ (target_inputs['P'].copy())
-            # new_C = -np.linalg.solve(new_P[:3, :3], new_P[:3, 3])
 
             inputs = {
                 "uv": uv.reshape(-1, 2).astype(np.float32),
@@ -413,7 +409,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
 
             inputs, images = data
             inputs = {
-                "object_mask": inputs["object_mask"],
+                # "object_mask": inputs["object_mask"],
                 "uv": inputs["uv"],
                 # "bg_image": inputs["bg_image"],
                 "P": inputs["P"],

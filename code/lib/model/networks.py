@@ -1,55 +1,7 @@
 import torch.nn as nn
 import torch
 import numpy as np
-
-
-class Embedder:
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        self.create_embedding_fn()
-
-    def create_embedding_fn(self):
-        embed_fns = []
-        d = self.kwargs['input_dims']
-        out_dim = 0
-        if self.kwargs['include_input']:
-            embed_fns.append(lambda x: x)
-            out_dim += d
-
-        max_freq = self.kwargs['max_freq_log2']
-        N_freqs = self.kwargs['num_freqs']
-
-        if self.kwargs['log_sampling']:
-            freq_bands = 2. ** torch.linspace(0., max_freq, N_freqs)
-        else:
-            freq_bands = torch.linspace(2.**0., 2.**max_freq, N_freqs)
-
-        for freq in freq_bands:
-            for p_fn in self.kwargs['periodic_fns']:
-                embed_fns.append(lambda x, p_fn=p_fn,
-                                 freq=freq: p_fn(x * freq))
-                out_dim += d
-
-        self.embed_fns = embed_fns
-        self.out_dim = out_dim
-
-    def embed(self, inputs):
-        return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
-
-def get_embedder(multires, input_dims=3):
-    embed_kwargs = {
-        'include_input': True,
-        'input_dims': input_dims,
-        'max_freq_log2': multires-1,
-        'num_freqs': multires,
-        'log_sampling': True,
-        'periodic_fns': [torch.sin, torch.cos],
-    }
-
-    embedder_obj = Embedder(**embed_kwargs)
-    def embed(x, eo=embedder_obj): return eo.embed(x)
-    return embed, embedder_obj.out_dim
-
+from .embedders import get_embedder
 
 class ImplicitNet(nn.Module):
     def __init__(self, opt):
@@ -60,8 +12,14 @@ class ImplicitNet(nn.Module):
         self.num_layers = len(dims)
         self.skip_in = opt.skip_in
         self.embed_fn = None
+        self.opt = opt
+
         if opt.multires > 0:
-            embed_fn, input_ch = get_embedder(opt.multires, input_dims=opt.d_in)
+            if opt.embedder_mode == 'hann':
+                embed_fn, input_ch = get_embedder(opt.multires, input_dims=opt.d_in, mode=opt.embedder_mode, 
+                                                  kick_in_epoch=opt.kick_in_epoch, iter_epoch=0, full_band_epoch=opt.full_band_epoch)
+            else:
+                embed_fn, input_ch = get_embedder(opt.multires, input_dims=opt.d_in, mode=opt.embedder_mode)
             self.embed_fn = embed_fn
             dims[0] = input_ch
         self.cond = opt.cond   
@@ -83,7 +41,7 @@ class ImplicitNet(nn.Module):
                 lin = nn.Linear(dims[l] + self.cond_dim, out_dim)
             else:
                 lin = nn.Linear(dims[l], out_dim)
-            if opt.geometric_init:
+            if opt.init == 'geometry':
                 if l == self.num_layers - 2:
                     torch.nn.init.normal_(lin.weight,
                                           mean=np.sqrt(np.pi) /
@@ -105,13 +63,17 @@ class ImplicitNet(nn.Module):
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.normal_(lin.weight, 0.0,
                                           np.sqrt(2) / np.sqrt(out_dim))
+            if opt.init == 'zero':
+                init_val = 1e-5
+                if l == self.num_layers - 2:
+                    torch.nn.init.constant_(lin.bias, 0.0)
+                    torch.nn.init.uniform_(lin.weight, -init_val, init_val)
             if opt.weight_norm:
                 lin = nn.utils.weight_norm(lin)
             setattr(self, "lin" + str(l), lin)
         self.softplus = nn.Softplus(beta=100)
 
-    def forward(self, input, cond):
-
+    def forward(self, input, cond, current_epoch=None):
         if input.ndim == 2: input = input.unsqueeze(0)
 
         num_batch, num_point, num_dim = input.shape
@@ -132,6 +94,9 @@ class ImplicitNet(nn.Module):
                 input_cond = self.lin_p0(input_cond)
 
         if self.embed_fn is not None:
+            if self.opt.embedder_mode == 'hann':
+                self.embed_fn, _ = get_embedder(self.opt.multires, input_dims=self.opt.d_in, mode=self.opt.embedder_mode,
+                                                kick_in_epoch=self.opt.kick_in_epoch, iter_epoch=current_epoch, full_band_epoch=self.opt.full_band_epoch)
             input = self.embed_fn(input)
 
         x = input

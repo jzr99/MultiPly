@@ -79,10 +79,12 @@ class VolSDFNetworkBG(nn.Module):
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
         smpl_seg = json.load(open(hydra.utils.to_absolute_path('../misc/smpl_vert_segmentation.json'), 'rb'))
-        foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
-        self.foot_vert_ids = []
-        for foot_part_label in foot_part_labels:
-            self.foot_vert_ids += smpl_seg[foot_part_label]
+        # foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
+        # self.foot_vert_ids = []
+        # for foot_part_label in foot_part_labels:
+        #     self.foot_vert_ids += smpl_seg[foot_part_label]
+
+        self.kick_in_epoch = opt.disp_network.kick_in_epoch
 
         self.smpl_v_cano = self.smpl_server.verts_c
         self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
@@ -124,10 +126,12 @@ class VolSDFNetworkBG(nn.Module):
             feature = torch.gather(feature, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, feature.shape[-1]))[:, 0, :]
         return sdf, x_c, feature # [:, 0]
 
-    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts):
+    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, current_epoch):
         if hasattr(self, "deformer"):
             x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
-            disp_c = self.disp_network(x_c, cond)[0]
+            disp_c = self.disp_network(x_c, cond, current_epoch)[0]
+            if current_epoch < self.kick_in_epoch:
+                disp_c = disp_c * 0.0
             x_c = x_c + disp_c
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
@@ -174,17 +178,16 @@ class VolSDFNetworkBG(nn.Module):
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
-        if input['current_epoch'] < 100:
-            for param in self.disp_network.parameters():
-                param.requires_grad = False
-        else:
-            for param in self.disp_network.parameters():
-                param.requires_grad = True
+        # if input['current_epoch'] < 100:
+        #     for param in self.disp_network.parameters():
+        #         param.requires_grad = False
+        # else:
+        #     for param in self.disp_network.parameters():
+        #         param.requires_grad = True
         intrinsics = input["intrinsics"]
         pose = input["pose"]
         uv = input["uv"]
 
-        object_mask = None if input["object_mask"] is None else input["object_mask"].reshape(-1)
         if self.use_body_pasing:
             body_parsing = input['body_parsing'].reshape(-1)
 
@@ -204,20 +207,7 @@ class VolSDFNetworkBG(nn.Module):
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
-        """
-        # self.implicit_network.eval()
-        # with torch.no_grad():
-        #     points, network_object_mask, dists = self.ray_tracer(
-        #         sdf=lambda x: self.sdf_func(x, cond, smpl_tfs, eval_mode=True)[0],
-        #         cam_loc=cam_loc,
-        #         object_mask=object_mask,
-        #         ray_directions=ray_dirs,
-        #         smpl_mesh = smpl_mesh)
-        # self.implicit_network.train()
 
-        # points = (cam_loc.unsqueeze(1) +
-        #           dists.reshape(batch_size, num_pixels, 1) * ray_dirs).reshape(-1, 3)
-        """
         cam_loc = cam_loc.unsqueeze(1).repeat(1, num_pixels, 1).reshape(-1, 3)
         ray_dirs = ray_dirs.reshape(-1, 3)
 
@@ -225,7 +215,7 @@ class VolSDFNetworkBG(nn.Module):
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:    
-                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'], current_epoch=input['current_epoch'])
         else:
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
@@ -244,7 +234,7 @@ class VolSDFNetworkBG(nn.Module):
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
-            sdf_output, canonical_points, feature_vectors, disp_c = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            sdf_output, canonical_points, feature_vectors, _ = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'], current_epoch=input['current_epoch'])
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
@@ -297,18 +287,6 @@ class VolSDFNetworkBG(nn.Module):
             grad_theta = gradient(sample, local_pred)
 
             differentiable_points = canonical_points 
-            # regularization near feet
-            # smpl_foot_verts_c = smpl_verts_c[:, self.foot_vert_ids, :]
-            # foot_sample_indices = torch.randperm(smpl_foot_verts_c.shape[1])[:num_pixels].cuda()
-            # foot_sample_verts_c = torch.index_select(smpl_foot_verts_c, 1, foot_sample_indices)
-            # foot_sample = self.sampler.get_points(foot_sample_verts_c, local_sigma=0.05, global_ratio=0.)
-            # foot_sample.requires_grad_()
-            # foot_sample_sdf_pd = self.implicit_network(foot_sample, cond)[..., 0:1]
-            # foot_sample_df_gt, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(foot_sample.contiguous(), self.smpl_face_vertices)
-            # foot_sample_df_gt = torch.sqrt(foot_sample_df_gt) # kaolin outputs squared distance
-            # foot_sample_sign_gt = kaolin.ops.mesh.check_sign(self.smpl_v_cano, self.smpl_f_cano, foot_sample).float()
-            # foot_sample_sign_gt = 1 - 2 * foot_sample_sign_gt
-            # foot_sample_sdf_gt = foot_sample_sign_gt * foot_sample_df_gt
 
             # pts_c_sdf, sdf_gt = self.sampler_bone.get_points(self.smpl_server.joints_c.expand(1, -1, -1))
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
@@ -413,14 +391,12 @@ class VolSDFNetworkBG(nn.Module):
                 'normal_values': normal_values,
                 # 'surface_normal_gt': surface_normal,
                 'index_outside': input['index_outside'],
-                "index_ground": index_ground,
                 'index_off_surface': index_off_surface,
                 'index_in_surface': index_in_surface,
-                'bg_rgb_values': bg_rgb_values,
+                # 'bg_rgb_values': bg_rgb_values,
                 'acc_map': torch.sum(weights, -1),
-                'normal_weight': normal_weight,
-                'sdf_output': sdf_output,
-                'object_mask': object_mask,
+                # 'normal_weight': normal_weight,
+                # 'sdf_output': sdf_output,
                 "w_pd": w_pd,
                 "w_gt": w_gt,
                 # 'foot_sample_sdf_pd': foot_sample_sdf_pd,
@@ -436,7 +412,7 @@ class VolSDFNetworkBG(nn.Module):
                 'rgb_values': rgb_values,
                 'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,
-                'sdf_output': sdf_output,
+                # 'sdf_output': sdf_output,
             }
         return output
 
@@ -633,31 +609,22 @@ class VolSDF(pl.LightningModule):
         batch_idx = inputs["idx"]
         
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            if self.opt_smpl:
-                body_model_params = self.body_model_params(batch_idx)
-                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-                inputs['smpl_shape'] = body_model_params['betas']
-                inputs['smpl_trans'] = body_model_params['transl']
-            else:
-                # reference_pose = inputs["smpl_params"][:, 4:76]
-                # reference_shape = inputs["smpl_params"][:, 76:]
-                # reference_trans = inputs["smpl_params"][:, 1:4]
-                # self.smpl_pose.data = reference_pose
-                # self.smpl_shape.data = reference_shape
-                # self.smpl_trans.data = reference_trans
-                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(batch_idx)
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
         else:
-            smpl_params = np.load(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz")
-            self.smpl_pose.data = torch.from_numpy(smpl_params["smpl_pose"]).to(device)
-            self.smpl_shape.data = torch.from_numpy(smpl_params["smpl_shape"]).to(device)
-            self.smpl_trans.data = torch.from_numpy(smpl_params["smpl_trans"]).to(device)
+            # reference_pose = inputs["smpl_params"][:, 4:76]
+            # reference_shape = inputs["smpl_params"][:, 76:]
+            # reference_trans = inputs["smpl_params"][:, 1:4]
+            # self.smpl_pose.data = reference_pose
+            # self.smpl_shape.data = reference_shape
+            # self.smpl_trans.data = reference_trans
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
 
-        # inputs["smpl_pose"] = self.smpl_pose
-        # inputs["smpl_shape"] = self.smpl_shape
-        # inputs["smpl_trans"] = self.smpl_trans
         inputs['current_epoch'] = self.current_epoch
         model_outputs = self.model(inputs)
 
@@ -674,19 +641,6 @@ class VolSDF(pl.LightningModule):
             else:
                 self.log(k, v.item(), prog_bar=True, on_step=True)
 
-            # if self.current_epoch < 10000:
-                # self.model.implicit_network.eval()
-                # self.model.deformer.eval()
-                # for param in self.model.implicit_network.parameters():
-                #     param.requires_grad = False
-                # for param in self.model.deformer.parameters():
-                    # param.requires_grad = False
-            # else:
-                # self.model.implicit_network.train()
-                # self.model.deformer.train()
-                # for param in self.model.deformer.parameters():
-                #     param.requires_grad = False
-
             # for optimizer in self._optimizers:
             #     optimizer.zero_grad()
 
@@ -694,19 +648,11 @@ class VolSDF(pl.LightningModule):
             # self.manual_backward(loss_output["loss"])
             # for optimizer in self._optimizers:
             #     optimizer.step()
-
-            # if not os.path.exists("./opt_params"):
-            #     os.makedirs("./opt_params")
-            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
-            #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
-            #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
-
-            # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
         return loss_output["loss"]
 
     def training_epoch_end(self, outputs) -> None:
-        if self.current_epoch in self.opt.model.alpha_milestones:
-            self.loss.alpha *= self.opt.model.alpha_factor
+        # if self.current_epoch in self.opt.model.alpha_milestones:
+        #     self.loss.alpha *= self.opt.model.alpha_factor
         # if self.current_epoch % 1 == 0:
         #     self.save_checkpoints(self.current_epoch)
         return super().training_epoch_end(outputs)
@@ -759,28 +705,24 @@ class VolSDF(pl.LightningModule):
         self.model.eval()
 
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            if self.opt_smpl:
-                body_model_params = self.body_model_params(inputs['image_id'])
-                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-                inputs['smpl_shape'] = body_model_params['betas']
-                inputs['smpl_trans'] = body_model_params['transl']
-                # reference_pose = inputs["smpl_params"][:, 4:76]
-                # reference_shape = inputs["smpl_params"][:, 76:]
-                # reference_trans = inputs["smpl_params"][:, 1:4]
-                # val_smpl_pose = reference_pose
-                # val_smpl_shape = reference_shape
-                # val_smpl_trans = reference_trans
-            else:
-                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+        inputs['current_epoch'] = self.current_epoch
 
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(inputs['image_id'])
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
+            # reference_pose = inputs["smpl_params"][:, 4:76]
+            # reference_shape = inputs["smpl_params"][:, 76:]
+            # reference_trans = inputs["smpl_params"][:, 1:4]
+            # val_smpl_pose = reference_pose
+            # val_smpl_shape = reference_shape
+            # val_smpl_trans = reference_trans
         else:
-            val_smpl_params = np.load(f"./opt_params/smpl_params_0000.npz")
-            val_smpl_pose = torch.from_numpy(val_smpl_params["smpl_pose"]).to(device)
-            val_smpl_shape = torch.from_numpy(val_smpl_params["smpl_shape"]).to(device)
-            val_smpl_trans = torch.from_numpy(val_smpl_params["smpl_trans"]).to(device)
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+
         # inputs["smpl_pose"] = val_smpl_pose
         # inputs["smpl_shape"] = val_smpl_shape
         # inputs["smpl_trans"] = val_smpl_trans
@@ -800,7 +742,7 @@ class VolSDF(pl.LightningModule):
             'canonical_weighted':mesh_canonical
         })
 
-        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0,0] * targets["img_size"][0,1]))
+        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0] * targets["img_size"][1]))
 
         res = []
         for s in split:
@@ -818,8 +760,6 @@ class VolSDF(pl.LightningModule):
                 'rgb_values': out['rgb_values'].detach(),
                 'normal_values': out['normal_values'].detach(),
                 'fg_rgb_values': out['fg_rgb_values'].detach(),
-                # 'network_object_mask': out['network_object_mask'].detach(),
-                # 'object_mask': out['object_mask'].detach()
             })
         batch_size = targets['rgb'].shape[0]
 
@@ -844,7 +784,7 @@ class VolSDF(pl.LightningModule):
         return batch_parts
 
     def validation_epoch_end(self, outputs) -> None:
-        img_size = outputs[0]["img_size"].squeeze(0)
+        img_size = outputs[0]["img_size"]
 
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
@@ -925,8 +865,7 @@ class VolSDF(pl.LightningModule):
             print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
-            batch_inputs = {"object_mask": inputs["object_mask"][:, indices] if 'object_mask' in inputs.keys() else None,
-                            "uv": inputs["uv"][:, indices],
+            batch_inputs = {"uv": inputs["uv"][:, indices],
                             "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
                             "P": inputs["P"],
                             "C": inputs["C"],
@@ -936,7 +875,8 @@ class VolSDF(pl.LightningModule):
                             "smpl_pose": inputs["smpl_params"][:, 4:76],
                             "smpl_shape": inputs["smpl_params"][:, 76:],
                             "smpl_trans": inputs["smpl_params"][:, 1:4],
-                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None,
+                            "current_epoch": 2000}
             if not canonical_vis:
                 if self.opt_smpl:
                     if free_view_render:
