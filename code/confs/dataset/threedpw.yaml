@@ -1,6 +1,6 @@
 train:
     dataset: ThreeDPW
-    subject: "Invisible_disp_hann"
+    subject: "Invisible_disp_hann_retry"
     start_frame: 0
     end_frame: 658
     batch_size: 1
@@ -13,7 +13,7 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Invisible_disp_hann"
+    subject: "Invisible_disp_hann_retry"
     start_frame: 0
     end_frame: 658
     image_id: 0
@@ -25,11 +25,11 @@ valid:
 
     data_dir : Invisible/
     num_sample : -1
-    pixel_per_batch: 512  # 16000 256
+    pixel_per_batch: 2048  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Invisible_disp_hann"
+    subject: "Invisible_disp_hann_retry"
     start_frame: 0
     end_frame: 658
     image_id: 0
@@ -41,4 +41,4 @@ test:
 
     data_dir : Invisible/
     num_sample : -1
-    pixel_per_batch: 1024
+    pixel_per_batch: 2048

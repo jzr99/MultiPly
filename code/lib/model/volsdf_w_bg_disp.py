@@ -73,7 +73,7 @@ class VolSDFNetworkBG(nn.Module):
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % 'male'))
+            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_wo_pose_256.pth' % 'male'))
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])

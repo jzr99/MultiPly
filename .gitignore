@@ -18,3 +18,4 @@ mocap_data_copy
 pifuhd
 lightweight-human-pose-estimation.pytorch
 *.pth
+ait_viewer_vis/imgui.ini

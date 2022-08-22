@@ -129,11 +129,12 @@ class VolSDFLoss(nn.Module):
         foot_reg_loss = self.l2_loss(foot_sample_sdf_pd, foot_sample_sdf_gt)
         return foot_reg_loss
 
-    def get_density_reg_loss(self, acc_map, index_outside):
+    def get_density_reg_loss(self, acc_map, index_outside, epoch):
         zero_density_loss = self.l1_loss(acc_map, torch.zeros_like(acc_map)) 
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside[0]], torch.zeros_like(acc_map[index_outside[0]]))
         binary_loss = -1 * (acc_map * (acc_map + 1e-6).log() + (1-acc_map) * (1 - acc_map + 1e-6).log()).mean() 
-        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * binary_loss # + 0.1 * ground_density_loss
+        epoch = min(200, epoch)
+        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 *(1 + epoch / 100) * binary_loss # + 0.1 * ground_density_loss
         return density_reg_loss
 
     def get_off_surface_loss(self, acc_map, index_off_surface):
@@ -153,7 +154,7 @@ class VolSDFLoss(nn.Module):
         rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
-        density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'])
+        density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'], model_outputs['epoch'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         epoch_for_off_surface = min(200, model_outputs['epoch'])
