@@ -615,12 +615,6 @@ class VolSDF(pl.LightningModule):
             inputs['smpl_shape'] = body_model_params['betas']
             inputs['smpl_trans'] = body_model_params['transl']
         else:
-            # reference_pose = inputs["smpl_params"][:, 4:76]
-            # reference_shape = inputs["smpl_params"][:, 76:]
-            # reference_trans = inputs["smpl_params"][:, 1:4]
-            # self.smpl_pose.data = reference_pose
-            # self.smpl_shape.data = reference_shape
-            # self.smpl_trans.data = reference_trans
             inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
             inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
             inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
@@ -712,12 +706,6 @@ class VolSDF(pl.LightningModule):
             inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
             inputs['smpl_shape'] = body_model_params['betas']
             inputs['smpl_trans'] = body_model_params['transl']
-            # reference_pose = inputs["smpl_params"][:, 4:76]
-            # reference_shape = inputs["smpl_params"][:, 76:]
-            # reference_trans = inputs["smpl_params"][:, 1:4]
-            # val_smpl_pose = reference_pose
-            # val_smpl_shape = reference_shape
-            # val_smpl_trans = reference_trans
         else:
             inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
             inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]

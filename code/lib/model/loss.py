@@ -158,44 +158,29 @@ class VolSDFLoss(nn.Module):
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
         in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         epoch_for_off_surface = min(200, model_outputs['epoch'])
-        if model_outputs['epoch'] >= 10000:
-            normal_loss = self.get_normal_loss(model_outputs['normal_values'], model_outputs['surface_normal_gt'], model_outputs['normal_weight'], model_outputs['acc_map'])
-            if model_outputs['use_smpl_deformer']:
-                loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + self.normal_loss_weight * normal_loss
-                return {
-                    'loss': loss,
-                    'rgb_loss': rgb_loss,
-                    'eikonal_loss': eikonal_loss,
-                    'density_reg_loss': density_reg_loss,
-                    'normal_loss': normal_loss,
-                    'off_surface_loss': off_surface_loss,
-                }
-        # bg_shadow_loss = self.get_bg_shadow_loss(model_outputs['bg_rgb_values'])
-        # foot_reg_loss = self.get_foot_reg_loss(model_outputs['foot_sample_sdf_pd'], model_outputs['foot_sample_sdf_gt'])
-        
+
+
+        if model_outputs['use_smpl_deformer']:
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
+                    self.in_surface_weight * in_surface_loss
+            return {
+                'loss': loss,
+                'rgb_loss': rgb_loss,
+                'eikonal_loss': eikonal_loss,
+                'density_reg_loss': density_reg_loss,
+                # 'normal_loss': normal_loss,
+                'off_surface_loss': off_surface_loss,
+                'in_surface_loss': in_surface_loss,
+            }
         else:
-            if model_outputs['use_smpl_deformer']:
-                loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
-                       self.in_surface_weight * in_surface_loss
-                return {
-                    'loss': loss,
-                    'rgb_loss': rgb_loss,
-                    'eikonal_loss': eikonal_loss,
-                    'density_reg_loss': density_reg_loss,
-                    # 'normal_loss': normal_loss,
-                    'off_surface_loss': off_surface_loss,
-                    'in_surface_loss': in_surface_loss,
-                }
-            else:
-                bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
-                loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss + self.normal_weight * normal_loss 
-                return {
-                    'loss': loss,
-                    'rgb_loss': rgb_loss,
-                    'eikonal_loss': eikonal_loss,
-                    'bone_loss': bone_loss,
-                    'normal_loss': normal_loss,
-                }
+            bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss
+            return {
+                'loss': loss,
+                'rgb_loss': rgb_loss,
+                'eikonal_loss': eikonal_loss,
+                'bone_loss': bone_loss,
+            }
 
 class ThreeDLoss(nn.Module):
     def __init__(self, opt):
