@@ -186,7 +186,7 @@ class ThreeDLoss(nn.Module):
     def __init__(self, opt):
         super().__init__()
         self.eikonal_weight = 0.1 # opt.eikonal_weight
-        self.global_weight = 0.01 # opt.global_weight
+        self.global_weight = 0.05 # opt.global_weight
         self.bone_weight = 1.
         self.l1_loss = nn.L1Loss(reduction='mean')
     

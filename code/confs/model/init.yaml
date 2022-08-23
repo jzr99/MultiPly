@@ -1,4 +1,4 @@
-learning_rate : 1.0e-4
+learning_rate : 5.0e-4
 alpha_milestones : [250,500,750,1000,1250]
 alpha_factor : 2
 sched_milestones : [1000,1500]
@@ -8,21 +8,22 @@ implicit_network:
     feature_vector_size: 256
     d_in: 3
     d_out: 1
-    dims: [ 512, 512, 512, 512, 512, 512, 512, 512 ]
-    geometric_init: True
+    dims: [ 256, 256, 256, 256, 256, 256, 256, 256 ]
+    init: 'geometry'
     bias: 0.6
     skip_in: [4]
     weight_norm: True
+    embedder_mode: 'fourier'
     multires: 6
-    cond: 'smpl'
+    cond: 'none'
 rendering_network:
     feature_vector_size: 256
-    mode: "idr"
-    d_in: 9
+    mode: "pose_no_view" # "idr"
+    d_in:  14 # 9
     d_out: 3
-    dims: [ 512, 512, 512, 512]
+    dims: [ 256, 256, 256, 256]
     weight_norm: True
-    multires_view: 4
+    multires_view: -1 # 4 
 ray_tracer:
     object_bounding_sphere: 1.0
     sdf_threshold: 5.0e-5
@@ -47,7 +48,7 @@ deformer:
     skip_in: []
     cond_layer: []
     dim_cond_embed: 0
-    weight_norm: true
-    geometric_init: false
+    weight_norm: True
+    init: 'none'
     bias: 1
     cond: 'none'
