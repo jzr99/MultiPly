@@ -121,7 +121,7 @@ class VolSDFNetworkBG(nn.Module):
             feature = torch.gather(feature, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, feature.shape[-1]))[:, 0, :]
         return sdf, x_c, feature # [:, 0]
 
-    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts):
+    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, current_epoch=None):
         if hasattr(self, "deformer"):
             x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
             output = self.implicit_network(x_c, cond)[0]
@@ -202,7 +202,7 @@ class VolSDFNetworkBG(nn.Module):
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:    
-                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'], current_epoch=None)
         else:
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
@@ -221,7 +221,7 @@ class VolSDFNetworkBG(nn.Module):
         dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
         dirs_flat = dirs.reshape(-1, 3)
         if self.use_smpl_deformer:
-            sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'])
+            sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_output['smpl_verts'], current_epoch=None)
             # index_off_surface = self.check_off_suface_points(points_flat, smpl_output['smpl_verts'], N_samples)
         else:
             sdf_output, canonical_points, feature_vectors = self.sdf_func(points_flat, cond, smpl_tfs, eval_mode=True)
@@ -937,7 +937,7 @@ class VolSDF(pl.LightningModule):
                             "acc_map": model_outputs["acc_map"].detach().clone(),
                             **batch_targets})         
 
-        img_size = results[0]["img_size"].squeeze(0)
+        img_size = results[0]["img_size"]
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
 

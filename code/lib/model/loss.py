@@ -134,7 +134,7 @@ class VolSDFLoss(nn.Module):
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside[0]], torch.zeros_like(acc_map[index_outside[0]]))
         binary_loss = -1 * (acc_map * (acc_map + 1e-6).log() + (1-acc_map) * (1 - acc_map + 1e-6).log()).mean() 
         epoch = min(200, epoch)
-        density_reg_loss = 0.5 * (1 + epoch / 400) * zero_density_loss + 5 * outside_bbox_density_loss + 2 *(1 + epoch / 200) * binary_loss # + 0.1 * ground_density_loss
+        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * (1 + epoch / 400) * binary_loss
         return density_reg_loss
 
     def get_off_surface_loss(self, acc_map, index_off_surface):
@@ -161,7 +161,7 @@ class VolSDFLoss(nn.Module):
 
 
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2.2 / 40) * off_surface_loss + \
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
                     self.in_surface_weight * (1 - epoch_for_off_surface / 200) * in_surface_loss
             return {
                 'loss': loss,

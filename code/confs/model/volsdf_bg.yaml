@@ -21,6 +21,7 @@ implicit_network:
     bias: 0.6
     skip_in: [4]
     weight_norm: True
+    embedder_mode: 'fourier'
     multires: 6
     cond: 'smpl'
     scene_bounding_sphere: 3.0 # 3.0
@@ -41,6 +42,7 @@ bg_implicit_network:
     bias: 0.0
     skip_in: [4]
     weight_norm: False
+    embedder_mode: 'fourier'
     multires: 10
     cond: 'none'
 bg_rendering_network:
