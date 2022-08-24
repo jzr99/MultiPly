@@ -892,7 +892,7 @@ class VolSDF(pl.LightningModule):
                             "acc_map": model_outputs["acc_map"].detach().clone(),
                             **batch_targets})         
 
-        img_size = results[0]["img_size"].squeeze(0)
+        img_size = results[0]["img_size"]
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
 

@@ -299,7 +299,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "idx": idx
             }
             images = {
-                "rgb": img, # self.images[idx].reshape(-1, 3).astype(np.float32),
+                "rgb": img.reshape(-1, 3).astype(np.float32), # self.images[idx].reshape(-1, 3).astype(np.float32),
                 # "normal": self.normals[idx].reshape(-1, 3).astype(np.float32),
                 "img_size": self.img_size # [idx]
             }
@@ -348,16 +348,16 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=False, canonical_vis=True):
+    def __init__(self, opt, free_view_render=True, canonical_vis=False):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
-            start = -90
-            steps = 90
-            step_size = 4
+            start = 0
+            steps = 60
+            step_size = 6
             self.new_poses = []
-            self.image_id = 542
+            self.image_id = 53
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -381,6 +381,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
+
         if self.free_view_render:
             uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
             uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
