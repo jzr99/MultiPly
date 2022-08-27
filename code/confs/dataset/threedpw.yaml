@@ -1,6 +1,6 @@
 train:
     dataset: ThreeDPW
-    subject: "Invisible_disp_hann_depth_6"
+    subject: "Invisible_wo_disp_freeze_20_every_20"
     start_frame: 0
     end_frame: 658
     batch_size: 1
@@ -13,7 +13,7 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Invisible_disp_hann_depth_6"
+    subject: "Invisible_wo_disp_freeze_20_every_20"
     start_frame: 0
     end_frame: 658
     image_id: 0
@@ -29,7 +29,7 @@ valid:
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Invisible_disp_hann_depth_6"
+    subject: "Invisible_wo_disp_freeze_20_every_20"
     start_frame: 0
     end_frame: 658
     image_id: 0

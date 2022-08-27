@@ -353,7 +353,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
         self.canonical_vis = canonical_vis
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
-            start = 0
+            start = 15
             steps = 60
             step_size = 6
             self.new_poses = []

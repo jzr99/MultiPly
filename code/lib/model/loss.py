@@ -125,16 +125,16 @@ class VolSDFLoss(nn.Module):
     def get_bone_loss(self, w_pd, w_gt):
         bone_loss = self.l2_loss(w_pd, w_gt)
         return bone_loss
-    def get_foot_reg_loss(self, foot_sample_sdf_pd, foot_sample_sdf_gt):
-        foot_reg_loss = self.l2_loss(foot_sample_sdf_pd, foot_sample_sdf_gt)
-        return foot_reg_loss
+    # def get_foot_reg_loss(self, foot_sample_sdf_pd, foot_sample_sdf_gt):
+    #     foot_reg_loss = self.l2_loss(foot_sample_sdf_pd, foot_sample_sdf_gt)
+    #     return foot_reg_loss
 
     def get_density_reg_loss(self, acc_map, index_outside, epoch):
         zero_density_loss = self.l1_loss(acc_map, torch.zeros_like(acc_map)) 
         outside_bbox_density_loss = self.l1_loss(acc_map[index_outside[0]], torch.zeros_like(acc_map[index_outside[0]]))
         binary_loss = -1 * (acc_map * (acc_map + 1e-6).log() + (1-acc_map) * (1 - acc_map + 1e-6).log()).mean() 
-        epoch = min(200, epoch)
-        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * (1 + epoch / 400) * binary_loss
+        # epoch = min(200, epoch)
+        density_reg_loss = 0.5 * zero_density_loss + 5 * outside_bbox_density_loss + 2 * binary_loss
         return density_reg_loss
 
     def get_off_surface_loss(self, acc_map, index_off_surface):
@@ -145,9 +145,9 @@ class VolSDFLoss(nn.Module):
         in_surface_loss = self.l1_loss(acc_map[index_in_surface], torch.ones_like(acc_map[index_in_surface]))
         return in_surface_loss
 
-    def get_bg_shadow_loss(self, bg_rgb_values):
-        bg_shadow_loss = torch.mean(bg_rgb_values)
-        return bg_shadow_loss
+    # def get_bg_shadow_loss(self, bg_rgb_values):
+    #     bg_shadow_loss = torch.mean(bg_rgb_values)
+    #     return bg_shadow_loss
 
     def forward(self, model_outputs, ground_truth):
         nan_filter = ~torch.any(model_outputs['rgb_values'].isnan(), dim=1)
@@ -156,13 +156,12 @@ class VolSDFLoss(nn.Module):
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'], model_outputs['epoch'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
-        in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
+        # in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         epoch_for_off_surface = min(200, model_outputs['epoch'])
 
 
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
-                    self.in_surface_weight * (1 - epoch_for_off_surface / 200) * in_surface_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
@@ -170,7 +169,7 @@ class VolSDFLoss(nn.Module):
                 'density_reg_loss': density_reg_loss,
                 # 'normal_loss': normal_loss,
                 'off_surface_loss': off_surface_loss,
-                'in_surface_loss': in_surface_loss,
+                # 'in_surface_loss': in_surface_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
