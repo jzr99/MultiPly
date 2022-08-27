@@ -25,15 +25,15 @@ implicit_network:
 disp_network:
     feature_vector_size: 0
     d_in: 3
-    d_out: 3
-    dims: [ 256, 256, 256, 256, 256, 256]
+    d_out: 1
+    dims: [ 256, 256, 256, 256]
     init: 'zero'
     bias: 0.6
     skip_in: [3]
-    weight_norm: False
+    weight_norm: True
     embedder_mode: 'hann'
-    kick_in_epoch: 15
-    full_band_epoch: 50
+    kick_in_epoch: 20
+    full_band_epoch: 100
     multires: 4
     cond: 'smpl'
     scene_bounding_sphere: 3.0 # 3.0

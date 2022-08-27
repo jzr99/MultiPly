@@ -75,12 +75,6 @@ class VolSDFNetworkBG(nn.Module):
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
-        # smpl_seg = json.load(open(hydra.utils.to_absolute_path('../misc/smpl_vert_segmentation.json'), 'rb'))
-        # foot_part_labels = ['leftFoot', 'leftToeBase', 'rightFoot', 'rightToeBase']
-        # self.foot_vert_ids = []
-        # for foot_part_label in foot_part_labels:
-        #     self.foot_vert_ids += smpl_seg[foot_part_label]
-
         self.smpl_v_cano = self.smpl_server.verts_c
         self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
         self.smpl_face_vertices = index_vertices_by_faces(self.smpl_v_cano, self.smpl_f_cano)
@@ -190,7 +184,10 @@ class VolSDFNetworkBG(nn.Module):
         smpl_tfs = smpl_output['smpl_tfs']
 
         smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces, process=False)
-        cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+        if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
+            cond = {'smpl': smpl_pose[:, 3:] * 0.}
+        else:
+            cond = {'smpl': smpl_pose[:, 3:]/np.pi}
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
@@ -731,7 +728,7 @@ class VolSDF(pl.LightningModule):
 
         output = {}
         inputs, targets = batch
-
+        inputs['current_epoch'] = self.current_epoch
         self.model.eval()
 
         device = inputs["smpl_params"].device
@@ -895,96 +892,96 @@ class VolSDF(pl.LightningModule):
                 mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
                 mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
 
-        for i in range(num_splits):
-            print("current batch:", i)
-            indices = list(range(i * pixel_per_batch,
-                                min((i + 1) * pixel_per_batch, total_pixels)))
-            batch_inputs = {"uv": inputs["uv"][:, indices],
-                            "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
-                            "P": inputs["P"],
-                            "C": inputs["C"],
-                            "intrinsics": inputs['intrinsics'],
-                            "pose": inputs['pose'],
-                            "smpl_params": inputs["smpl_params"],
-                            "smpl_pose": inputs["smpl_params"][:, 4:76],
-                            "smpl_shape": inputs["smpl_params"][:, 76:],
-                            "smpl_trans": inputs["smpl_params"][:, 1:4],
-                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
-            if not canonical_vis:
-                if self.opt_smpl:
-                    if free_view_render:
-                        body_model_params = self.body_model_params(inputs['image_id'])
-                    else:
-                        body_model_params = self.body_model_params(inputs['idx'])
+        # for i in range(num_splits):
+        #     print("current batch:", i)
+        #     indices = list(range(i * pixel_per_batch,
+        #                         min((i + 1) * pixel_per_batch, total_pixels)))
+        #     batch_inputs = {"uv": inputs["uv"][:, indices],
+        #                     "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
+        #                     "P": inputs["P"],
+        #                     "C": inputs["C"],
+        #                     "intrinsics": inputs['intrinsics'],
+        #                     "pose": inputs['pose'],
+        #                     "smpl_params": inputs["smpl_params"],
+        #                     "smpl_pose": inputs["smpl_params"][:, 4:76],
+        #                     "smpl_shape": inputs["smpl_params"][:, 76:],
+        #                     "smpl_trans": inputs["smpl_params"][:, 1:4],
+        #                     "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+        #     if not canonical_vis:
+        #         if self.opt_smpl:
+        #             if free_view_render:
+        #                 body_model_params = self.body_model_params(inputs['image_id'])
+        #             else:
+        #                 body_model_params = self.body_model_params(inputs['idx'])
 
-                    batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
-                    batch_inputs.update({'smpl_shape': body_model_params['betas']})
-                    batch_inputs.update({'smpl_trans': body_model_params['transl']})
-            if free_view_render:
-                batch_inputs.update({'image_id': inputs['image_id']})
-            if self.opt.model.use_body_parsing:
-                batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
-            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
-                             "img_size": targets["img_size"]}
+        #             batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+        #             batch_inputs.update({'smpl_shape': body_model_params['betas']})
+        #             batch_inputs.update({'smpl_trans': body_model_params['transl']})
+        #     if free_view_render:
+        #         batch_inputs.update({'image_id': inputs['image_id']})
+        #     if self.opt.model.use_body_parsing:
+        #         batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
+        #     batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+        #                      "img_size": targets["img_size"]}
 
-            # torch.cuda.memory_stats(device="cuda:0")
-            torch.cuda.empty_cache()
-            with torch.no_grad():
-                model_outputs = self.model(batch_inputs)
-            results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
-                            "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
-                            "normal_values": model_outputs["normal_values"].detach().clone(),
-                            "acc_map": model_outputs["acc_map"].detach().clone(),
-                            **batch_targets})         
+        #     # torch.cuda.memory_stats(device="cuda:0")
+        #     torch.cuda.empty_cache()
+        #     with torch.no_grad():
+        #         model_outputs = self.model(batch_inputs)
+        #     results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
+        #                     "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
+        #                     "normal_values": model_outputs["normal_values"].detach().clone(),
+        #                     "acc_map": model_outputs["acc_map"].detach().clone(),
+        #                     **batch_targets})         
 
-        img_size = results[0]["img_size"]
-        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
-        rgb_pred = rgb_pred.reshape(*img_size, -1)
+        # img_size = results[0]["img_size"]
+        # rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        # rgb_pred = rgb_pred.reshape(*img_size, -1)
 
-        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
-        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+        # fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        # fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
 
-        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
-        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+        # normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        # normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
-        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
-        pred_mask = pred_mask.reshape(*img_size, -1)
-        if results[0]['rgb'] is not None:
-            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-            rgb_gt = rgb_gt.reshape(*img_size, -1)
-            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
-        else:
-            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
-        if 'normal' in results[0].keys():
-            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
-            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
-            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
-        else:
-            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+        # pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        # pred_mask = pred_mask.reshape(*img_size, -1)
+        # if results[0]['rgb'] is not None:
+        #     rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+        #     rgb_gt = rgb_gt.reshape(*img_size, -1)
+        #     rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        # else:
+        #     rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        # if 'normal' in results[0].keys():
+        #     normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+        #     normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+        #     normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        # else:
+        #     normal = torch.cat([normal_pred], dim=0).cpu().numpy()
         
-        rgb = (rgb * 255).astype(np.uint8)
+        # rgb = (rgb * 255).astype(np.uint8)
 
-        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
-        fg_rgb = (fg_rgb * 255).astype(np.uint8)
+        # fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        # fg_rgb = (fg_rgb * 255).astype(np.uint8)
 
-        normal = (normal * 255).astype(np.uint8)
+        # normal = (normal * 255).astype(np.uint8)
 
         
-        if free_view_render:
-            if canonical_vis:
-                cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
-                cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
-            else:
-                cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-                cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-                cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        else:
-            if canonical_vis:
-                cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-                cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-                cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-            else:
-                cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-                cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-                cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-                cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+        # if free_view_render:
+        #     if canonical_vis:
+        #         cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
+        #         cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
+        #     else:
+        #         cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        #         cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        #         cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        # else:
+        #     if canonical_vis:
+        #         cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        #         cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        #         cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+        #     else:
+        #         cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        #         cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        #         cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        #         cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
