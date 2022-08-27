@@ -26,7 +26,7 @@ def main(opt):
         check_val_every_n_epoch=200,
         logger=logger,
         log_every_n_steps=1,
-        num_sanity_val_steps=0
+        num_sanity_val_steps=1
     )
 
     model = SDF_Init(opt)

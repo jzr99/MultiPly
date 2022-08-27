@@ -15,23 +15,7 @@ implicit_network:
     weight_norm: True
     embedder_mode: 'fourier'
     multires: 6
-    cond: 'none'
-rendering_network:
-    feature_vector_size: 256
-    mode: "pose_no_view" # "idr"
-    d_in:  14 # 9
-    d_out: 3
-    dims: [ 256, 256, 256, 256]
-    weight_norm: True
-    multires_view: -1 # 4 
-ray_tracer:
-    object_bounding_sphere: 1.0
-    sdf_threshold: 5.0e-5
-    line_search_step: 0.5
-    line_step_iters: 3
-    sphere_tracing_iters: 10
-    n_steps: 100
-    n_secant_steps: 8
+    cond: 'smpl'
 loss:
     eikonal_weight : 0.1
     mask_weight : 100.0

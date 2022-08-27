@@ -31,10 +31,7 @@ class PosePriorDataset(torch.utils.data.Dataset):
         # Last 6 parameters in poses correspond to SMPL-H hands
         smpl_params[7:70] = torch.tensor(poses[3:66]).float()
         
-
-
         inputs = {
-
             "smpl_params": smpl_params
         }
 

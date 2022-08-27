@@ -23,14 +23,12 @@ class SDF_Init_Network(nn.Module):
         super().__init__()
 
         self.implicit_network = ImplicitNet(opt.implicit_network)
-        self.rendering_network = RenderingNet(opt.rendering_network)
-        self.ray_tracer = RayTracing(**opt.ray_tracer)
         betas = np.zeros(10)
         self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        self.smpl_server = SMPLServer(gender='male') # average shape for now. Adjust gender later!
+        self.smpl_server = SMPLServer(gender='female') # average shape for now. Adjust gender later!
         self.sampler = PointInSpace()
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
-        self.points_batch = 1200
+        self.points_batch = 2048
         self.smpl_faces = torch.tensor(self.smpl_server.smpl.faces.astype('int')).cuda().unsqueeze(0)
     # def sdf_func(self, x, cond, smpl_tfs, eval_mode=False):
     #     if hasattr(self, "deformer"):
@@ -57,9 +55,7 @@ class SDF_Init_Network(nn.Module):
         # Parse model input
         torch.set_grad_enabled(True)
         self.implicit_network.train()
-        # self.rendering_network.eval()
-        for param in self.rendering_network.parameters():
-            param.requires_grad = False
+
         smpl_params = input['smpl_params']
         smpl_thetas = smpl_params[:, 4:76]
         scale = smpl_params[:, 0:1]
