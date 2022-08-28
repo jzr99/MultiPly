@@ -176,10 +176,10 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'seattle'
-    dataset = 'neuman' # 'youtube'
-    gender = 'f'
-    if dataset == 'youtube' or 'neuman':
+    seq = 'Pablo_outdoor'
+    dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
+    gender = 'm'
+    if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MonoPerfCapDataset'
@@ -214,7 +214,15 @@ if __name__ == '__main__':
                                    [0., float(cam_params[5]), float(cam_params[7])], 
                                    [0., 0., 1.]])
     elif dataset == 'monoperfcap':
-        focal_length = None
+        # focal_length = None
+        # with open(f'/home/chen/disk2/MonoPerfCapDataset/{seq}/calib.txt') as f:
+        #     lines = f.readlines()
+        # cam_params = lines[2].split()
+        # cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
+        #                            [0., float(cam_params[6]), float(cam_params[7])], 
+        #                            [0., 0., 1.]])
+        focal_length = 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):

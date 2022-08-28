@@ -24,16 +24,15 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'seattle'
-dataset = 'neuman' # 'youtube'
-gender = 'f'
-
-if dataset == 'youtube' or 'neuman':
+seq = 'Pablo_outdoor'
+dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
+gender = 'm'
+if dataset == 'youtube' or dataset == 'neuman':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MonoPerfCapDataset'
 
-resize_factor = 1
+resize_factor = 2
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
@@ -72,12 +71,19 @@ elif dataset == 'neuman':
     with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
         lines = f.readlines()
     cam_params = lines[3].split()
-    focal_length = float(cam_params[4])
     cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
                                 [0., float(cam_params[5]), float(cam_params[7])], 
                                 [0., 0., 1.]])
 elif dataset == 'monoperfcap':
-    focal_length = None
+    # focal_length = None
+    # with open(f'/home/chen/disk2/MonoPerfCapDataset/{seq}/calib.txt') as f:
+    #     lines = f.readlines()
+    # cam_params = lines[2].split()
+    # cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
+    #                            [0., float(cam_params[6]), float(cam_params[7])], 
+    #                            [0., 0., 1.]])
+    focal_length = 1920 # 1280 # 995.55555556
+    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
 cam_extrinsics = np.eye(4)
 
 K = np.eye(4)

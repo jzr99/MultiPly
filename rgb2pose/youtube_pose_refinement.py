@@ -156,10 +156,10 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'seattle'
-    dataset = 'neuman' # 'youtube'
-    gender = 'f'
-    if dataset == 'youtube' or 'neuman':
+    seq = 'Pablo_outdoor'
+    dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
+    gender = 'm'
+    if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MonoPerfCapDataset'
@@ -194,19 +194,25 @@ if __name__ == '__main__':
         with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
             lines = f.readlines()
         cam_params = lines[3].split()
-        focal_length = float(cam_params[4])
         cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
                                    [0., float(cam_params[5]), float(cam_params[7])], 
                                    [0., 0., 1.]])
     elif dataset == 'monoperfcap':
-        focal_length = None
+        # with open(f'/home/chen/disk2/MonoPerfCapDataset/{seq}/calib.txt') as f:
+        #     lines = f.readlines()
+        # cam_params = lines[2].split()
+        # cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
+        #                            [0., float(cam_params[6]), float(cam_params[7])], 
+        #                            [0., 0., 1.]])
+        focal_length = 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     cam_extrinsics = np.eye(4)
     render_R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
     render_T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
   
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
-    cam = PerspectiveCamera(focal_length_x=torch.tensor(focal_length, dtype=torch.float32),
-                            focal_length_y=torch.tensor(focal_length, dtype=torch.float32),
+    cam = PerspectiveCamera(focal_length_x=torch.tensor(cam_intrinsics[0, 0], dtype=torch.float32),
+                            focal_length_y=torch.tensor(cam_intrinsics[1, 1], dtype=torch.float32),
                             center=torch.tensor(cam_intrinsics[0:2, 2]).unsqueeze(0)).to(device)
     weight_dict = get_loss_weights()
     overlay = True
