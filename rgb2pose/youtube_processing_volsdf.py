@@ -24,7 +24,10 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Lost_in_Wanderland_p2'
+seq = 'roger'
+
+gender = 'm'
+
 DIR = '/home/chen/disk2/Youtube_Videos'
 
 img_dir = f'{DIR}/{seq}/frames'
@@ -48,7 +51,6 @@ img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
 seq_file_paths = sorted(glob.glob(f"{seq_dir}/*.pkl"))
 
-gender = 'm'
 if gender == 'f':
     gender = 'female'
 elif gender == 'm':

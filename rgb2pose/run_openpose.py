@@ -65,7 +65,7 @@ try:
 
     # Flags
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_dir", default="/home/chen/disk2/Youtube_Videos/Lost_in_Wanderland_p2/frames", help="Process a directory of images. Read all standard formats (jpg, png, bmp, etc.).")
+    parser.add_argument("--image_dir", default="/home/chen/disk2/Youtube_Videos/roger/frames", help="Process a directory of images. Read all standard formats (jpg, png, bmp, etc.).")
     parser.add_argument("--no_display", default=False, help="Enable to disable the visual display.")
     args = parser.parse_known_args()
 

@@ -156,7 +156,8 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Invisible'
+    seq = 'roger'
+    gender = 'm'
     DIR = '/home/chen/disk2/Youtube_Videos'
     openpose_dir = f'{DIR}/{seq}/openpose'
     if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):
@@ -170,7 +171,6 @@ if __name__ == '__main__':
     img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
     openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
-    gender = 'm'
 
     if gender == 'f':
         gender = 'female'
@@ -195,8 +195,8 @@ if __name__ == '__main__':
                             center=torch.tensor(cam_intrinsics[0:2, 2]).unsqueeze(0)).to(device)
     weight_dict = get_loss_weights()
     overlay = True
-    smooth = True
-    skip_optim = True
+    smooth = False
+    skip_optim = False
     mean_shape = []
     if not skip_optim:
         for idx, img_path in enumerate(tqdm(img_paths)):

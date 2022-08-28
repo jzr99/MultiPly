@@ -176,8 +176,9 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Lost_in_Wanderland_p2'
+    seq = 'roger'
     DIR = '/home/chen/disk2/Youtube_Videos'
+    dataset = 'neuman' # 'youtube'
     output_dir = f'{DIR}/{seq}/init_mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -202,8 +203,11 @@ if __name__ == '__main__':
     # cam_intrinsics[1,1] = max(input_img.shape[:2])
     # cam_intrinsics[0,2] = input_img.shape[1]/2
     # cam_intrinsics[1,2] = input_img.shape[0]/2    
-    focal_length = 1920 # 1280 # 995.55555556
-    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+    if dataset == 'youtube':
+        focal_length = 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+    elif dataset == 'neuman':
+        focal_length
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):
