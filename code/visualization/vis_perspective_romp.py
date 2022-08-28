@@ -176,9 +176,13 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'roger'
-    DIR = '/home/chen/disk2/Youtube_Videos'
+    seq = 'seattle'
     dataset = 'neuman' # 'youtube'
+    gender = 'f'
+    if dataset == 'youtube' or 'neuman':
+        DIR = '/home/chen/disk2/Youtube_Videos'
+    elif dataset == 'monoperfcap':
+        DIR = '/home/chen/disk2/MonoPerfCapDataset'
     output_dir = f'{DIR}/{seq}/init_mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -186,7 +190,7 @@ if __name__ == '__main__':
     file_dir = f'{DIR}/{seq}/ROMP'
     img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
-    gender = 'm'
+    
 
     if gender == 'f':
         gender = 'female'
@@ -198,16 +202,19 @@ if __name__ == '__main__':
     smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
     
     input_img = cv2.imread(img_paths[0])
-    # cam_intrinsics = np.eye(3)
-    # cam_intrinsics[0,0] = max(input_img.shape[:2])
-    # cam_intrinsics[1,1] = max(input_img.shape[:2])
-    # cam_intrinsics[0,2] = input_img.shape[1]/2
-    # cam_intrinsics[1,2] = input_img.shape[0]/2    
+
     if dataset == 'youtube':
         focal_length = 1920 # 1280 # 995.55555556
         cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     elif dataset == 'neuman':
-        focal_length
+        with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
+            lines = f.readlines()
+        cam_params = lines[3].split()
+        cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
+                                   [0., float(cam_params[5]), float(cam_params[7])], 
+                                   [0., 0., 1.]])
+    elif dataset == 'monoperfcap':
+        focal_length = None
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     for idx, img_path in enumerate(tqdm(img_paths)):

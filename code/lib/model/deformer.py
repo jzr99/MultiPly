@@ -6,12 +6,12 @@ from ..utils.snarf_utils import broyden, hierarchical_softmax
 from .smpl import SMPLServer
 from pytorch3d import ops
 class SMPLDeformer():
-    def __init__(self, max_dist=0.05, K=1, betas=None):
+    def __init__(self, max_dist=0.05, K=1, gender='male', betas=None):
         super().__init__()
 
         self.max_dist = max_dist
         self.K = K
-        self.smpl = SMPLServer(gender='male')
+        self.smpl = SMPLServer(gender=gender)
         smpl_params_canoical = self.smpl.param_canonical.clone()
         smpl_params_canoical[:, 76:] = torch.tensor(betas).float().to(self.smpl.param_canonical.device)
         cano_scale, cano_transl, cano_thetas, cano_betas = torch.split(smpl_params_canoical, [1, 3, 72, 10], dim=1)

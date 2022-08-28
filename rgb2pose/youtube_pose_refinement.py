@@ -156,9 +156,13 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'roger'
-    gender = 'm'
-    DIR = '/home/chen/disk2/Youtube_Videos'
+    seq = 'seattle'
+    dataset = 'neuman' # 'youtube'
+    gender = 'f'
+    if dataset == 'youtube' or 'neuman':
+        DIR = '/home/chen/disk2/Youtube_Videos'
+    elif dataset == 'monoperfcap':
+        DIR = '/home/chen/disk2/MonoPerfCapDataset'
     openpose_dir = f'{DIR}/{seq}/openpose'
     if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):
         os.makedirs(f'{DIR}/{seq}/init_refined_smpl')
@@ -183,8 +187,19 @@ if __name__ == '__main__':
     
     input_img = cv2.imread(img_paths[0])
 
-    focal_length = 1920 # 1280 # 995.55555556
-    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+    if dataset == 'youtube':
+        focal_length = 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+    elif dataset == 'neuman':
+        with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
+            lines = f.readlines()
+        cam_params = lines[3].split()
+        focal_length = float(cam_params[4])
+        cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
+                                   [0., float(cam_params[5]), float(cam_params[7])], 
+                                   [0., 0., 1.]])
+    elif dataset == 'monoperfcap':
+        focal_length = None
     cam_extrinsics = np.eye(4)
     render_R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
     render_T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 

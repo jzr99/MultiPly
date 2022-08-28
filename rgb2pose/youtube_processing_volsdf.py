@@ -24,11 +24,16 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'roger'
+seq = 'seattle'
+dataset = 'neuman' # 'youtube'
+gender = 'f'
 
-gender = 'm'
+if dataset == 'youtube' or 'neuman':
+    DIR = '/home/chen/disk2/Youtube_Videos'
+elif dataset == 'monoperfcap':
+    DIR = '/home/chen/disk2/MonoPerfCapDataset'
 
-DIR = '/home/chen/disk2/Youtube_Videos'
+resize_factor = 1
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
@@ -45,7 +50,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
 #     os.makedirs(os.path.join(save_dir, 'ground_mask'))
 # if not os.path.exists(os.path.join(save_dir, 'normal')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
-resize_factor = 2
+
 
 img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
@@ -60,8 +65,19 @@ smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
 # we use the betas from naked body not "clothed"
 smpl_shape = np.load(f'{DIR}/{seq}/mean_shape.npy')
 T_hip = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape)[None].float()).squeeze().cpu().numpy()
-focal_length = 1920 # 1280 # 995.55555556
-cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+if dataset == 'youtube':
+    focal_length = 1920 # 1280 # 995.55555556
+    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+elif dataset == 'neuman':
+    with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
+        lines = f.readlines()
+    cam_params = lines[3].split()
+    focal_length = float(cam_params[4])
+    cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
+                                [0., float(cam_params[5]), float(cam_params[7])], 
+                                [0., 0., 1.]])
+elif dataset == 'monoperfcap':
+    focal_length = None
 cam_extrinsics = np.eye(4)
 
 K = np.eye(4)

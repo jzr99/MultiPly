@@ -49,11 +49,12 @@ class VolSDFNetworkBG(nn.Module):
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.use_smpl_deformer = opt.use_smpl_deformer
+        gender = 'female'
         if self.use_smpl_deformer:
-            self.deformer = SMPLDeformer(betas=betas) 
+            self.deformer = SMPLDeformer(betas=betas, gender=gender) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
-        gender = 'male'
+        
         self.sdf_bounding_sphere = 3.0
         # self.sphere_scale = opt.implicit_network.sphere_scale
         self.with_bkgd = opt.with_bkgd
@@ -555,7 +556,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 489
+        self.end_frame = 41
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
         self.load_body_model_params()
