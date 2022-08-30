@@ -132,15 +132,15 @@ def render_trimesh(mesh,R,T, mode='np'):
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'outdoors_freestyle_00'
+    seq = 'courtyard_jumpBench_01'
     if overlay:
         output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
     else:
-        output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
+        output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
-    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
+    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
     seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
     gender = seq_file['genders'][0]
@@ -165,8 +165,7 @@ if __name__ == '__main__':
         smpl_pose = seq_file['poses'][0][idx]
         smpl_trans = seq_file['trans'][0][idx]
         cam_extrinsics = seq_file['cam_poses'][idx]
-        import ipdb
-        ipdb.set_trace()
+
         R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
         T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
         smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),

@@ -273,18 +273,6 @@ class VolSDFNetworkBG(nn.Module):
             grad_theta = gradient(sample, local_pred)
 
             differentiable_points = canonical_points 
-            # regularization near feet
-            # smpl_foot_verts_c = smpl_verts_c[:, self.foot_vert_ids, :]
-            # foot_sample_indices = torch.randperm(smpl_foot_verts_c.shape[1])[:num_pixels].cuda()
-            # foot_sample_verts_c = torch.index_select(smpl_foot_verts_c, 1, foot_sample_indices)
-            # foot_sample = self.sampler.get_points(foot_sample_verts_c, local_sigma=0.05, global_ratio=0.)
-            # foot_sample.requires_grad_()
-            # foot_sample_sdf_pd = self.implicit_network(foot_sample, cond)[..., 0:1]
-            # foot_sample_df_gt, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(foot_sample.contiguous(), self.smpl_face_vertices)
-            # foot_sample_df_gt = torch.sqrt(foot_sample_df_gt) # kaolin outputs squared distance
-            # foot_sample_sign_gt = kaolin.ops.mesh.check_sign(self.smpl_v_cano, self.smpl_f_cano, foot_sample).float()
-            # foot_sample_sign_gt = 1 - 2 * foot_sample_sign_gt
-            # foot_sample_sdf_gt = foot_sample_sign_gt * foot_sample_df_gt
 
             # pts_c_sdf, sdf_gt = self.sampler_bone.get_points(self.smpl_server.joints_c.expand(1, -1, -1))
             # sdf_pd = self.implicit_network(pts_c_sdf[0], cond)[..., 0]
@@ -556,13 +544,13 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 423
+        self.end_frame = 619
         assert (self.end_frame - self.start_frame) == self.num_training_frames
-        self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
-        self.load_body_model_params()
         self.opt_smpl = True
         self.training_modules = ["model"]
         if self.opt_smpl:
+            self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
+            self.load_body_model_params()
             optim_params = self.body_model_params.param_names
             for param_name in optim_params:
                 self.body_model_params.set_requires_grad(param_name, requires_grad=True)
@@ -608,31 +596,17 @@ class VolSDF(pl.LightningModule):
         batch_idx = inputs["idx"]
         
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            if self.opt_smpl:
-                body_model_params = self.body_model_params(batch_idx)
-                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-                inputs['smpl_shape'] = body_model_params['betas']
-                inputs['smpl_trans'] = body_model_params['transl']
-            else:
-                # reference_pose = inputs["smpl_params"][:, 4:76]
-                # reference_shape = inputs["smpl_params"][:, 76:]
-                # reference_trans = inputs["smpl_params"][:, 1:4]
-                # self.smpl_pose.data = reference_pose
-                # self.smpl_shape.data = reference_shape
-                # self.smpl_trans.data = reference_trans
-                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
-        else:
-            smpl_params = np.load(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz")
-            self.smpl_pose.data = torch.from_numpy(smpl_params["smpl_pose"]).to(device)
-            self.smpl_shape.data = torch.from_numpy(smpl_params["smpl_shape"]).to(device)
-            self.smpl_trans.data = torch.from_numpy(smpl_params["smpl_trans"]).to(device)
 
-        # inputs["smpl_pose"] = self.smpl_pose
-        # inputs["smpl_shape"] = self.smpl_shape
-        # inputs["smpl_trans"] = self.smpl_trans
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(batch_idx)
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
+        else:
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+
         inputs['current_epoch'] = self.current_epoch
         model_outputs = self.model(inputs)
 
@@ -734,31 +708,16 @@ class VolSDF(pl.LightningModule):
         self.model.eval()
 
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            if self.opt_smpl:
-                body_model_params = self.body_model_params(inputs['image_id'])
-                inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-                inputs['smpl_shape'] = body_model_params['betas']
-                inputs['smpl_trans'] = body_model_params['transl']
-                # reference_pose = inputs["smpl_params"][:, 4:76]
-                # reference_shape = inputs["smpl_params"][:, 76:]
-                # reference_trans = inputs["smpl_params"][:, 1:4]
-                # val_smpl_pose = reference_pose
-                # val_smpl_shape = reference_shape
-                # val_smpl_trans = reference_trans
-            else:
-                inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-                inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-                inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(inputs['image_id'])
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
 
         else:
-            val_smpl_params = np.load(f"./opt_params/smpl_params_0000.npz")
-            val_smpl_pose = torch.from_numpy(val_smpl_params["smpl_pose"]).to(device)
-            val_smpl_shape = torch.from_numpy(val_smpl_params["smpl_shape"]).to(device)
-            val_smpl_trans = torch.from_numpy(val_smpl_params["smpl_trans"]).to(device)
-        # inputs["smpl_pose"] = val_smpl_pose
-        # inputs["smpl_shape"] = val_smpl_shape
-        # inputs["smpl_trans"] = val_smpl_trans
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
 
         cond = {'smpl': inputs["smpl_pose"][:, 3:]/np.pi}
         mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)

@@ -21,16 +21,14 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'courtyard_bodyScannerMotions_00'
+seq = 'courtyard_jumpBench_01'
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
 img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'
-seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
-mask_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
-ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
-# normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
-# mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
+seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
+mask_dir = f'/home/chen/disk2/3DPW/smpl_mask/{seq}'
+
 save_dir = f'/home/chen/RGB-PINA/data/{seq}'
 if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
@@ -38,8 +36,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
 if not os.path.exists(os.path.join(save_dir, 'ground_mask')):
     os.makedirs(os.path.join(save_dir, 'ground_mask'))
-# if not os.path.exists(os.path.join(save_dir, 'normal')):
-#     os.makedirs(os.path.join(save_dir, 'normal'))
+
 resize_factor = 2
 
 img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
@@ -77,14 +74,9 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     # dilate mask
     mask = cv2.dilate(mask, dial_kernel)
     # no need to dilate ground mask
-    ground_mask = cv2.imread(f"{ground_mask_dir}/image_{frame:05d}.jpg")
-    ground_mask = cv2.resize(ground_mask, (ground_mask.shape[1] // resize_factor, ground_mask.shape[0] // resize_factor))
-    # normal = cv2.imread(os.path.join(normal_dir, 'image_%05d_normal.png' % (idx)))
-    # normal = cv2.resize(normal, (normal.shape[1] // resize_factor, normal.shape[0] // resize_factor))
-
     cv2.imwrite(os.path.join(save_dir, 'image/%04d.png' % idx), img)
     cv2.imwrite(os.path.join(save_dir, 'mask/%04d.png' % idx), mask)
-    cv2.imwrite(os.path.join(save_dir, 'ground_mask/%04d.png' % idx), ground_mask)
+    # cv2.imwrite(os.path.join(save_dir, 'ground_mask/%04d.png' % idx), ground_mask)
     # cv2.imwrite(os.path.join(save_dir, 'normal/%04d.png' % idx), normal)
     cam_extrinsics = seq_file['cam_poses'][idx]
 
