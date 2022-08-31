@@ -156,13 +156,13 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Weipeng_outdoor'
+    seq = 'Nadia_outdoor'
     dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
-    gender = 'm'
+    gender = 'f'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
-        DIR = '/home/chen/disk2/MonoPerfCapDataset'
+        DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
     openpose_dir = f'{DIR}/{seq}/openpose'
     if not os.path.exists(f'{DIR}/{seq}/init_refined_smpl'):
         os.makedirs(f'{DIR}/{seq}/init_refined_smpl')
@@ -198,7 +198,7 @@ if __name__ == '__main__':
                                    [0., float(cam_params[5]), float(cam_params[7])], 
                                    [0., 0., 1.]])
     elif dataset == 'monoperfcap':
-        # with open(f'/home/chen/disk2/MonoPerfCapDataset/{seq}/calib.txt') as f:
+        # with open(f'/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/{seq}/calib.txt') as f:
         #     lines = f.readlines()
         # cam_params = lines[2].split()
         # cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 

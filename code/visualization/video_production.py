@@ -33,27 +33,33 @@ def mask_comparison():
     writer.close()
 
 def make_video1():
-    seq = 'roger_wo_disp_freeze_20_every_20'
+    seq = 'seattle_wo_disp_freeze_20_every_20'
     DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
 
     start_frame = 0
-    end_frame = 160
-
+    end_frame = 40
+    normal_overlay = True
     files = [f for f in os.listdir(os.path.join(DIR, seq, 'test_rendering')) if '.png' in f]
     files.sort()
 
-    writer_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_rendering', 'test_rendering.mp4'), fps=20)
-    writer_normal = imageio.get_writer(os.path.join(DIR, seq, 'test_normal', 'test_normal.mp4'), fps=20)
+    writer_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_rendering', 'test_rendering.mp4'), fps=10)
+    writer_normal = imageio.get_writer(os.path.join(DIR, seq, 'test_normal', 'test_normal.mp4'), fps=10)
+    if normal_overlay:
+        writer_overlay = imageio.get_writer(os.path.join(DIR, seq, 'test_overlay_normal', 'test_overlay_normal.mp4'), fps=10)
 
     for idx, f in enumerate(files[start_frame:end_frame+1]):
         img_path = os.path.join(DIR, seq, 'test_rendering', f)
         normal_path = os.path.join(DIR, seq, 'test_normal', f)
 
-
         writer_rendering.append_data(imageio.imread(img_path))
         writer_normal.append_data(imageio.imread(normal_path))
+        if normal_overlay:
+            overlay_path = os.path.join(DIR, seq, 'test_overlay_normal', f)
+            writer_overlay.append_data(imageio.imread(overlay_path))
     writer_rendering.close()
     writer_normal.close()
+    if normal_overlay:
+        writer_overlay.close()
 
 def make_video2():
     seq = 'Weipeng_outdoor'
@@ -70,4 +76,4 @@ def make_video2():
 
 
 if __name__ == '__main__':
-    make_video2()
+    make_video1()

@@ -3,7 +3,7 @@ import numpy as np
 import glob
 import os
 
-subject = 'Weipeng_outdoor'
+subject = 'seattle'
 seq = f'{subject}_wo_disp_freeze_20_every_20'
 result_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}'
 data_dir = f'/home/chen/RGB-PINA/data/{subject}'

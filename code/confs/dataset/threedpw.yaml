@@ -1,21 +1,21 @@
 train:
     dataset: ThreeDPW
-    subject: "courtyard_jumpBench_01_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 619
+    end_frame: 479
     batch_size: 1
     drop_last: False
     shuffle: True
     worker: 8
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : Nadia_outdoor/
     num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "courtyard_jumpBench_01_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 619
+    end_frame: 479
     image_id: 0
 
     batch_size: 1
@@ -23,15 +23,15 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : Nadia_outdoor/
     num_sample : -1
     pixel_per_batch: 2048  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "courtyard_jumpBench_01_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 619
+    end_frame: 479
     image_id: 0
 
     batch_size: 1
@@ -39,6 +39,6 @@ test:
     shuffle: False
     worker: 8
 
-    data_dir : courtyard_jumpBench_01/
+    data_dir : Nadia_outdoor/
     num_sample : -1
     pixel_per_batch: 2048
