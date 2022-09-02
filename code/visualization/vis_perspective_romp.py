@@ -176,9 +176,9 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Nadia_outdoor'
-    dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
-    gender = 'f'
+    seq = 'messi'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
+    gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':

@@ -1,21 +1,21 @@
 train:
     dataset: ThreeDPW
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "messi_wo_disp_freeze_20_every_20"
     start_frame: 0
-    end_frame: 479
+    end_frame: 213
     batch_size: 1
     drop_last: False
     shuffle: True
     worker: 8
 
-    data_dir : Nadia_outdoor/
+    data_dir : messi/
     num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "messi_wo_disp_freeze_20_every_20"
     start_frame: 0
-    end_frame: 479
+    end_frame: 213
     image_id: 0
 
     batch_size: 1
@@ -23,22 +23,22 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : Nadia_outdoor/
+    data_dir : messi/
     num_sample : -1
     pixel_per_batch: 2048  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "messi_wo_disp_freeze_20_every_20"
     start_frame: 0
-    end_frame: 479
+    end_frame: 213
     image_id: 0
 
     batch_size: 1
     drop_last: False
     shuffle: False
-    worker: 8
+    worker: 0
 
-    data_dir : Nadia_outdoor/
+    data_dir : messi/
     num_sample : -1
     pixel_per_batch: 2048

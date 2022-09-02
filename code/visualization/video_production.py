@@ -74,6 +74,34 @@ def make_video2():
     writer.close()
     
 
+def make_video3():
+    seq = 'seattle_wo_disp_freeze_20_every_20'
+    DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
+
+    start_frame = 0
+    end_frame = 59
+    normal_overlay = False
+    files = [f for f in os.listdir(os.path.join(DIR, seq, 'test_canonical_fvr')) if '.png' in f]
+    files.sort()
+
+    writer_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_canonical_fvr', 'test_canonical_fvr.mp4'), fps=10)
+    writer_normal = imageio.get_writer(os.path.join(DIR, seq, 'test_canonical_fvr_normal', 'test_canonical_fvr_normal.mp4'), fps=10)
+    if normal_overlay:
+        writer_overlay = imageio.get_writer(os.path.join(DIR, seq, 'test_overlay_normal', 'test_overlay_normal.mp4'), fps=10)
+
+    for idx, f in enumerate(files[start_frame:end_frame+1]):
+        img_path = os.path.join(DIR, seq, 'test_canonical_fvr', f)
+        normal_path = os.path.join(DIR, seq, 'test_canonical_fvr_normal', f)
+
+        writer_rendering.append_data(imageio.imread(img_path))
+        writer_normal.append_data(imageio.imread(normal_path))
+        if normal_overlay:
+            overlay_path = os.path.join(DIR, seq, 'test_overlay_normal', f)
+            writer_overlay.append_data(imageio.imread(overlay_path))
+    writer_rendering.close()
+    writer_normal.close()
+    if normal_overlay:
+        writer_overlay.close()
 
 if __name__ == '__main__':
-    make_video1()
+    make_video3()

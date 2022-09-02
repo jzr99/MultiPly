@@ -156,9 +156,9 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Nadia_outdoor'
-    dataset = 'monoperfcap' # 'youtube' 'monoperfcap'
-    gender = 'f'
+    seq = 'messi'
+    dataset = 'youtube' # 'youtube' 'monoperfcap'
+    gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
@@ -224,7 +224,7 @@ if __name__ == '__main__':
             input_img = cv2.imread(img_path)
             seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
             openpose = np.load(openpose_paths[idx])
-            openpose[:, -1][openpose[:, -1] < 0.3] = 0.
+            openpose[:, -1][openpose[:, -1] < 0.01] = 0.
 
             smpl_pose = seq_file['smpl_thetas'][0]
             # smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]

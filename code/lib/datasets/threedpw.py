@@ -342,7 +342,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=True, canonical_vis=False):
+    def __init__(self, opt, free_view_render=True, canonical_vis=True):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.dataset = ThreeDPWDataset(opt)
@@ -351,7 +351,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             steps = 60
             step_size = 6
             self.new_poses = []
-            self.image_id = 53
+            self.image_id = 0
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -376,9 +376,9 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # manually set index
-        idx += 422
-        if idx == len(self.dataset) - 1:
-            idx = len(self.dataset) - 1
+        # idx += 422
+        # if idx == len(self.dataset) - 1:
+        #     idx = len(self.dataset) - 1
         if self.free_view_render:
             uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
             uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
@@ -397,6 +397,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                     "img_size": self.img_size}
             if self.canonical_vis:
                 cano_smpl_params = inputs["smpl_params"].clone()
+                cano_smpl_params[1:4] = torch.tensor([ 0.0117,  0.2990, -0.0060]).float()
                 cano_smpl_params[4:76] = 0 
                 cano_smpl_params[9] = np.pi/6
                 cano_smpl_params[12] = -np.pi/6
