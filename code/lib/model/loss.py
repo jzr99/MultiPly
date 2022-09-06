@@ -156,12 +156,13 @@ class VolSDFLoss(nn.Module):
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         density_reg_loss = self.get_density_reg_loss(model_outputs['acc_map'], model_outputs['index_outside'], model_outputs['epoch'])
         off_surface_loss = self.get_off_surface_loss(model_outputs['acc_map'], model_outputs['index_off_surface'])
-        # in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
+        in_surface_loss = self.get_in_surface_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         epoch_for_off_surface = min(200, model_outputs['epoch'])
 
 
         if model_outputs['use_smpl_deformer']:
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
+                   self.in_surface_weight * (1 - epoch_for_off_surface / 200) * in_surface_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
@@ -169,7 +170,7 @@ class VolSDFLoss(nn.Module):
                 'density_reg_loss': density_reg_loss,
                 # 'normal_loss': normal_loss,
                 'off_surface_loss': off_surface_loss,
-                # 'in_surface_loss': in_surface_loss,
+                'in_surface_loss': in_surface_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])

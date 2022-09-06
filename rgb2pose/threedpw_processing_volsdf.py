@@ -21,7 +21,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
     smpl_trans = np.linalg.inv(target_extrinsic[:3,:3]) @ smpl_trans # we assume
 
     return target_extrinsic, smpl_pose, smpl_trans
-seq = 'courtyard_jumpBench_01'
+seq = 'downtown_walkDownhill_00'
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
@@ -34,8 +34,6 @@ if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
 if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
-if not os.path.exists(os.path.join(save_dir, 'ground_mask')):
-    os.makedirs(os.path.join(save_dir, 'ground_mask'))
 
 resize_factor = 2
 
@@ -63,6 +61,20 @@ K[1, 2] = K[1, 2] / resize_factor
 output_trans = []
 output_pose = []
 output_P = {}
+"""
+courtyard_bodyScannerMotions_00:
+courtyard_jumpBench_01:
+downtown_walkDownhill_00: 84-436
+outdoors_fencing_01: 546-941
+"""
+if seq == 'courtyard_bodyScannerMotions_00':
+    img_paths = img_paths #[]
+elif seq == 'courtyard_jumpBench_01':
+    img_paths = img_paths 
+elif seq == 'downtown_walkDownhill_00':
+    img_paths = img_paths[84:]
+elif seq == 'outdoors_fencing_01':
+    img_paths = img_paths[546:]
 for idx, img_path in enumerate(tqdm(img_paths)):
     # resize image for speed-up
     img = cv2.imread(img_path)

@@ -24,15 +24,15 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'messi'
-dataset = 'youtube' # 'youtube' 'monoperfcap'
+seq = 'parkinglot'
+dataset = 'neuman' # 'youtube' 'monoperfcap'
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
 
-resize_factor = 2
+resize_factor = 1
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'

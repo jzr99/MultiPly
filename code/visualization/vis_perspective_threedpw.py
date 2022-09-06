@@ -132,15 +132,15 @@ def render_trimesh(mesh,R,T, mode='np'):
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'courtyard_jumpBench_01'
+    seq = 'courtyard_bodyScannerMotions_00'
     if overlay:
         output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
     else:
-        output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask'
+        output_dir = f'/home/chen/disk2/3DPW/smpl_mask/{seq}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
-    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/validation/{seq}.pkl'
+    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
     seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
     gender = seq_file['genders'][0]

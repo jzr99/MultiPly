@@ -342,9 +342,10 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=True, canonical_vis=True):
+    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
+        self.animation_path = animation_path
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
             start = 0
@@ -375,6 +376,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
+        idx = 478
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:
@@ -386,7 +388,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
 
             inputs = {
                 "uv": uv.reshape(-1, 2).astype(np.float32),
-                "intrinsics": target_inputs['intrinsics'], # self.intrinsics_all[idx],
+                "intrinsics": target_inputs['intrinsics'],
                 "pose": self.new_poses[idx], # target_inputs['pose'], # self.pose_all[idx],
                 'P': target_inputs['P'],
                 'C': target_inputs['C'],
@@ -397,7 +399,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                     "img_size": self.img_size}
             if self.canonical_vis:
                 cano_smpl_params = inputs["smpl_params"].clone()
-                cano_smpl_params[1:4] = torch.tensor([ 0.0117,  0.2990, -0.0060]).float()
+                # cano_smpl_params[1:4] = torch.tensor([ 0.0117,  0.2990, -0.0060]).float()
                 cano_smpl_params[4:76] = 0 
                 cano_smpl_params[9] = np.pi/6
                 cano_smpl_params[12] = -np.pi/6
@@ -408,7 +410,6 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
 
             inputs, images = data
             inputs = {
-                # "object_mask": inputs["object_mask"],
                 "uv": inputs["uv"],
                 # "bg_image": inputs["bg_image"],
                 "P": inputs["P"],
