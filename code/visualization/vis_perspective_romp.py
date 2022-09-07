@@ -176,13 +176,15 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'parkinglot'
-    dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
+    seq = 'Truman'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
     gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
+    elif dataset == 'deepcap':
+        DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
     output_dir = f'{DIR}/{seq}/init_mask'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -204,8 +206,8 @@ if __name__ == '__main__':
     input_img = cv2.imread(img_paths[0])
 
     if dataset == 'youtube':
-        focal_length = 1920 # 1280 # 995.55555556
-        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+        focal_length = 1280 # 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
     elif dataset == 'neuman':
         with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
             lines = f.readlines()
