@@ -156,7 +156,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Lan_2'
+    seq = 'Marc_1'
     dataset = 'deepcap' # 'youtube' 'monoperfcap' 'neuman'
     gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':

@@ -24,7 +24,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Lan_2'
+seq = 'Marc_1'
 dataset = 'deepcap' # 'youtube' 'monoperfcap'
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':

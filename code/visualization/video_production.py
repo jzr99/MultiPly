@@ -45,7 +45,7 @@ def make_video1():
 
     writer_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_rendering', 'test_rendering.mp4'), fps=20)
     writer_normal = imageio.get_writer(os.path.join(DIR, seq, 'test_normal', 'test_normal.mp4'), fps=20)
-    writer_fg_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_fg_rendering', 'test_fg_rendering.mp4'), fps=20)
+    # writer_fg_rendering = imageio.get_writer(os.path.join(DIR, seq, 'test_fg_rendering', 'test_fg_rendering.mp4'), fps=20)
     if normal_overlay:
         writer_overlay = imageio.get_writer(os.path.join(DIR, seq, 'test_overlay_normal', 'test_overlay_normal.mp4'), fps=20)
 
@@ -55,13 +55,13 @@ def make_video1():
         fg_path = os.path.join(DIR, seq, 'test_fg_rendering', f)
         writer_rendering.append_data(imageio.imread(img_path))
         writer_normal.append_data(imageio.imread(normal_path))
-        writer_fg_rendering.append_data(imageio.imread(fg_path))
+        # writer_fg_rendering.append_data(imageio.imread(fg_path))
         if normal_overlay:
             overlay_path = os.path.join(DIR, seq, 'test_overlay_normal', f)
             writer_overlay.append_data(imageio.imread(overlay_path))
     writer_rendering.close()
     writer_normal.close()
-    writer_fg_rendering.close()
+    # writer_fg_rendering.close()
     if normal_overlay:
         writer_overlay.close()
 
