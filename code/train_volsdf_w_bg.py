@@ -15,7 +15,7 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=50,
+        every_n_epochs=10,
         save_top_k=-1)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 

@@ -3,8 +3,8 @@ import numpy as np
 import glob
 import os
 
-subject = 'Nadia_outdoor'
-seq = f'{subject}_wo_disp_freeze_20_every_20_opt_pose'
+subject = 'roger'
+seq = f'{subject}_wo_disp_freeze_20_every_20'
 result_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}'
 data_dir = f'/home/chen/RGB-PINA/data/{subject}'
 

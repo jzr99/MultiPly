@@ -376,7 +376,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-        idx = 478
+        idx = 41
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:

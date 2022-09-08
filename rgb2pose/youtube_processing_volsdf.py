@@ -24,15 +24,16 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Truman'
-dataset = 'youtube' # 'youtube' 'monoperfcap'
+seq = 'Lan_2'
+dataset = 'deepcap' # 'youtube' 'monoperfcap'
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
-
-resize_factor = 1
+elif dataset == 'deepcap':
+    DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
+resize_factor = 2
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
@@ -84,6 +85,14 @@ elif dataset == 'monoperfcap':
     #                            [0., 0., 1.]])
     focal_length = 1920 # 1280 # 995.55555556
     cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+elif dataset == 'deepcap':
+    with open(f'/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset/monocularCalibrationBM.calibration') as f:
+        lines = f.readlines()
+
+    cam_params = lines[5].split()
+    cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
+                                [0., float(cam_params[6]), float(cam_params[7])], 
+                                [0., 0., 1.]])
 cam_extrinsics = np.eye(4)
 
 K = np.eye(4)
