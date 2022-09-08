@@ -24,8 +24,8 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Marc_1'
-dataset = 'deepcap' # 'youtube' 'monoperfcap'
+seq = 'kun'
+dataset = 'youtube' # 'youtube' 'monoperfcap'
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
     DIR = '/home/chen/disk2/Youtube_Videos'
@@ -66,8 +66,8 @@ smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
 smpl_shape = np.load(f'{DIR}/{seq}/mean_shape.npy')
 T_hip = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape)[None].float()).squeeze().cpu().numpy()
 if dataset == 'youtube':
-        focal_length = 1280 # 1920 # 1280 # 995.55555556
-        cam_intrinsics = np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
+        focal_length = 1920 # 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
 elif dataset == 'neuman':
     with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
         lines = f.readlines()
