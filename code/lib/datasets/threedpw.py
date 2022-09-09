@@ -342,7 +342,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
+    def __init__(self, opt, free_view_render=True, canonical_vis=False, animation_path=None):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.animation_path = animation_path
@@ -352,7 +352,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             steps = 60
             step_size = 6
             self.new_poses = []
-            self.image_id = 0
+            self.image_id = 80
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -376,7 +376,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-        idx = 41
+
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:
