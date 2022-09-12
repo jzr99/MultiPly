@@ -342,7 +342,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=True, canonical_vis=False, animation_path=None):
+    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.animation_path = animation_path

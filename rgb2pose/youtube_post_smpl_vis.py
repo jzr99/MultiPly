@@ -19,7 +19,7 @@ def render_trimesh(mesh,R,T, mode='np'):
     return image
 device = torch.device("cuda:0")
 
-checkpoint = torch.load('/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_off_weight_2_w_opt_smpl_less_lr/checkpoints/epoch=0999-loss=0.012769849970936775.ckpt')
+checkpoint = torch.load('/home/chen/RGB-PINA/code/outputs/ThreeDPW/otmar_A_wo_disp_freeze_20_every_20_opt_pose/checkpoints/epoch=1199-loss=0.006893042474985123.ckpt')
 
 betas = checkpoint['state_dict']['body_model_params.betas.weight']
 global_orient = checkpoint['state_dict']['body_model_params.global_orient.weight']
@@ -28,11 +28,11 @@ body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight']
 
 gender = 'male'
 
-camPs = np.load('/home/chen/RGB-PINA/data/Invisible/cameras.npz')
+camPs = np.load('/home/chen/RGB-PINA/data/otmar_A/cameras.npz')
 
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).to(device)
 
-seq = 'Invisible'
+seq = 'otmar_A'
 DIR = '/home/chen/RGB-PINA/data'
 img_dir = f'{DIR}/{seq}/image'   
 img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
@@ -73,4 +73,4 @@ for i in trange(global_orient.shape[0]):
 
     valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]  
     output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-    cv2.imwrite(os.path.join(f'{DIR}/{seq}/joint_opt_smpl_999', '%04d.png' % i), output_img)
+    cv2.imwrite(os.path.join(f'{DIR}/{seq}/joint_opt_smpl_1199', '%04d.png' % i), output_img)

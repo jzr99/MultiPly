@@ -24,7 +24,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'lewan_1'
+seq = 'ma'
 dataset = 'youtube' # 'youtube' 'monoperfcap'
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
@@ -33,7 +33,7 @@ elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
 elif dataset == 'deepcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
-resize_factor = 2
+resize_factor = 1
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
@@ -66,8 +66,8 @@ smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
 smpl_shape = np.load(f'{DIR}/{seq}/mean_shape.npy')
 T_hip = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape)[None].float()).squeeze().cpu().numpy()
 if dataset == 'youtube':
-        focal_length = 1920 # 1920 # 1280 # 995.55555556
-        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
+        focal_length = 640 # 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
 elif dataset == 'neuman':
     with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
         lines = f.readlines()
