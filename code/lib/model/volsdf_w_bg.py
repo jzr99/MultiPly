@@ -144,7 +144,7 @@ class VolSDFNetworkBG(nn.Module):
 
         return index_off_surface
     
-    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
+    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.03):
         # smpl_v_cano = self.smpl_server.verts_c
         # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
         # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
@@ -544,7 +544,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 509
+        self.end_frame = 213
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]

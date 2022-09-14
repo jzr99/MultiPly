@@ -376,7 +376,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-
+        idx = 580
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:
@@ -405,6 +405,9 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 cano_smpl_params[12] = -np.pi/6
                 cano_smpl_params
                 inputs.update({'smpl_params': cano_smpl_params})
+            if self.animation_path is not None:
+                data = self.dataset[0]
+                inputs, images = data
         else:
             data = self.dataset[idx]
 
