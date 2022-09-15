@@ -156,8 +156,8 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Marc_1_1'
-    dataset = 'deepcap' # 'youtube' 'monoperfcap' 'neuman'
+    seq = 'Neymar'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
     gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
@@ -190,8 +190,8 @@ if __name__ == '__main__':
     input_img = cv2.imread(img_paths[0])
 
     if dataset == 'youtube':
-        focal_length = 640 # 1920 # 1280 # 995.55555556
-        cam_intrinsics = np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
+        focal_length = 1920 # 640 # 1920 # 1280 # 995.55555556
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
     elif dataset == 'neuman':
         with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
             lines = f.readlines()
@@ -229,19 +229,27 @@ if __name__ == '__main__':
     smooth = False
     skip_optim = False
     mean_shape = []
+    last_pj2d = None
     if not skip_optim:
         for idx, img_path in enumerate(tqdm(img_paths)):
             input_img = cv2.imread(img_path)
             seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
+            actor_id = 0
+
+            # tracking in case of two persons
+            if len(seq_file['smpl_thetas']) == 2:
+                dist = [np.linalg.norm(seq_file['pj2d_org'][0].mean(0) - last_pj2d.mean(0, keepdims=True)), np.linalg.norm(seq_file['pj2d_org'][1].mean(0) - last_pj2d.mean(0, keepdims=True))]
+                actor_id = np.argmin(dist)
             openpose = np.load(openpose_paths[idx])
             openpose[:, -1][openpose[:, -1] < 0.01] = 0.
 
-            smpl_pose = seq_file['smpl_thetas'][0]
+            smpl_pose = seq_file['smpl_thetas'][actor_id]
             # smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
-            smpl_shape = seq_file['smpl_betas'][0][:10]
-            smpl_verts = seq_file['verts'][0]
-            pj2d_org = seq_file['pj2d_org'][0]
-            joints3d = seq_file['joints'][0]
+            smpl_shape = seq_file['smpl_betas'][actor_id][:10]
+            smpl_verts = seq_file['verts'][actor_id]
+            pj2d_org = seq_file['pj2d_org'][actor_id]
+            joints3d = seq_file['joints'][actor_id]
+            last_pj2d = pj2d_org
             # tranform to perspective projection
             tra_pred = estimate_translation_cv2(joints3d, pj2d_org, proj_mat=cam_intrinsics)
 

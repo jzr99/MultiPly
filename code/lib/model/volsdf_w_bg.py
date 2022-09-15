@@ -544,7 +544,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 213
+        self.end_frame = 352
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]

@@ -3,14 +3,14 @@ alpha_milestones : []
 alpha_factor : 2
 sched_milestones : [200,500]
 sched_factor : 0.5
-smpl_init: True
-is_continue: False
+smpl_init: False
+is_continue: True
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 213 # 462 # 110
+num_training_frames: 352 # 462 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256

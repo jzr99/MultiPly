@@ -22,6 +22,7 @@ our_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_
 RVM_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/RVM_masks'
 SMPL_mask_dir = '/home/chen/RGB-PINA/data/Helge_outdoor/mask'
 pointrend_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/pointrend'
+sprites_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/sprites_mask'
 
 resize_factor = 2
 ours_precision = []
@@ -44,11 +45,16 @@ pointrend_recall = []
 pointrend_f1 = []
 pointrend_iou = []
 
+sprites_precision = []
+sprites_recall = []
+sprites_f1 = []
+sprites_iou = []
+
 for gt_mask in tqdm(gt_mask_paths):
     frame_num = int(os.path.basename(gt_mask).split('.')[0][7:])
     gt_mask = cv2.imread(gt_mask, -1)[..., -1]
     # gt_mask = cv2.cvtColor(gt_mask, cv2.COLOR_GRAY2BGR)
-    gt_mask = (cv2.resize(gt_mask, (gt_mask.shape[1] // resize_factor, gt_mask.shape[0] // resize_factor)) >= 255) 
+    gt_mask = (cv2.resize(gt_mask, (gt_mask.shape[1] // resize_factor, gt_mask.shape[0] // resize_factor)) == 255) 
     W = gt_mask.shape[1]
     H = gt_mask.shape[0]
     where = np.asarray(np.where(gt_mask))
@@ -68,7 +74,7 @@ for gt_mask in tqdm(gt_mask_paths):
     RVM_mask = crop_image((cv2.imread(f'{RVM_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
     SMPL_mask = crop_image((cv2.imread(f'{SMPL_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
     pointrend_mask = crop_image((cv2.imread(f'{pointrend_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
-
+    sprites_mask = crop_image((cv2.imread(f'{sprites_mask_dir}/{frame_num-300:05d}.png')[..., -1] > 0), crop_bbox).reshape(-1).astype(np.uint8)
     # print(classification_report(gt_mask, ours_mask, digits=5))
     # print(classification_report(gt_mask, RVM_mask, digits=5))
 
@@ -99,6 +105,11 @@ for gt_mask in tqdm(gt_mask_paths):
     pointrend_f1.append(f1_score(gt_mask, pointrend_mask, average='macro'))
     pointrend_iou.append(get_mask_iou(gt_mask, pointrend_mask))
 
+    sprites_precision.append(precision_score(gt_mask, sprites_mask, average='macro'))
+    # sprites_recall.append(recall_score(gt_mask, sprites_mask, average='macro'))
+    sprites_f1.append(f1_score(gt_mask, sprites_mask, average='macro'))
+    sprites_iou.append(get_mask_iou(gt_mask, sprites_mask))
+
 print('ours_precision:', np.mean(ours_precision))
 # print('ours_recall:', np.mean(ours_recall))
 print('ours_f1:', np.mean(ours_f1))
@@ -119,8 +130,10 @@ print('pointrend_precision:', np.mean(pointrend_precision))
 print('pointrend_f1:', np.mean(pointrend_f1))
 print('pointrend_iou:', np.mean(pointrend_iou))
 
-
-
+print('sprites_precision:', np.mean(sprites_precision))
+# print('sprites_recall:', np.mean(sprites_recall))
+print('sprites_f1:', np.mean(sprites_f1))
+print('sprites_iou:', np.mean(sprites_iou))
 
 import ipdb
 ipdb.set_trace()
@@ -140,5 +153,8 @@ np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/pointrend_precis
 np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/pointrend_f1.npy', np.array(pointrend_f1))
 np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/pointrend_iou.npy', np.array(pointrend_iou))
 
+np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/sprites_precision.npy', np.array(sprites_precision))
+np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/sprites_f1.npy', np.array(sprites_f1))
+np.save('/home/chen/RGB-PINA/data/Helge_outdoor/mask_evaluation/sprites_iou.npy', np.array(sprites_iou))
 
 

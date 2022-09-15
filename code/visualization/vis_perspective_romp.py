@@ -15,6 +15,7 @@ from pytorch3d.renderer import (
     Materials,
     look_at_view_transform
 )
+from sklearn.neighbors import NearestNeighbors
 from pytorch3d.structures import Meshes
 import numpy as np
 import torch
@@ -176,8 +177,8 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Marc_1_1'
-    dataset = 'deepcap' # 'youtube' 'monoperfcap' # 'neuman
+    seq = 'Neymar'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
     gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
         DIR = '/home/chen/disk2/Youtube_Videos'
@@ -234,18 +235,25 @@ if __name__ == '__main__':
                                    [0., float(cam_params[6]), float(cam_params[7])], 
                                    [0., 0., 1.]])
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
-
+    last_pj2d = None
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
         seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
-        smpl_pose = seq_file['smpl_thetas'][0]
+        actor_id = 0
+
+        # tracking in case of two persons
+        if len(seq_file['smpl_thetas']) == 2:
+            dist = [np.linalg.norm(seq_file['pj2d_org'][0].mean(0) - last_pj2d.mean(0, keepdims=True)), np.linalg.norm(seq_file['pj2d_org'][1].mean(0) - last_pj2d.mean(0, keepdims=True))]
+            actor_id = np.argmin(dist)
+        smpl_pose = seq_file['smpl_thetas'][actor_id]
         smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
-        smpl_shape = seq_file['smpl_betas'][0][:10]
-        cam = seq_file['cam'][0]
-        smpl_verts = seq_file['verts'][0]
+        smpl_shape = seq_file['smpl_betas'][actor_id][:10]
+        cam = seq_file['cam'][actor_id]
+        smpl_verts = seq_file['verts'][actor_id]
         # cam_trans = seq_file['cam_trans'][0]
-        pj2d_org = seq_file['pj2d_org'][0]
-        joints3d = seq_file['joints'][0]
+        pj2d_org = seq_file['pj2d_org'][actor_id]
+        joints3d = seq_file['joints'][actor_id]
+        last_pj2d = pj2d_org
         tra_pred = estimate_translation_cv2(joints3d, pj2d_org, proj_mat=cam_intrinsics)
 
         cam_extrinsics = np.eye(4)
