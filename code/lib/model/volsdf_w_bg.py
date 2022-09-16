@@ -79,15 +79,7 @@ class VolSDFNetworkBG(nn.Module):
         self.smpl_v_cano = self.smpl_server.verts_c
         self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
         self.smpl_face_vertices = index_vertices_by_faces(self.smpl_v_cano, self.smpl_f_cano)
-    def extract_normal(self, x_c, cond, tfs):
-        
-        x_c = x_c.unsqueeze(0)
-        x_c.requires_grad_(True) 
-        output = self.implicit_network(x_c, cond)[..., 0:1]
-        gradient_c = gradient(x_c, output)
-        gradient_d = self.deformer.forward_skinning_normal(x_c, gradient_c, cond, tfs)
 
-        return gradient_d
     def sdf_func(self, x, cond, smpl_tfs, eval_mode=False):
         if hasattr(self, "deformer"):
             x_c, others = self.deformer(x, None, smpl_tfs, eval_mode)
@@ -118,9 +110,11 @@ class VolSDFNetworkBG(nn.Module):
 
     def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, current_epoch=None):
         if hasattr(self, "deformer"):
-            x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            x_c, outlier_mask = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
+            if not self.training:
+                sdf[outlier_mask] = 4.
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
             if not self.with_bkgd:
                 if self.sdf_bounding_sphere > 0.0:
@@ -144,7 +138,7 @@ class VolSDFNetworkBG(nn.Module):
 
         return index_off_surface
     
-    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.03):
+    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
         # smpl_v_cano = self.smpl_server.verts_c
         # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
         # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
@@ -544,7 +538,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 352
+        self.end_frame = 536
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]
@@ -678,7 +672,7 @@ class VolSDF(pl.LightningModule):
         
         x = x.reshape(-1, 3)
         if self.opt.model.use_smpl_deformer:
-            x_c = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            x_c, _ = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
             output = self.model.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
         else:
@@ -816,7 +810,7 @@ class VolSDF(pl.LightningModule):
         cv2.imwrite(f"fg_rendering/{self.current_epoch}.png", fg_rgb[:, :, ::-1])
     
     def test_step(self, batch, *args, **kwargs):
-        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render, canonical_vis = batch
+        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render, canonical_vis, animation = batch
         num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
@@ -825,6 +819,9 @@ class VolSDF(pl.LightningModule):
             if canonical_vis:
                 os.makedirs("test_canonical_fvr", exist_ok=True)
                 os.makedirs("test_canonical_fvr_normal", exist_ok=True)
+            elif animation:
+                os.makedirs("test_animation_fvr", exist_ok=True)
+                os.makedirs("test_animation_fvr_normal", exist_ok=True)
             else:
                 os.makedirs("test_fvr", exist_ok=True)
                 os.makedirs("test_fvr_normal", exist_ok=True)
@@ -836,12 +833,6 @@ class VolSDF(pl.LightningModule):
                 os.makedirs("test_canonical_normal", exist_ok=True)
                 os.makedirs("test_canonical_fg_rendering", exist_ok=True)
             else:
-                os.makedirs("test_mask", exist_ok=True)
-                os.makedirs("test_rendering", exist_ok=True)
-                os.makedirs("test_fg_rendering", exist_ok=True)
-                os.makedirs("test_normal", exist_ok=True)
-                os.makedirs("test_mesh", exist_ok=True)
-
                 scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
                 smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
                 smpl_tfs = smpl_outputs['smpl_tfs']
@@ -849,9 +840,25 @@ class VolSDF(pl.LightningModule):
                 cond = {'smpl': smpl_pose[:, 3:]/np.pi}
 
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-                mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
                 mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
-                mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                if animation:
+                    os.makedirs("test_animation_rendering", exist_ok=True)
+                    os.makedirs("test_animation_normal", exist_ok=True)
+                    os.makedirs("test_animation_fg_rendering", exist_ok=True)
+                    os.makedirs("test_animation_mask", exist_ok=True)
+                    os.makedirs("test_animation_mesh", exist_ok=True)
+
+                    mesh_canonical.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    mesh_deformed.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                else:
+                    os.makedirs("test_mask", exist_ok=True)
+                    os.makedirs("test_rendering", exist_ok=True)
+                    os.makedirs("test_fg_rendering", exist_ok=True)
+                    os.makedirs("test_normal", exist_ok=True)
+                    os.makedirs("test_mesh", exist_ok=True)
+                    
+                    mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
 
         for i in range(num_splits):
             print("current batch:", i)
@@ -868,7 +875,7 @@ class VolSDF(pl.LightningModule):
                             "smpl_shape": inputs["smpl_params"][:, 76:],
                             "smpl_trans": inputs["smpl_params"][:, 1:4],
                             "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
-            if not canonical_vis:
+            if not canonical_vis and (not animation):
                 if self.opt_smpl:
                     if free_view_render:
                         body_model_params = self.body_model_params(inputs['image_id'])
@@ -941,6 +948,11 @@ class VolSDF(pl.LightningModule):
                 cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
                 cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
                 cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            elif animation:
+                cv2.imwrite(f"test_animation_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_animation_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
             else:
                 cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
                 cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])

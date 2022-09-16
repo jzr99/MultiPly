@@ -24,7 +24,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'Neymar'
+seq = 'RenderTest_manuel'
 dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
@@ -116,10 +116,6 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     # dilate mask
     mask = cv2.dilate(mask, dial_kernel)
     # no need to dilate ground mask
-    # ground_mask = cv2.imread(f"{ground_mask_dir}/image_{frame:05d}.jpg")
-    # ground_mask = cv2.resize(ground_mask, (ground_mask.shape[1] // resize_factor, ground_mask.shape[0] // resize_factor))
-    # normal = cv2.imread(os.path.join(normal_dir, 'image_%05d_normal.png' % (idx)))
-    # normal = cv2.resize(normal, (normal.shape[1] // resize_factor, normal.shape[0] // resize_factor))
 
     cv2.imwrite(os.path.join(save_dir, 'image/%04d.png' % idx), img)
     cv2.imwrite(os.path.join(save_dir, 'mask/%04d.png' % idx), mask)

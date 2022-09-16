@@ -21,18 +21,18 @@ class SMPLDeformer():
     def forward(self, x, smpl_tfs, return_weights=True, inverse=False, smpl_verts=None):
         if x.shape[0] == 0: return x
         if smpl_verts is None:
-            weights = self.query_skinning_weights_smpl(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+            weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
         else:
-            weights = self.query_skinning_weights_smpl(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
+            weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
         if return_weights:
             return weights
         # invalid_ids =((skinning_weights[:,-1]==1) )
         # _, smpl_tfs, _, _ = self.smpl(cond['smpl'])
         x_transformed = skinning(x.unsqueeze(0), weights, smpl_tfs, inverse=inverse)
 
-        return x_transformed.squeeze(0)
+        return x_transformed.squeeze(0), outlier_mask
     def forward_skinning(self, xc, cond, smpl_tfs):
-        weights = self.query_skinning_weights_smpl(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        weights, outlier_mask = self.query_skinning_weights_smpl(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
         x_transformed = skinning(xc, weights, smpl_tfs, inverse=False)
 
         return x_transformed
@@ -42,8 +42,10 @@ class SMPLDeformer():
                                                                       K=self.K, return_nn=True)
 
         neighbor_points = neighbor_points[0]
-        distance_batch = distance_batch[0]
+        distance_batch = torch.sqrt(distance_batch[0])
         index_batch = index_batch[0, :, 0]
+
+        outlier_mask = (distance_batch > 0.08)
 
         weights = (smpl_weights[:, index_batch, :])
         # static_ids = ((distance_batch>self.max_dist).float().sum(-1)==self.K)
@@ -51,7 +53,7 @@ class SMPLDeformer():
         # weights[static_ids,:] = 0
         # weights[static_ids,-1] = 1
 
-        return weights
+        return weights, outlier_mask
 
     def query_weights(self, xc, cond):
         weights = self.forward(xc, None, return_weights=True, inverse=False)

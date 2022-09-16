@@ -345,7 +345,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
     def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
-        self.animation_path = animation_path
+        self.animation = True if animation_path is not None else False
         self.dataset = ThreeDPWDataset(opt)
         if self.free_view_render:
             start = 0
@@ -369,14 +369,19 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
 
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
+            if self.animation:
+                self.animation_poses = np.load(os.path.join(animation_path, 'opt_poses.npy'))
+                self.animation_transl = np.load(os.path.join(animation_path, 'opt_transl.npy'))
     def __len__(self):
         if self.free_view_render:
             return len(self.new_poses)
+        elif self.animation:
+            return self.animation_poses.shape[0]
         else:
             return len(self.dataset)
 
     def __getitem__(self, idx):
-
+        idx = 535
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:
@@ -403,11 +408,31 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 cano_smpl_params[4:76] = 0 
                 cano_smpl_params[9] = np.pi/6
                 cano_smpl_params[12] = -np.pi/6
-                cano_smpl_params
                 inputs.update({'smpl_params': cano_smpl_params})
-            if self.animation_path is not None:
+            if self.animation:
                 data = self.dataset[0]
                 inputs, images = data
+        elif self.animation:
+            data = self.dataset[0]
+
+            inputs, images = data
+            inputs = {
+                "uv": inputs["uv"],
+                # "bg_image": inputs["bg_image"],
+                "P": inputs["P"],
+                "C": inputs["C"],
+                "intrinsics": inputs['intrinsics'],
+                "pose": inputs['pose'],
+                "smpl_params": inputs["smpl_params"],
+                "idx": inputs['idx']
+            }
+            anim_smpl_pose = torch.from_numpy(self.animation_poses[idx]).float()
+            # anim_smpl_transl = torch.from_numpy(self.animation_transl[idx]).float()
+            anim_smpl_params = inputs["smpl_params"].clone()
+            # anim_smpl_params[1:4] = anim_smpl_transl
+            anim_smpl_params[4:76] = torch.tensor(anim_smpl_pose).float()
+            inputs.update({'smpl_params': anim_smpl_params})
+            inputs.update({'image_id': 0})
         else:
             data = self.dataset[idx]
 
@@ -434,4 +459,4 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 cano_smpl_params[12] = -np.pi/6
                 cano_smpl_params
                 inputs.update({'smpl_params': cano_smpl_params})
-        return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render, self.canonical_vis
+        return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render, self.canonical_vis, self.animation
