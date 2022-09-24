@@ -20,6 +20,7 @@ import os
 from itertools import chain
 import torch
 import torch.nn as nn
+from torch.distributions import Categorical
 import torch.optim as optim
 from torch.autograd import grad
 import pytorch_lightning as pl
@@ -49,7 +50,7 @@ class VolSDFNetworkBG(nn.Module):
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.use_smpl_deformer = opt.use_smpl_deformer
-        gender = 'male'
+        gender = 'female'
         if self.use_smpl_deformer:
             self.deformer = SMPLDeformer(betas=betas, gender=gender) 
         else:
@@ -315,6 +316,10 @@ class VolSDFNetworkBG(nn.Module):
         normal_values = normal_values.reshape(-1, N_samples, 3)
         weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
 
+        # calculate entropy for uncertainty measure
+        entropy = Categorical(probs=weights + 1e-12).entropy()
+        negative_entropy = -entropy # 4.5747 is the entropy of a uniform distribution
+        negative_entropy[torch.sum(weights, 1) < 0.9] = 0
         fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
 
         # Background rendering
@@ -394,6 +399,7 @@ class VolSDFNetworkBG(nn.Module):
                 'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,
                 'sdf_output': sdf_output,
+                'negative_entropy': negative_entropy,
             }
         return output
 
@@ -538,7 +544,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 536
+        self.end_frame = 479
         assert (self.end_frame - self.start_frame) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]
@@ -834,6 +840,12 @@ class VolSDF(pl.LightningModule):
                 os.makedirs("test_canonical_fg_rendering", exist_ok=True)
             else:
                 scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
+
+                if self.opt_smpl and not animation:
+                    body_model_params = self.body_model_params(inputs['idx'])
+                    smpl_trans = body_model_params['transl']
+                    smpl_pose = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                    smpl_shape = body_model_params['betas']
                 smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
                 smpl_tfs = smpl_outputs['smpl_tfs']
                 smpl_verts = smpl_outputs['smpl_verts']
@@ -856,12 +868,13 @@ class VolSDF(pl.LightningModule):
                     os.makedirs("test_fg_rendering", exist_ok=True)
                     os.makedirs("test_normal", exist_ok=True)
                     os.makedirs("test_mesh", exist_ok=True)
+                    os.makedirs("test_negative_entropy", exist_ok=True)
                     
                     mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
         for i in range(num_splits):
-            print("current batch:", i)
+            # print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
             batch_inputs = {"uv": inputs["uv"][:, indices],
@@ -887,8 +900,7 @@ class VolSDF(pl.LightningModule):
                     batch_inputs.update({'smpl_trans': body_model_params['transl']})
             if free_view_render:
                 batch_inputs.update({'image_id': inputs['image_id']})
-            if self.opt.model.use_body_parsing:
-                batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
+
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
                              "img_size": targets["img_size"]}
 
@@ -900,6 +912,7 @@ class VolSDF(pl.LightningModule):
                             "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
                             "normal_values": model_outputs["normal_values"].detach().clone(),
                             "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
                             **batch_targets})         
 
         img_size = results[0]["img_size"]
@@ -914,6 +927,13 @@ class VolSDF(pl.LightningModule):
 
         pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
         pred_mask = pred_mask.reshape(*img_size, -1)
+
+        negative_entropy = torch.cat([result["negative_entropy"] for result in results], dim=0)
+        negative_entropy = negative_entropy.reshape(*img_size, -1)
+        # now actually positive entropy
+        negative_entropy *= -1
+        negative_entropy /= negative_entropy.max()
+
         if results[0]['rgb'] is not None:
             rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
             rgb_gt = rgb_gt.reshape(*img_size, -1)
@@ -958,3 +978,4 @@ class VolSDF(pl.LightningModule):
                 cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
                 cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
                 cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+                cv2.imwrite(f"test_negative_entropy/{int(idx.cpu().numpy()):04d}.png", negative_entropy.cpu().numpy() * 255)

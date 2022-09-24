@@ -352,7 +352,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             steps = 60
             step_size = 6
             self.new_poses = []
-            self.image_id = 80
+            self.image_id = 154
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -371,7 +371,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             self.pixel_per_batch = opt.pixel_per_batch
             if self.animation:
                 self.animation_poses = np.load(os.path.join(animation_path, 'opt_poses.npy'))
-                self.animation_transl = np.load(os.path.join(animation_path, 'opt_transl.npy'))
+                # self.animation_transl = np.load(os.path.join(animation_path, 'opt_transl.npy'))
     def __len__(self):
         if self.free_view_render:
             return len(self.new_poses)
@@ -381,7 +381,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-        idx = 535
+        
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:

@@ -302,7 +302,8 @@ class SMPL(nn.Module):
         return_verts=True,
         return_full_pose: bool = False,
         pose2rot: bool = True,
-        displacement=None
+        displacement=None,
+        absolute_displacement=True,
     ) -> SMPLOutput:
         ''' Forward pass for the SMPL model
 
@@ -356,10 +357,16 @@ class SMPL(nn.Module):
             num_repeats = int(batch_size / betas.shape[0])
             betas = betas.expand(num_repeats, -1)
         if displacement is not None:
-            vertices, joints = lbs(betas, full_pose, self.v_template+displacement,
-                                self.shapedirs, self.posedirs,
-                                self.J_regressor, self.parents,
-                                self.lbs_weights, pose2rot=pose2rot)
+            if absolute_displacement:
+                vertices, joints = lbs(betas, full_pose, displacement,
+                                    self.shapedirs, self.posedirs,
+                                    self.J_regressor, self.parents,
+                                    self.lbs_weights, pose2rot=pose2rot)
+            else:
+                vertices, joints = lbs(betas, full_pose, self.v_template+displacement,
+                                    self.shapedirs, self.posedirs,
+                                    self.J_regressor, self.parents,
+                                    self.lbs_weights, pose2rot=pose2rot)
         else:
             vertices, joints = lbs(betas, full_pose, self.v_template,
                                 self.shapedirs, self.posedirs,

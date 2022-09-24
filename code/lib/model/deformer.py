@@ -45,7 +45,7 @@ class SMPLDeformer():
         distance_batch = torch.sqrt(distance_batch[0])
         index_batch = index_batch[0, :, 0]
 
-        outlier_mask = (distance_batch > 0.08)
+        outlier_mask = (distance_batch > 0.1)
 
         weights = (smpl_weights[:, index_batch, :])
         # static_ids = ((distance_batch>self.max_dist).float().sum(-1)==self.K)

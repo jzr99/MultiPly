@@ -15,7 +15,6 @@ from pytorch3d.renderer import (
     Materials,
     look_at_view_transform
 )
-from sklearn.neighbors import NearestNeighbors
 from pytorch3d.structures import Meshes
 import numpy as np
 import torch
@@ -130,72 +129,22 @@ def render_trimesh(mesh,R,T, mode='np'):
     image = (255*image).data.cpu().numpy().astype(np.uint8)
     
     return image
-
-def get_camera_parameters(pred_cam, bbox, cam_trans):
-    FOCAL_LENGTH = 5000.
-    CROP_SIZE = 224
-
-    bbox_cx, bbox_cy, bbox_w, bbox_h = bbox
-    assert bbox_w == bbox_h
-
-    bbox_size = bbox_w
-    bbox_x = bbox_cx - bbox_w / 2.
-    bbox_y = bbox_cy - bbox_h / 2.
-
-    scale = bbox_size / CROP_SIZE
-
-    cam_intrinsics = np.eye(3)
-    cam_intrinsics[0, 0] = FOCAL_LENGTH * scale
-    cam_intrinsics[1, 1] = FOCAL_LENGTH * scale
-    cam_intrinsics[0, 2] = bbox_size / 2. + bbox_x 
-    cam_intrinsics[1, 2] = bbox_size / 2. + bbox_y
-
-    cam_s, cam_tx, cam_ty = pred_cam
-    trans = [cam_tx, cam_ty, 2*FOCAL_LENGTH/(CROP_SIZE*cam_s + 1e-9)]
-
-    cam_extrinsics = np.eye(4)
-    cam_extrinsics[:3, 3] = trans
-
-    return cam_intrinsics, cam_extrinsics
-
-def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np.array([512.,512.]), proj_mat=None, cam_dist=None):
-    if proj_mat is None:
-        camK = np.eye(3)
-        camK[0,0], camK[1,1] = focal_length, focal_length
-        camK[:2,2] = img_size//2
-    else:
-        camK = proj_mat
-    ret, rvec, tvec,inliers = cv2.solvePnPRansac(joints_3d, joints_2d, camK, cam_dist,\
-                              flags=cv2.SOLVEPNP_EPNP,reprojectionError=20,iterationsCount=100)
-
-    if inliers is None:
-        return INVALID_TRANS
-    else:
-        tra_pred = tvec[:,0]            
-        return tra_pred
-
-overlay = False
+overlay = True
 if __name__ == '__main__':
     device = torch.device("cuda:0")
     seq = 'outdoors_fencing_01'
-    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
-    transpose = False
-    gender = 'm'
-    if dataset == 'youtube' or dataset == 'neuman':
-        DIR = '/home/chen/disk2/Youtube_Videos'
-    elif dataset == 'monoperfcap':
-        DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
-    elif dataset == 'deepcap':
-        DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
-    output_dir = f'{DIR}/{seq}/init_mask'
+    if overlay:
+        output_dir = f'/home/chen/disk2/3DPW_GT/{seq}'
+    else:
+        output_dir = f'/home/chen/disk2/3DPW_GT/{seq}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    img_dir = f'{DIR}/{seq}/frames'   
-    file_dir = f'{DIR}/{seq}/ROMP'
+    img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
+    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
-    file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
-    
-
+    seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
+    gender = seq_file['genders'][0]
+    displacement = torch.from_numpy(seq_file['v_template_clothed'][0]).float()
     if gender == 'f':
         gender = 'female'
     elif gender == 'm':
@@ -204,81 +153,31 @@ if __name__ == '__main__':
     sys.path.append('/home/chen/RGB-PINA/rgb2pose')
     from smplx import SMPL
     smpl_model = SMPL('/home/chen/Models/smpl', gender=gender)
-    
+    smpl_shape = seq_file['betas'][0][:10]
+    cam_intrinsics = seq_file['cam_intrinsics']
+
     input_img = cv2.imread(img_paths[0])
-
-    if dataset == 'youtube':
-        focal_length = 1920 # 640 # 1920 # 1280 # 995.55555556
-        if transpose:
-            cam_intrinsics = np.array([[focal_length, 0., 540.],[0.,focal_length, 960.],[0.,0.,1.]])
-        else:
-            cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
-    elif dataset == 'neuman':
-        with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
-            lines = f.readlines()
-        cam_params = lines[3].split()
-        cam_intrinsics = np.array([[float(cam_params[4]), 0., float(cam_params[6])], 
-                                   [0., float(cam_params[5]), float(cam_params[7])], 
-                                   [0., 0., 1.]])
-    elif dataset == 'monoperfcap':
-        # focal_length = None
-        # with open(f'/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/{seq}/calib.txt') as f:
-        #     lines = f.readlines()
-        # cam_params = lines[2].split()
-        # cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
-        #                            [0., float(cam_params[6]), float(cam_params[7])], 
-        #                            [0., 0., 1.]])
-        focal_length = 1920 # 1280 # 995.55555556
-        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]])
-    elif dataset == 'deepcap':
-        with open(f'/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset/monocularCalibrationBM.calibration') as f:
-            lines = f.readlines()
-
-        cam_params = lines[5].split()
-        cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
-                                   [0., float(cam_params[6]), float(cam_params[7])], 
-                                   [0., 0., 1.]])
     renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
-    last_j3d = None
+
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
-        seq_file = np.load(file_paths[idx], allow_pickle=True)['results'][()]
-        actor_id = 0
 
-        # tracking in case of two persons
-        if len(seq_file['smpl_thetas']) >= 2:
-            dist = []
-            for i in range(len(seq_file['smpl_thetas'])):
-                dist.append(np.linalg.norm(seq_file['joints'][i].mean(0) - last_j3d.mean(0, keepdims=True)))
-            # dist = [np.linalg.norm(seq_file['pj2d_org'][0].mean(0) - last_pj2d.mean(0, keepdims=True)), np.linalg.norm(seq_file['pj2d_org'][1].mean(0) - last_pj2d.mean(0, keepdims=True))]
-            actor_id = np.argmin(dist)
-        smpl_pose = seq_file['smpl_thetas'][actor_id]
-        smpl_trans = [0.,0.,0.] # seq_file['trans'][0][idx]
-        smpl_shape = seq_file['smpl_betas'][actor_id][:10]
-        cam = seq_file['cam'][actor_id]
-        smpl_verts = seq_file['verts'][actor_id]
-        # cam_trans = seq_file['cam_trans'][0]
-        pj2d_org = seq_file['pj2d_org'][actor_id]
-        joints3d = seq_file['joints'][actor_id]
-        last_j3d = joints3d.copy()
-        tra_pred = estimate_translation_cv2(joints3d, pj2d_org, proj_mat=cam_intrinsics)
-
-        cam_extrinsics = np.eye(4)
-        cam_extrinsics[:3, 3] = tra_pred # cam_trans
-
-        # cam_extrinsics[:3, 3] = cam_extrinsics[:3, 3] - (cam_extrinsics[:3, :3] @ normalize_shift)
-        # P = cam_intrinsics @ cam_extrinsics[:3, :]
-        
+        smpl_pose = seq_file['poses'][0][idx]
+        smpl_trans = seq_file['trans'][0][idx]
+        cam_extrinsics = seq_file['cam_poses'][idx]
 
         R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
         T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
-        # smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),
-        #                          body_pose=torch.tensor(smpl_pose[3:])[None].float(),
-        #                          global_orient=torch.tensor(smpl_pose[:3])[None].float(),
-        #                          transl=torch.tensor(smpl_trans)[None].float())
-        # smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
-        
+        smpl_output = smpl_model(betas=torch.tensor(smpl_shape)[None].float(),
+                                 body_pose=torch.tensor(smpl_pose[3:])[None].float(),
+                                 global_orient=torch.tensor(smpl_pose[:3])[None].float(),
+                                 transl=torch.tensor(smpl_trans)[None].float(),
+                                 displacement=displacement,
+                                 absolute_displacement=True)
+        smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
 
+        # verts = torch.tensor(smpl_verts).cuda().float()[None]
+        # faces = torch.tensor(smpl_model.faces).cuda()[None]
         smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False)
         rendered_image = render_trimesh(smpl_mesh, R, T, 'n')
         if input_img.shape[0] < input_img.shape[1]:
@@ -288,13 +187,9 @@ if __name__ == '__main__':
         valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
         if overlay:
             output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-            cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
-        else:
-            # output_dir = f'/home/chen/RGB-PINA/data/{seq}/mask_ori'
-            # if not os.path.exists(output_dir):
-            #     os.makedirs(output_dir)
-            # output_img = (rendered_image[:,:,:-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
             # cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), output_img)
+        else:
             cv2.imwrite(os.path.join(output_dir, '%04d.png' % idx), valid_mask*255)
+        _ = trimesh.Trimesh(smpl_verts, smpl_model.faces, process=False).export(os.path.join(output_dir, 'mesh', '%04d.obj' % idx))
         # import ipdb
         # ipdb.set_trace()

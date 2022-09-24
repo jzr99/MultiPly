@@ -24,8 +24,9 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'RenderTest_manuel'
+seq = 'outdoors_fencing_01'
 dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
+transpose = False
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
     DIR = '/home/chen/disk2/Youtube_Videos'
@@ -52,7 +53,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
 
 
-img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
 mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
 seq_file_paths = sorted(glob.glob(f"{seq_dir}/*.pkl"))
 
@@ -67,7 +68,10 @@ smpl_shape = np.load(f'{DIR}/{seq}/mean_shape.npy')
 T_hip = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape)[None].float()).squeeze().cpu().numpy()
 if dataset == 'youtube':
     focal_length = 1920 # 640 # 1920 # 1280 # 995.55555556
-    cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
+    if transpose:
+        cam_intrinsics = np.array([[focal_length, 0., 540.],[0.,focal_length, 960.],[0.,0.,1.]])
+    else:
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
 elif dataset == 'neuman':
     with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
         lines = f.readlines()
