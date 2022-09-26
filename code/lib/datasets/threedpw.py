@@ -108,6 +108,11 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.skip_step = 1
         self.images, self.img_sizes = [], []
         self.object_masks = []
+        self.training_indices = list(range(opt.start_frame, opt.end_frame, self.skip_step))
+
+        if opt.exclude_frames != 'none':
+            for i in opt.exclude_frames:
+                self.training_indices.remove(i)
 
         self.bg_images = []
         # self.parsing_masks = []
@@ -116,9 +121,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
 
         # images
         img_dir = os.path.join(root, "image")
-        self.img_paths = sorted(glob.glob(f"{img_dir}/*.png"))[self.start_frame:self.end_frame]
+        self.img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+        self.img_paths = [self.img_paths[i] for i in self.training_indices]
         self.img_size = cv2.imread(self.img_paths[0]).shape[:2]
-        # for img_path in img_paths[self.start_frame:self.end_frame]: # [::self.skip_step]:
+        # for img_path in img_paths[self.training_indices]: # [::self.skip_step]:
         #     img = cv2.imread(img_path)
         #     img_size = img.shape[:2]
         #     self.img_sizes.append(img_size)
@@ -132,8 +138,9 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.n_images = len(self.img_paths)
         # masks
         mask_dir = os.path.join(root, "mask")
-        self.mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))[self.start_frame:self.end_frame]
-        # for i, mask_path in enumerate(mask_paths[self.start_frame:self.end_frame]): # [::self.skip_step]:
+        self.mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
+        self.mask_paths = [self.mask_paths[i] for i in self.training_indices]
+        # for i, mask_path in enumerate(mask_paths[self.training_indices]): # [::self.skip_step]:
         #     mask = cv2.imread(mask_path)
         #     assert mask.shape[:2] == self.img_sizes[
         #         i], "Mask image imcompatible with RGB"
@@ -145,7 +152,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         # ground_masks only for scenes with strong shadows
         # ground_mask_dir = os.path.join(root, "ground_mask")
         # ground_mask_paths = sorted(glob.glob(f"{ground_mask_dir}/*"))
-        # for i, ground_mask_path in enumerate(ground_mask_paths[self.start_frame:self.end_frame]): # [::self.skip_step]):
+        # for i, ground_mask_path in enumerate(ground_mask_paths[self.training_indices]): # [::self.skip_step]):
         #     ground_mask = cv2.imread(ground_mask_path)
         #     assert ground_mask.shape[:2] == self.img_sizes[
         #         i], "Ground mask image imcompatible with RGB"
@@ -158,7 +165,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         # normal_dir = os.path.join(root, "normal")
         # normal_paths = sorted(glob.glob(f"{normal_dir}/*.png"))
         
-        # for i, normal_path in enumerate(normal_paths[self.start_frame:self.end_frame]):
+        # for i, normal_path in enumerate(normal_paths[self.training_indices]):
         #     normal = cv2.imread(normal_path)
         #     assert normal.shape[:2] == self.img_sizes[
         #         i], "Normal image imcompatible with RGB"
@@ -189,10 +196,10 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     self.bg_images.append(bg_img)
 
         self.shape = np.load(os.path.join(root, "mean_shape.npy"))
-        self.poses = np.load(os.path.join(root, 'poses.npy'))[self.start_frame:self.end_frame] # [::self.skip_step]
-        self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[self.start_frame:self.end_frame] # [::self.skip_step]
+        self.poses = np.load(os.path.join(root, 'poses.npy'))[self.training_indices] # [::self.skip_step]
+        self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[self.training_indices] # [::self.skip_step]
         # cameras
-        # cameras = np.load(os.path.join(root, "cameras.npy"))[self.start_frame:self.end_frame] # [::self.skip_step]
+        # cameras = np.load(os.path.join(root, "cameras.npy"))[self.training_indices] # [::self.skip_step]
 
         self.P, self.C = [], []
         # for i in range(cameras.shape[0]):
@@ -203,8 +210,8 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         #     self.C.append(C)
 
         camera_dict = np.load(os.path.join(root, "cameras_normalize.npz"))
-        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in range(self.start_frame, self.end_frame, self.skip_step)] # range(0, self.n_images, self.skip_step)
-        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.start_frame, self.end_frame, self.skip_step)] # range(0, self.n_images, self.skip_step)
+        scale_mats = [camera_dict['scale_mat_%d' % idx].astype(np.float32) for idx in self.training_indices] # range(0, self.n_images, self.skip_step)
+        world_mats = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in self.training_indices] # range(0, self.n_images, self.skip_step)
 
         self.scale = 1 / scale_mats[0][0, 0]
 

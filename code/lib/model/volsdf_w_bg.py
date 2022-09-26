@@ -544,8 +544,13 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 479
-        assert (self.end_frame - self.start_frame) == self.num_training_frames
+        self.end_frame = 41
+        self.training_indices = list(range(self.start_frame, self.end_frame))
+        self.exclude_frames = [2, 7, 12, 17]
+        if self.exclude_frames is not None:
+            for i in self.exclude_frames:
+                self.training_indices.remove(i)
+        assert len(self.training_indices) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]
         if self.opt_smpl:
@@ -568,9 +573,9 @@ class VolSDF(pl.LightningModule):
         data_root = hydra.utils.to_absolute_path(data_root)
 
         body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
-        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, :3], dtype=torch.float32)
-        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.start_frame:self.end_frame, 3:], dtype=torch.float32)
-        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.start_frame:self.end_frame], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices][:, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices] [:, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.training_indices], dtype=torch.float32)
 
         for param_name in body_model_params.keys():
             self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 

@@ -1,21 +1,23 @@
 train:
     dataset: ThreeDPW
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "seattle_wo_disp_freeze_20_every_20_opt_pose_split"
     start_frame: 0
-    end_frame: 479
+    end_frame: 41
+    exclude_frames: [2, 7, 12, 17]
     batch_size: 1
     drop_last: False
     shuffle: True
     worker: 8
 
-    data_dir : Nadia_outdoor/
+    data_dir : seattle/
     num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "seattle_wo_disp_freeze_20_every_20_opt_pose_split"
     start_frame: 0
-    end_frame: 479
+    end_frame: 41
+    exclude_frames: [2, 7, 12, 17]
     image_id: 0
 
     batch_size: 1
@@ -23,15 +25,16 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : Nadia_outdoor/
+    data_dir : seattle/
     num_sample : -1
     pixel_per_batch: 2048  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "seattle_wo_disp_freeze_20_every_20_opt_pose_split"
     start_frame: 0
-    end_frame: 479
+    end_frame: 41
+    exclude_frames: 'none'
     image_id: 0
 
     batch_size: 1
@@ -39,6 +42,6 @@ test:
     shuffle: False
     worker: 0
 
-    data_dir : Nadia_outdoor/
+    data_dir : seattle/
     num_sample : -1
     pixel_per_batch: 2048
