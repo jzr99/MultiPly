@@ -12,55 +12,63 @@ def hierarchical_softmax(x):
         return torch.sigmoid(x)
 
     n_batch, n_point, n_dim = x.shape
-    x = x.flatten(0, 1)
+    x = x.flatten(0,1)
 
     prob_all = torch.ones(n_batch * n_point, 24, device=x.device)
 
-    prob_all[:, [1, 2, 3]] = prob_all[:, [0]] * sigmoid(x[:, [0]]) * softmax(
-        x[:, [1, 2, 3]])
+    prob_all[:, [1, 2, 3]] = prob_all[:, [0]] * sigmoid(x[:, [0]]) * softmax(x[:, [1, 2, 3]])
     prob_all[:, [0]] = prob_all[:, [0]] * (1 - sigmoid(x[:, [0]]))
 
-    prob_all[:,
-             [4, 5, 6]] = prob_all[:, [1, 2, 3]] * (sigmoid(x[:, [4, 5, 6]]))
-    prob_all[:,
-             [1, 2, 3]] = prob_all[:,
-                                   [1, 2, 3]] * (1 - sigmoid(x[:, [4, 5, 6]]))
+    prob_all[:, [4, 5, 6]] = prob_all[:, [1, 2, 3]] * (sigmoid(x[:, [4, 5, 6]]))
+    prob_all[:, [1, 2, 3]] = prob_all[:, [1, 2, 3]] * (1 - sigmoid(x[:, [4, 5, 6]]))
 
-    prob_all[:,
-             [7, 8, 9]] = prob_all[:, [4, 5, 6]] * (sigmoid(x[:, [7, 8, 9]]))
-    prob_all[:,
-             [4, 5, 6]] = prob_all[:,
-                                   [4, 5, 6]] * (1 - sigmoid(x[:, [7, 8, 9]]))
+    prob_all[:, [7, 8, 9]] = prob_all[:, [4, 5, 6]] * (sigmoid(x[:, [7, 8, 9]]))
+    prob_all[:, [4, 5, 6]] = prob_all[:, [4, 5, 6]] * (1 - sigmoid(x[:, [7, 8, 9]]))
 
     prob_all[:, [10, 11]] = prob_all[:, [7, 8]] * (sigmoid(x[:, [10, 11]]))
     prob_all[:, [7, 8]] = prob_all[:, [7, 8]] * (1 - sigmoid(x[:, [10, 11]]))
 
-    prob_all[:, [12, 13, 14]] = prob_all[:, [9]] * sigmoid(
-        x[:, [24]]) * softmax(x[:, [12, 13, 14]])
+    prob_all[:, [12, 13, 14]] = prob_all[:, [9]] * sigmoid(x[:, [24]]) * softmax(x[:, [12, 13, 14]])
     prob_all[:, [9]] = prob_all[:, [9]] * (1 - sigmoid(x[:, [24]]))
 
     prob_all[:, [15]] = prob_all[:, [12]] * (sigmoid(x[:, [15]]))
     prob_all[:, [12]] = prob_all[:, [12]] * (1 - sigmoid(x[:, [15]]))
 
     prob_all[:, [16, 17]] = prob_all[:, [13, 14]] * (sigmoid(x[:, [16, 17]]))
-    prob_all[:,
-             [13, 14]] = prob_all[:, [13, 14]] * (1 - sigmoid(x[:, [16, 17]]))
+    prob_all[:, [13, 14]] = prob_all[:, [13, 14]] * (1 - sigmoid(x[:, [16, 17]]))
 
     prob_all[:, [18, 19]] = prob_all[:, [16, 17]] * (sigmoid(x[:, [18, 19]]))
-    prob_all[:,
-             [16, 17]] = prob_all[:, [16, 17]] * (1 - sigmoid(x[:, [18, 19]]))
+    prob_all[:, [16, 17]] = prob_all[:, [16, 17]] * (1 - sigmoid(x[:, [18, 19]]))
 
     prob_all[:, [20, 21]] = prob_all[:, [18, 19]] * (sigmoid(x[:, [20, 21]]))
-    prob_all[:,
-             [18, 19]] = prob_all[:, [18, 19]] * (1 - sigmoid(x[:, [20, 21]]))
+    prob_all[:, [18, 19]] = prob_all[:, [18, 19]] * (1 - sigmoid(x[:, [20, 21]]))
 
     prob_all[:, [22, 23]] = prob_all[:, [20, 21]] * (sigmoid(x[:, [22, 23]]))
-    prob_all[:,
-             [20, 21]] = prob_all[:, [20, 21]] * (1 - sigmoid(x[:, [22, 23]]))
+    prob_all[:, [20, 21]] = prob_all[:, [20, 21]] * (1 - sigmoid(x[:, [22, 23]]))
 
     prob_all = prob_all.reshape(n_batch, n_point, prob_all.shape[-1])
     return prob_all
 
+def bmv(m, v):
+    return (m*v.transpose(-1,-2).expand(-1,3,-1)).sum(-1,keepdim=True)
+
+def create_voxel_grid(d, h, w, device='cpu'):
+    x_range = (torch.linspace(-1,1,steps=w,device=device)).view(1, 1, 1, w).expand(1, d, h, w)  # [1, H, W, D]
+    y_range = (torch.linspace(-1,1,steps=h,device=device)).view(1, 1, h, 1).expand(1, d, h, w)  # [1, H, W, D]
+    z_range = (torch.linspace(-1,1,steps=d,device=device)).view(1, d, 1, 1).expand(1, d, h, w)  # [1, H, W, D]
+    grid = torch.cat((x_range, y_range, z_range), dim=0).reshape(1, 3,-1).permute(0,2,1)
+
+    return grid
+
+def query_weights_smpl(x, smpl_verts, smpl_weights):
+    
+    distance_batch, index_batch, neighbor_points  = ops.knn_points(x,smpl_verts,K=1,return_nn=True)
+
+    index_batch = index_batch[0]
+
+    skinning_weights = smpl_weights[:,index_batch][:,:,0,:]
+
+    return skinning_weights
 
 def broyden(g,
             x_init,

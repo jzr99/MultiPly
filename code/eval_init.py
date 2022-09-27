@@ -1,4 +1,4 @@
-from lib.model.sdf_init import SDF_Init
+from lib.model.sdf_init_fast import SDF_Init
 from lib.utils.mesh import mesh_from_implicit_func
 import glob
 import hydra
@@ -16,7 +16,7 @@ def main(opt):
     # root = os.path.join("../data", opt.data_dir)
     # root = hydra.utils.to_absolute_path(root)
 
-    dataset_path = '/data/cheguo/Initialization_Avatar/split'
+    dataset_path = '/home/chen/disk2/AMASS/Initialization_Avatar/split'
     
 
     file_list = sorted(glob.glob(os.path.join(dataset_path, '*.pkl')))
@@ -42,7 +42,7 @@ def main(opt):
                 torch.from_numpy(x).float().cuda(), cond)[0, :, 0].cpu(),
             bbox=np.asarray([(-1, -1, -1), (1, 1, 1)]),
             coarse_bbox=True,
-            resolution=(128, 128, 128))
+            resolution=(256, 256, 256))
     mesh.export("sample.ply")
 
 

@@ -19,7 +19,8 @@ def render_trimesh(mesh,R,T, mode='np'):
     return image
 device = torch.device("cuda:0")
 DIR = '/home/chen/RGB-PINA/data'
-seq = 'Invisible'
+seq = 'outdoors_fencing_01'
+gender = 'male'
 if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl'):
     os.makedirs(f'{DIR}/{seq}/joint_opt_smpl')
 checkpoint_path = sorted(glob.glob(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/checkpoints/*.ckpt'))[-1]
@@ -31,12 +32,11 @@ transl = checkpoint['state_dict']['body_model_params.transl.weight']
 body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight']
 
 
-np.save(os.path.join(DIR, seq, 'opt_mean_shape.npy'), betas.detach().cpu().numpy())
-np.save(os.path.join(DIR, seq, 'opt_poses.npy'), torch.cat((global_orient, body_pose), dim=1).detach().cpu().numpy())
-np.save(os.path.join(DIR, seq, 'opt_transl.npy'), transl.detach().cpu().numpy())
-import ipdb
-ipdb.set_trace()
-gender = 'male'
+# np.save(os.path.join(DIR, seq, 'opt_mean_shape.npy'), betas.detach().cpu().numpy())
+# np.save(os.path.join(DIR, seq, 'opt_poses.npy'), torch.cat((global_orient, body_pose), dim=1).detach().cpu().numpy())
+# np.save(os.path.join(DIR, seq, 'opt_transl.npy'), transl.detach().cpu().numpy())
+# import ipdb
+# ipdb.set_trace()
 
 camPs = np.load(f'/home/chen/RGB-PINA/data/{seq}/cameras.npz')
 

@@ -108,7 +108,7 @@ def make_video3():
         writer_overlay.close()
 
 def make_video4():
-    seq = 'Nadia_outdoor_wo_disp_freeze_20_every_20_opt_pose'
+    seq = 'manuel_outdoor_wo_disp_freeze_20_every_20_opt_pose'
     DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
 
     start_frame = 0
@@ -118,18 +118,23 @@ def make_video4():
     files = [f for f in os.listdir(os.path.join(DIR, seq, 'test_overlay_normal')) if '.png' in f]
     files.sort()
 
-    writer = imageio.get_writer(os.path.join(DIR, seq, 'img_overlay.mp4'), fps=30)
-
-    for idx, f in enumerate(files[start_frame:end_frame+1]):
+    image_writer = imageio.get_writer(os.path.join(DIR, seq, 'img.mp4'), fps=30)
+    overlay_writer = imageio.get_writer(os.path.join(DIR, seq, 'overlay.mp4'), fps=30)
+    entropy_writer = imageio.get_writer(os.path.join(DIR, seq, 'entropy.mp4'), fps=30)
+    for idx, f in enumerate(files[start_frame:]):
         overlay_path = os.path.join(DIR, seq, 'test_overlay_normal', f)
         img_path = os.path.join(DIR, seq, 'test_rendering', f)
+        entropy_path = os.path.join(DIR, seq, 'test_negative_entropy', f)
 
-        img = imageio.imread(img_path)[:540]
+        img = imageio.imread(img_path)
         overlay = imageio.imread(overlay_path)
-        img_overlay = np.vstack((img, overlay))
-        img_lst.append(img_overlay)
-        writer.append_data(img_overlay)
-    writer.close()
+        entropy = imageio.imread(entropy_path)
 
+        image_writer.append_data(img)
+        overlay_writer.append_data(overlay)
+        entropy_writer.append_data(entropy)
+    image_writer.close()
+    overlay_writer.close()
+    entropy_writer.close()
 if __name__ == '__main__':
-    make_video1()
+    make_video4()

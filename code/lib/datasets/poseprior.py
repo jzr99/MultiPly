@@ -11,13 +11,13 @@ class PosePriorDataset(torch.utils.data.Dataset):
         root = os.path.join("../data", opt.data_dir)
         root = hydra.utils.to_absolute_path(root)
 
-        dataset_path = '/data/cheguo/Initialization_Avatar/split'
+        dataset_path = '/home/chen/disk2/AMASS/Initialization_Avatar/split'
 	# minimal_body_path = '/home/chen/Desktop/v_template.npy'
 
         # self.verts_body = np.load(minimal_body_path)
 
         self.file_list = sorted(glob.glob(os.path.join(dataset_path, '*.pkl')))
-        self.file_list = self.file_list[::100]
+        self.file_list = self.file_list[::50]
 
     def __len__(self):
         return len(self.file_list)
