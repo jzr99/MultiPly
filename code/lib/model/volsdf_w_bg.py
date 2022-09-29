@@ -3,7 +3,7 @@ from .ray_tracing import RayTracing
 from .sample_network import SampleNetwork
 from .density import LaplaceDensity, AbsDensity
 from .ray_sampler import ErrorBoundSampler, BBoxSampler
-from .deformer import ForwardDeformer, SMPLDeformer
+from .deformer import ForwardDeformer, SMPLDeformer, skinning
 from .smpl import SMPLServer
 from .body_model_params import BodyModelParams
 from .sampler import PointInSpace, PointOnBones
@@ -50,9 +50,9 @@ class VolSDFNetworkBG(nn.Module):
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.use_smpl_deformer = opt.use_smpl_deformer
-        gender = 'female'
+        self.gender = 'male'
         if self.use_smpl_deformer:
-            self.deformer = SMPLDeformer(betas=betas, gender=gender) 
+            self.deformer = SMPLDeformer(betas=betas, gender=self.gender) 
         else:
             self.deformer = ForwardDeformer(opt.deformer, betas=betas)
         
@@ -68,7 +68,7 @@ class VolSDFNetworkBG(nn.Module):
             self.ray_sampler = BBoxSampler(**opt.ray_sampler)
         else:
             self.ray_sampler = ErrorBoundSampler(self.sdf_bounding_sphere, inverse_sphere_bg=True, **opt.ray_sampler)
-        self.smpl_server = SMPLServer(gender=gender, betas=betas) # average shape for now. Adjust gender later!
+        self.smpl_server = SMPLServer(gender=self.gender, betas=betas) # average shape for now. Adjust gender later!
         self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
         self.use_body_pasing = opt.use_body_parsing
         if opt.smpl_init:
@@ -178,7 +178,7 @@ class VolSDFNetworkBG(nn.Module):
         smpl_output = self.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
         # smpl_params = smpl_params.detach()
         smpl_tfs = smpl_output['smpl_tfs']
-
+        # self.deformer = SMPLDeformer(betas=smpl_shape.detach().cpu().numpy().squeeze(), gender=self.gender) 
         smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces, process=False)
 
         cond = {'smpl': smpl_pose[:, 3:]/np.pi}
@@ -544,9 +544,9 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 41
+        self.end_frame = 102
         self.training_indices = list(range(self.start_frame, self.end_frame))
-        self.exclude_frames = [2, 7, 12, 17]
+        self.exclude_frames = [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
             for i in self.exclude_frames:
                 self.training_indices.remove(i)
@@ -704,7 +704,13 @@ class VolSDF(pl.LightningModule):
             sdf = sdf.reshape(-1,1)
         
         return {'occ': sdf}
-    
+
+    def get_deformed_mesh_fast_mode(self, verts, cond, smpl_tfs):
+        verts = torch.tensor(verts).cuda().float()
+        weights = self.model.deformer.query_weights(verts, cond)
+        verts_deformed = skinning(verts.unsqueeze(0),  weights, smpl_tfs).data.cpu().numpy()[0]
+        return verts_deformed
+
     def validation_step(self, batch, *args, **kwargs):
 
         output = {}
@@ -846,18 +852,22 @@ class VolSDF(pl.LightningModule):
             else:
                 scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
 
-                if self.opt_smpl and not animation:
+                if self.opt_smpl:
                     body_model_params = self.body_model_params(inputs['idx'])
-                    smpl_trans = body_model_params['transl']
-                    smpl_pose = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
                     smpl_shape = body_model_params['betas']
+                    if not animation:
+                        smpl_trans = body_model_params['transl']
+                        smpl_pose = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                    
                 smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
                 smpl_tfs = smpl_outputs['smpl_tfs']
                 smpl_verts = smpl_outputs['smpl_verts']
                 cond = {'smpl': smpl_pose[:, 3:]/np.pi}
 
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-                mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+                # mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+                verts_deformed = self.get_deformed_mesh_fast_mode(mesh_canonical.vertices, cond, smpl_tfs)
+                mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
                 if animation:
                     os.makedirs("test_animation_rendering", exist_ok=True)
                     os.makedirs("test_animation_normal", exist_ok=True)
@@ -866,7 +876,7 @@ class VolSDF(pl.LightningModule):
                     os.makedirs("test_animation_mesh", exist_ok=True)
 
                     mesh_canonical.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                    mesh_deformed.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                    mesh_deformed.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
                 else:
                     os.makedirs("test_mask", exist_ok=True)
                     os.makedirs("test_rendering", exist_ok=True)

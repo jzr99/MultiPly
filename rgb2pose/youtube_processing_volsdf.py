@@ -24,8 +24,8 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'outdoors_fencing_01'
-dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
+seq = 'lab'
+dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
 transpose = False
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman':
@@ -34,7 +34,7 @@ elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
 elif dataset == 'deepcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
-resize_factor = 2
+resize_factor = 1
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
@@ -53,7 +53,7 @@ if not os.path.exists(os.path.join(save_dir, 'mask')):
 #     os.makedirs(os.path.join(save_dir, 'normal'))
 
 
-img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 mask_paths = sorted(glob.glob(f"{mask_dir}/*.png"))
 seq_file_paths = sorted(glob.glob(f"{seq_dir}/*.pkl"))
 

@@ -156,8 +156,8 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'outdoors_fencing_01'
-    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
+    seq = 'lab'
+    dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
     transpose = False
     gender = 'm'
     if dataset == 'youtube' or dataset == 'neuman':
@@ -175,7 +175,7 @@ if __name__ == '__main__':
         os.makedirs(f'{DIR}/{seq}/init_refined_smpl_files')
     img_dir = f'{DIR}/{seq}/frames'   
     file_dir = f'{DIR}/{seq}/ROMP'
-    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     file_paths = sorted(glob.glob(f"{file_dir}/*.npz"))
     openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
 

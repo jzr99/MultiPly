@@ -6,7 +6,7 @@ from ..utils.snarf_utils import broyden, hierarchical_softmax
 from .smpl import SMPLServer
 from pytorch3d import ops
 class SMPLDeformer():
-    def __init__(self, max_dist=0.05, K=1, gender='male', betas=None):
+    def __init__(self, max_dist=0.05, K=5, gender='male', betas=None):
         super().__init__()
 
         self.max_dist = max_dist
@@ -21,9 +21,11 @@ class SMPLDeformer():
     def forward(self, x, smpl_tfs, return_weights=True, inverse=False, smpl_verts=None):
         if x.shape[0] == 0: return x
         if smpl_verts is None:
-            weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+            # weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+            weights, outlier_mask = self.query_skinning_weights_smpl_multi(x[None], smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
         else:
-            weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
+            # weights, outlier_mask = self.query_skinning_weights_smpl(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
+            weights, outlier_mask = self.query_skinning_weights_smpl_multi(x[None], smpl_verts=smpl_verts[0], smpl_weights=self.smpl_weights)
         if return_weights:
             return weights
         # invalid_ids =((skinning_weights[:,-1]==1) )
@@ -32,10 +34,49 @@ class SMPLDeformer():
 
         return x_transformed.squeeze(0), outlier_mask
     def forward_skinning(self, xc, cond, smpl_tfs):
-        weights, outlier_mask = self.query_skinning_weights_smpl(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        # weights, outlier_mask = self.query_skinning_weights_smpl(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
+        weights, outlier_mask = self.query_skinning_weights_smpl_multi(xc, smpl_verts=self.smpl_verts[0], smpl_weights=self.smpl_weights)
         x_transformed = skinning(xc, weights, smpl_tfs, inverse=False)
 
         return x_transformed
+
+    # def query_skinning_weights_smpl_multi(self, pts, smpl_verts, smpl_weights):
+
+    #     distance_batch, index_batch, neighbor_points = ops.knn_points(pts, smpl_verts.unsqueeze(0),
+    #                                                                   K=self.K, return_nn=True)
+
+    #     weight_std2 = 2. * 0.1 ** 2
+    #     neighbor_points = neighbor_points[0]
+    #     distance_batch = torch.sqrt(distance_batch[0])
+    #     neighbor_lbs_weights = smpl_weights[:, index_batch, :]
+    #     neighbor_weights_conf = torch.exp(-torch.sum(torch.abs(neighbor_lbs_weights - neighbor_lbs_weights[..., 0:1, :]), dim=-1)/weight_std2)
+    #     neighbor_weights_conf = torch.gt(neighbor_weights_conf, 0.9).float()
+    #     neighbor_weights = torch.exp(-distance_batch)
+    #     neighbor_weights = neighbor_weights * neighbor_weights_conf
+    #     neighbor_weights = neighbor_weights / neighbor_weights.sum(-1, keepdim=True)
+
+
+    #     outlier_mask = (distance_batch > 0.1)
+    #     import ipdb
+    #     ipdb.set_trace()
+
+    #     return neighbor_weights, outlier_mask
+
+    def query_skinning_weights_smpl_multi(self, pts, smpl_verts, smpl_weights):
+
+        distance_batch, index_batch, neighbor_points = ops.knn_points(pts, smpl_verts.unsqueeze(0),
+                                                                      K=self.K, return_nn=True)
+        distance_batch = torch.clamp(distance_batch, max=4)
+        weights_conf = torch.exp(-distance_batch)
+        distance_batch = torch.sqrt(distance_batch)
+        weights_conf = weights_conf / weights_conf.sum(-1, keepdim=True)
+        index_batch = index_batch[0]
+        weights = smpl_weights[:, index_batch, :]
+        weights = torch.sum(weights * weights_conf.unsqueeze(-1), dim=-2).detach()
+
+        outlier_mask = (distance_batch[..., 0] > 0.1)[0]
+        return weights, outlier_mask
+
     def query_skinning_weights_smpl(self, pts, smpl_verts, smpl_weights):
 
         distance_batch, index_batch, neighbor_points = ops.knn_points(pts, smpl_verts.unsqueeze(0),
