@@ -177,7 +177,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'lab'
+    seq = 'bike'
     dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
     transpose = False
     gender = 'm'
