@@ -156,11 +156,11 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'bike'
-    dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
+    seq = 'RenderTest_chen'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
     transpose = False
     gender = 'm'
-    if dataset == 'youtube' or dataset == 'neuman':
+    if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
@@ -220,6 +220,10 @@ if __name__ == '__main__':
         cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
                                    [0., float(cam_params[6]), float(cam_params[7])], 
                                    [0., 0., 1.]])
+    # elif dataset == 'threedpw':
+    #     source_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl'
+    #     source_file = pkl.load(open(source_dir, 'rb'), encoding='latin1')
+    #     cam_intrinsics = source_file['cam_intrinsics']
     cam_extrinsics = np.eye(4)
     render_R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
     render_T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 

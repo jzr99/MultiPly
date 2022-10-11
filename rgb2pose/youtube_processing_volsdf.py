@@ -24,33 +24,27 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'bike'
-dataset = 'neuman' # 'youtube' 'monoperfcap' # 'neuman
+seq = 'RenderTest_chen'
+dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
 transpose = False
 gender = 'm'
-if dataset == 'youtube' or dataset == 'neuman':
+if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
 elif dataset == 'deepcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/DeepCapDataset'
-resize_factor = 1
+resize_factor = 2
 
 img_dir = f'{DIR}/{seq}/frames'
 seq_dir = f'{DIR}/{seq}/init_refined_smpl_files'
 mask_dir = f'{DIR}/{seq}/init_refined_mask'
-# ground_mask_dir = f'/home/chen/disk2/3DPW/ground_mask/{seq}'
-# normal_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/normal'
-# mask_dir = '/home/chen/ICON/courtyard_jumpBench_01/icon-filter/mask'
+
 save_dir = f'/home/chen/RGB-PINA/data/{seq}'
 if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
 if not os.path.exists(os.path.join(save_dir, 'mask')):
     os.makedirs(os.path.join(save_dir, 'mask'))
-# if not os.path.exists(os.path.join(save_dir, 'ground_mask')):
-#     os.makedirs(os.path.join(save_dir, 'ground_mask'))
-# if not os.path.exists(os.path.join(save_dir, 'normal')):
-#     os.makedirs(os.path.join(save_dir, 'normal'))
 
 
 img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
@@ -97,6 +91,11 @@ elif dataset == 'deepcap':
     cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
                                 [0., float(cam_params[6]), float(cam_params[7])], 
                                 [0., 0., 1.]])
+# elif dataset == 'threedpw':
+#     source_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl'
+#     source_file = pkl.load(open(source_dir, 'rb'), encoding='latin1')
+#     cam_intrinsics = source_file['cam_intrinsics']
+
 cam_extrinsics = np.eye(4)
 
 K = np.eye(4)

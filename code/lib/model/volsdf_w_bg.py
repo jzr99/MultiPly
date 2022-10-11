@@ -544,9 +544,9 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 104
+        self.end_frame = 581
         self.training_indices = list(range(self.start_frame, self.end_frame))
-        self.exclude_frames = [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102] # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
+        self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
             for i in self.exclude_frames:
                 self.training_indices.remove(i)

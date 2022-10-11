@@ -17,32 +17,26 @@ ep1_start_frame = 0
 ep2_start_frame = 120
 ep3_start_frame = 267
 ep4_start_frame = 400
-image_writer = imageio.get_writer(os.path.join(seq_dir, f'{actor}_ep1.mp4'), fps=30)
-fg_rendering_writer = imageio.get_writer(os.path.join(seq_dir, f'{actor}_ep2.mp4'), fps=30)
-normal_writer = imageio.get_writer(os.path.join(seq_dir, f'{actor}_ep3.mp4'), fps=30)
-fake_bg_writer = imageio.get_writer(os.path.join(seq_dir, f'{actor}_ep4.mp4'), fps=30)
+
+fake_bg_writer = imageio.get_writer(os.path.join(seq_dir, f'{actor}_fake_bg.mp4'), fps=30)
 for idx in range(len(image_paths)):
     image_path = image_paths[idx]
     fg_rendering_path = fg_rendering_paths[idx]
     normal_path = normal_paths[idx]
-    mask = (imageio.imread(mask_paths[idx]) == 255)
+    # (imageio.imread(mask_paths[idx]) == 255)
 
-    if idx > ep1_start_frame and idx < ep2_start_frame:
-        image_writer.append_data(imageio.imread(image_path))
-    elif idx > ep2_start_frame and idx < ep3_start_frame:
-        fg_rendering_writer.append_data(imageio.imread(fg_rendering_path))
-    elif idx > ep3_start_frame and idx < ep4_start_frame:
-        normal = imageio.imread(normal_path)
-        masked_normal = normal * mask[..., None] + (1 - mask[..., None]) * 255
-        normal_writer.append_data(masked_normal.astype(np.uint8))
-    else:
+    if idx > ep4_start_frame:
         fg_rendering = cv2.imread(fg_rendering_path)
-        bg_image = cv2.imread('/home/chen/Downloads/ranking200121.jpg')
+        fg_rendering = cv2.resize(fg_rendering, (fg_rendering.shape[1] // 4, fg_rendering.shape[0] // 4))
+        mask = (cv2.imread(mask_paths[idx]) == 255)[:, :, -1].astype(np.uint8)
+
+        mask = cv2.resize(mask, (mask.shape[1] // 4, mask.shape[0] // 4)).astype(np.bool)
+
+        bg_image = cv2.imread('/home/chen/Downloads/Sky.jpg')
         bg_image = cv2.resize(bg_image, (960, 540))
-        bg_image[mask] = fg_rendering[mask]
+
+        bg_image[(np.where(mask)[0] + 350, np.where(mask)[1] + 270)] = fg_rendering[mask]
         fake_bg_writer.append_data(bg_image[..., [2,1,0]])
 
-image_writer.close()
-fg_rendering_writer.close()
-normal_writer.close()
+
 fake_bg_writer.close()

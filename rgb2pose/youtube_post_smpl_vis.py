@@ -19,7 +19,7 @@ def render_trimesh(mesh,R,T, mode='np'):
     return image
 device = torch.device("cuda:0")
 DIR = '/home/chen/RGB-PINA/data'
-seq = 'outdoors_fencing_01'
+seq = 'Suarez'
 gender = 'male'
 if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl'):
     os.makedirs(f'{DIR}/{seq}/joint_opt_smpl')

@@ -52,34 +52,34 @@ def get_GT_images(seq, gt_alpha_paths):
         cv2.imwrite(f'/home/chen/RGB-PINA/data/{seq}/GT/%s.png' % os.path.basename(gt_alpha_paths[i]), gt_img)
 
 
-
-
-
-
-
-
 # results = eval_metrics(gts, neuman_preds)
 # import ipdb
 # ipdb.set_trace()
 if __name__ == '__main__':
-    seq = 'citron'
+    seq = 'jogging'
     gt_alpha_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/GT_alpha/*.png'))
     get_GT_images(seq, gt_alpha_paths)
 
     gt_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/GT/*.png'))
+    humannerf_pred_paths = sorted(glob.glob(f'/home/chen/humannerf/experiments/human_nerf/wild/{seq}/single_gpu/test_views_human_wo_pose_refine/*.png'))
     neuman_pred_paths = sorted(glob.glob(f'/home/chen/ml-neuman/demo/test_views_human/{seq}/*.png'))
     ours_pred_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/ours_pred_new/*.png'))
     gts = []
+    humannerf_preds = []
     neuman_preds = []
     ours_preds = []
+    
     for i in range(len(gt_paths)):
         gts.append(imageio.imread(gt_paths[i]))
+        humannerf_preds.append(imageio.imread(humannerf_pred_paths[i]))
         neuman_preds.append(imageio.imread(neuman_pred_paths[i]))
         ours_preds.append(imageio.imread(ours_pred_paths[i]))
+    results = eval_metrics(gts, humannerf_preds)
     neuman_results = eval_metrics(gts, neuman_preds)
     ours_results = eval_metrics(gts, ours_preds)
     print('ours_results', ours_results)
     print('neuman_results', neuman_results)
+    print('humannerf_results', results)
     
     import ipdb
     ipdb.set_trace()

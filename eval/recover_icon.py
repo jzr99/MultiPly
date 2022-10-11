@@ -9,11 +9,12 @@ seq = 'outdoors_fencing_01'
 if seq == 'outdoors_fencing_01':
     start_idx = 0 # 546
 
-DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
+DIR = '/home/chen/ICON_new'
 save_dir = f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-mesh_paths = sorted(glob.glob(f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh/*_deformed.ply'))
+mesh_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_recon.obj'))
+smpl_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.npy'))
 cam_path = f'/home/chen/RGB-PINA/data/{seq}/cameras_normalize.npz'
 cam = dict(np.load(cam_path))
 
@@ -31,8 +32,7 @@ original_K[0, 2] = original_K[0, 2] / resize_factor
 original_K[1, 2] = original_K[1, 2] / resize_factor
 for idx, mesh_path in enumerate(mesh_paths):
     scaled_mesh = trimesh.load(mesh_path, process=False)
-    scaling_factor = cam[f'scale_mat_{idx}'][0, 0]
-    scaled_mesh.apply_scale(scaling_factor)
+
     cam_P = cam[f'world_mat_{idx}']
     out = cv2.decomposeProjectionMatrix(cam_P[:3, :])
     cam_intrinsic = out[0]
