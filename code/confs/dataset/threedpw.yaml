@@ -1,6 +1,6 @@
 train:
     dataset: ThreeDPW
-    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_w_pos"
     start_frame: 0
     end_frame: 581
     exclude_frames: 'none' # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102]
@@ -14,7 +14,7 @@ train:
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_w_pos"
     start_frame: 0
     end_frame: 581
     exclude_frames: 'none' # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102]
@@ -31,7 +31,7 @@ valid:
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_w_pos"
     start_frame: 0
     end_frame: 581
     exclude_frames: 'none'

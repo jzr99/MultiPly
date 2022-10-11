@@ -170,7 +170,7 @@ class RenderingNet(nn.Module):
             if self.mode == 'nerf_frame_encoding':
                 view_dirs = self.embedview_fn(view_dirs)
             elif self.mode == 'pose_no_view':
-                normals = self.embedview_fn(normals)
+                points = self.embedview_fn(points)
         # if self.embedpos_fn is not None:
         #     points = self.embedpos_fn(points)
 

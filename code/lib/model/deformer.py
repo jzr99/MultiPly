@@ -6,7 +6,7 @@ from ..utils.snarf_utils import broyden, hierarchical_softmax
 from .smpl import SMPLServer
 from pytorch3d import ops
 class SMPLDeformer():
-    def __init__(self, max_dist=0.05, K=5, gender='male', betas=None):
+    def __init__(self, max_dist=0.05, K=1, gender='male', betas=None):
         super().__init__()
 
         self.max_dist = max_dist
