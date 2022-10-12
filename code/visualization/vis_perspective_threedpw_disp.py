@@ -139,6 +139,8 @@ if __name__ == '__main__':
         output_dir = f'/home/chen/disk2/3DPW_GT/{seq}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    if not os.path.exists(os.path.join(output_dir, 'smpl_mesh')):
+        os.makedirs(os.path.join(output_dir, 'smpl_mesh'))
     img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
     seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
