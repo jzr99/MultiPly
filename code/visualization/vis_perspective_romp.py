@@ -177,11 +177,11 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 overlay = False
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'RenderTest_manuel'
-    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman # threedpw
+    seq = 'Wildmotion1'
+    dataset = 'synthetic' # 'youtube' 'monoperfcap' # 'neuman # threedpw
     transpose = False
     gender = 'm'
-    if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw':
+    if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
@@ -213,6 +213,10 @@ if __name__ == '__main__':
             cam_intrinsics = np.array([[focal_length, 0., 540.],[0.,focal_length, 960.],[0.,0.,1.]])
         else:
             cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 320.],[0.,focal_length, 180.],[0.,0.,1.]]) # np.array([[focal_length, 0., 960.],[0.,focal_length, 540.],[0.,0.,1.]]) # np.array([[focal_length, 0., 640.],[0.,focal_length, 360.],[0.,0.,1.]])
+    elif dataset == 'synthetic':
+        focal_length = 1920
+        cam_intrinsics = np.array([[focal_length, 0., 960.],[0.,focal_length, 510.],[0.,0.,1.]])
+
     elif dataset == 'neuman':
         with open(f'/home/chen/disk2/NeuMan_dataset/{seq}/sparse/cameras.txt') as f:
             lines = f.readlines()

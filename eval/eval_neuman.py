@@ -56,7 +56,7 @@ def get_GT_images(seq, gt_alpha_paths):
 # import ipdb
 # ipdb.set_trace()
 if __name__ == '__main__':
-    seq = 'jogging'
+    seq = 'bike'
     gt_alpha_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/GT_alpha/*.png'))
     get_GT_images(seq, gt_alpha_paths)
 
