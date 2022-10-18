@@ -56,14 +56,14 @@ def get_GT_images(seq, gt_alpha_paths):
 # import ipdb
 # ipdb.set_trace()
 if __name__ == '__main__':
-    seq = 'bike'
+    seq = 'parkinglot'
     gt_alpha_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/GT_alpha/*.png'))
     get_GT_images(seq, gt_alpha_paths)
 
     gt_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/GT/*.png'))
     humannerf_pred_paths = sorted(glob.glob(f'/home/chen/humannerf/experiments/human_nerf/wild/{seq}/single_gpu/test_views_human_w_pose_refine/*.png'))
     neuman_pred_paths = sorted(glob.glob(f'/home/chen/ml-neuman/demo/test_views_human/{seq}/*.png'))
-    ours_pred_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/ours_pred_new/*.png'))
+    ours_pred_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/ours_pred_new_new/*.png'))
     gts = []
     humannerf_preds = []
     neuman_preds = []

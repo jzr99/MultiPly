@@ -5,6 +5,7 @@ from .density import LaplaceDensity
 from .ray_sampler import ErrorBoundSampler, BBoxSampler
 from .deformer import ForwardDeformer, SMPLDeformer
 from .smpl import SMPLServer
+from .body_model_params import BodyModelParams
 from .sampler import PointInSpace, PointOnBones
 from .loss import VolSDFLoss
 from ..utils import idr_utils
@@ -25,7 +26,8 @@ import pytorch_lightning as pl
 import hydra
 import open3d as o3d
 import pytorch3d
-
+import kaolin
+from kaolin.ops.mesh import index_vertices_by_faces
 class VolSDFNetwork(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -61,6 +63,10 @@ class VolSDFNetwork(nn.Module):
             self.implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
+
+        self.smpl_v_cano = self.smpl_server.verts_c
+        self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
+        self.smpl_face_vertices = index_vertices_by_faces(self.smpl_v_cano, self.smpl_f_cano)
 
     def extract_normal(self, x_c, cond, tfs):
         
@@ -99,11 +105,13 @@ class VolSDFNetwork(nn.Module):
             feature = torch.gather(feature, dim=1, index=index.unsqueeze(-1).unsqueeze(-1).expand(num_point, num_init, feature.shape[-1]))[:, 0, :]
         return sdf, x_c, feature # [:, 0]
 
-    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts):
+    def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, current_epoch=None):
         if hasattr(self, "deformer"):
-            x_c = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            x_c, outlier_mask = self.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
             output = self.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
+            if not self.training:
+                sdf[outlier_mask] = 4.
             ''' Clamping the SDF with the scene bounding sphere, so that all rays are eventually occluded '''
             if not self.with_bkgd:
                 if self.sdf_bounding_sphere > 0.0:
@@ -112,6 +120,25 @@ class VolSDFNetwork(nn.Module):
             feature = output[:, 1:]
 
         return sdf, x_c, feature
+
+    def check_off_in_suface_points_cano(self, x_cano, N_samples, threshold=0.05):
+        # smpl_v_cano = self.smpl_server.verts_c
+        # smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=smpl_v_cano.device)
+        # face_vertices = index_vertices_by_faces(smpl_v_cano, smpl_f_cano)
+        distance, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_cano.unsqueeze(0).contiguous(), self.smpl_face_vertices)
+
+        distance = torch.sqrt(distance) # kaolin outputs squared distance
+        sign = kaolin.ops.mesh.check_sign(self.smpl_v_cano, self.smpl_f_cano, x_cano.unsqueeze(0)).float()
+        sign = 1 - 2 * sign
+        signed_distance = sign * distance
+        batch_size = x_cano.shape[0] // N_samples
+        signed_distance = signed_distance.reshape(batch_size, N_samples, 1)
+
+        minimum = torch.min(signed_distance, 1)[0]
+        index_off_surface = (minimum > threshold).squeeze(1)
+        index_in_surface = (minimum <= 0.).squeeze(1)
+        return index_off_surface, index_in_surface
+
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
@@ -121,7 +148,7 @@ class VolSDFNetwork(nn.Module):
         pose = input["pose"]
         uv = input["uv"]
 
-        object_mask = input["object_mask"].reshape(-1)
+        # object_mask = input["object_mask"].reshape(-1)
         if self.use_body_pasing:
             body_parsing = input['body_parsing'].reshape(-1)
 
@@ -138,6 +165,9 @@ class VolSDFNetwork(nn.Module):
 
         smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces, process=False)
         cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+        if self.training:
+            if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
+                cond = {'smpl': smpl_pose[:, 3:] * 0.}
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
@@ -162,7 +192,7 @@ class VolSDFNetwork(nn.Module):
             if self.use_bbox_sampler:
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:    
-                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'])
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True, smpl_verts=smpl_output['smpl_verts'], current_epoch=None)
                 if self.with_bkgd:
                     z_vals, _ = z_vals
                     z_max = z_vals[:, -1]
@@ -172,10 +202,6 @@ class VolSDFNetwork(nn.Module):
                 z_vals = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, smpl_mesh, self.training)
             else:
                 z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs, eval_mode=True)
-                if self.with_bkgd:
-                    z_vals, _ = z_vals
-                    z_max = z_vals[:, -1]
-                    z_vals = z_vals[:, :-1]
 
         N_samples = z_vals.shape[1]
 
@@ -216,12 +242,13 @@ class VolSDFNetwork(nn.Module):
         # ipdb.set_trace()
 
         if self.training:
+            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
             cam_loc = cam_loc.unsqueeze(1).repeat(1, N_samples, 1) # [surface_mask]
 
-            normal = input["normal"].reshape(-1, 3)
-            surface_normal = normal # [surface_mask]
+            # normal = input["normal"].reshape(-1, 3)
+            # surface_normal = normal # [surface_mask]
 
             # N = surface_points.shape[0]
 
@@ -295,31 +322,31 @@ class VolSDFNetwork(nn.Module):
             if differentiable_points.shape[0] > 0:
                 normal_weight = torch.einsum('ij, ij->i', normal_values, -ray_dirs).detach()
                 normal_weight = torch.clamp(normal_weight, 0., 1.)
+            index_ground = None # torch.nonzero(input['ground_mask'][0])
             output = {
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
-                'surface_normal_gt': surface_normal,
+                # 'surface_normal_gt': surface_normal,
+                'index_outside': input['index_outside'],
+                "index_ground": index_ground,
+                'index_off_surface': index_off_surface,
+                'index_in_surface': index_in_surface,
+                'acc_map': torch.sum(weights, -1),
                 'normal_weight': normal_weight,
                 'sdf_output': sdf_output,
-                'object_mask': object_mask,
-                # "sdf_pd": sdf_pd,
-                # "sdf_gt": sdf_gt,
                 "w_pd": w_pd,
                 "w_gt": w_gt,
-                # 'lbs_weight_pd': skinning_values,
-                # 'lbs_weight_gt': gt_skinning_values,
                 'grad_theta': grad_theta,
-                'use_smpl_deformer': self.use_smpl_deformer
+                'use_smpl_deformer': self.use_smpl_deformer,
+                'epoch': input['current_epoch'],
             }
         else:
             output = {
-                'points': points,
+                'acc_map': torch.sum(weights, -1),
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
                 'sdf_output': sdf_output,
-                # 'network_object_mask': network_object_mask,
-                # 'object_mask': object_mask
             }
         return output
 
@@ -331,7 +358,7 @@ class VolSDFNetwork(nn.Module):
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, create_graph=is_training, retain_graph=is_training)
         # gradients = self.extract_normal(pnts_c, cond, tfs)[0]
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6) # nn.functional.normalize(gradients, dim=-1, eps=1e-6) gradients
-        rgb_vals = self.rendering_network(pnts_c, normals.detach(), view_dirs, cond['smpl'],
+        rgb_vals = self.rendering_network(pnts_c, normals, view_dirs, cond['smpl'],
                                           feature_vectors, surface_body_parsing)
         
         others['normals'] = normals
@@ -430,28 +457,55 @@ class VolSDF(pl.LightningModule):
         super().__init__()
         # self.automatic_optimization = False
         self.model = VolSDFNetwork(opt.model, betas_path)
-        self.loss = VolSDFLoss(opt.model.loss)
-        self.training_modules = ["model"]
-        # self.smpl_pose = nn.Parameter(torch.zeros(1, 72))
-        # self.smpl_shape = nn.Parameter(torch.zeros(1, 10))
-        # self.smpl_trans = nn.Parameter(torch.zeros(1, 3))
-        self.smpl_pose = torch.tensor(np.zeros([1, 72]), requires_grad=True, dtype=torch.float32)
-        self.smpl_shape = torch.tensor(np.zeros([1, 10]), requires_grad=True, dtype=torch.float32)
-        self.smpl_trans = torch.tensor(np.zeros([1, 3]), requires_grad=True, dtype=torch.float32)
         self.opt = opt
+        self.num_training_frames = opt.model.num_training_frames
+        self.start_frame = 0
+        self.end_frame = 581
+        self.training_indices = list(range(self.start_frame, self.end_frame))
+        self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
+        if self.exclude_frames is not None:
+            for i in self.exclude_frames:
+                self.training_indices.remove(i)
+        assert len(self.training_indices) == self.num_training_frames
+        self.opt_smpl = True
+        self.training_modules = ["model"]
+        if self.opt_smpl:
+            self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
+            self.load_body_model_params()
+            optim_params = self.body_model_params.param_names
+            for param_name in optim_params:
+                self.body_model_params.set_requires_grad(param_name, requires_grad=True)
+            self.training_modules += ['body_model_params']
+        
+        self.loss = VolSDFLoss(opt.model.loss)
+
+    def load_body_model_params(self):
+        body_model_params = {param_name: [] for param_name in self.body_model_params.param_names}
+        data_root = os.path.join('../data', self.opt.dataset.train.data_dir)
+        data_root = hydra.utils.to_absolute_path(data_root)
+
+        body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices][:, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices] [:, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.training_indices], dtype=torch.float32)
+
+        for param_name in body_model_params.keys():
+            self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 
 
     def configure_optimizers(self):
-        params = chain(*[
-            getattr(self, module).parameters()
-            for module in self.training_modules
-        ])
-
-        self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate)
+        # params = chain(*[
+        #     getattr(self, module).parameters()
+        #     for module in self.training_modules
+        # ])
+        params = [{'params': self.model.parameters(), 'lr':self.opt.model.learning_rate}]
+        if self.opt_smpl:
+            params.append({'params': self.body_model_params.parameters(), 'lr':self.opt.model.learning_rate*0.1})
+        self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate, eps=1e-8)
         # self.pose_optimizer = optim.Adam([self.smpl_pose , self.smpl_shape, self.smpl_trans], lr=1e-4) 
         self.scheduler = optim.lr_scheduler.MultiStepLR(
             self.optimizer, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
-        # self._optimizers = [self.optimizer]
-        return [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}]
+        # self._optimizers = [self.optimizer, self.pose_optimizer]
+        return [self.optimizer], [self.scheduler] # [{"optimizer": self.optimizer, "lr_scheduler": self.scheduler}]
 
     def training_step(self, batch):
         inputs, targets = batch
@@ -459,65 +513,65 @@ class VolSDF(pl.LightningModule):
         batch_idx = inputs["idx"]
         
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            reference_pose = inputs["smpl_params"][:, 4:76]
-            reference_shape = inputs["smpl_params"][:, 76:]
-            reference_trans = inputs["smpl_params"][:, 1:4]
-            self.smpl_pose.data = reference_pose
-            self.smpl_shape.data = reference_shape
-            self.smpl_trans.data = reference_trans
+
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(batch_idx)
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
         else:
-            smpl_params = np.load(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz")
-            self.smpl_pose.data = torch.from_numpy(smpl_params["smpl_pose"]).to(device)
-            self.smpl_shape.data = torch.from_numpy(smpl_params["smpl_shape"]).to(device)
-            self.smpl_trans.data = torch.from_numpy(smpl_params["smpl_trans"]).to(device)
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
 
-        inputs["smpl_pose"] = self.smpl_pose
-        inputs["smpl_shape"] = self.smpl_shape
-        inputs["smpl_trans"] = self.smpl_trans
-        with torch.autograd.set_detect_anomaly(True):
-            model_outputs = self.model(inputs)
-            # if model_outputs is None:
-            #     for optimizer in self._optimizers:
-            #         optimizer.zero_grad()
-            #     pass
+        inputs['current_epoch'] = self.current_epoch
+        model_outputs = self.model(inputs)
+
+        # if model_outputs is None:
+        #     for optimizer in self._optimizers:
+        #         optimizer.zero_grad()
+        #     pass
+        # else:
+
+        loss_output = self.loss(model_outputs, targets)
+        for k, v in loss_output.items():
+            if k in ["loss"]:
+                self.log(k, v.item(), prog_bar=True, on_step=True)
+            else:
+                self.log(k, v.item(), prog_bar=True, on_step=True)
+
+            # if self.current_epoch < 10000:
+                # self.model.implicit_network.eval()
+                # self.model.deformer.eval()
+                # for param in self.model.implicit_network.parameters():
+                #     param.requires_grad = False
+                # for param in self.model.deformer.parameters():
+                    # param.requires_grad = False
             # else:
+                # self.model.implicit_network.train()
+                # self.model.deformer.train()
+                # for param in self.model.deformer.parameters():
+                #     param.requires_grad = False
 
-            loss_output = self.loss(model_outputs, targets)
-            for k, v in loss_output.items():
-                if k in ["loss"]:
-                    self.log(k, v.item(), prog_bar=True, on_step=True)
-                else:
-                    self.log(k, v.item(), prog_bar=True, on_step=True)
+            # for optimizer in self._optimizers:
+            #     optimizer.zero_grad()
 
-                # if self.current_epoch < 10000:
-                    # self.model.implicit_network.eval()
-                    # self.model.deformer.eval()
-                    # for param in self.model.implicit_network.parameters():
-                    #     param.requires_grad = False
-                    # for param in self.model.deformer.parameters():
-                        # param.requires_grad = False
-                # else:
-                    # self.model.implicit_network.train()
-                    # self.model.deformer.train()
-                    # for param in self.model.deformer.parameters():
-                    #     param.requires_grad = False
+            # loss_output["loss"].backward()
+            # self.manual_backward(loss_output["loss"])
+            # for optimizer in self._optimizers:
+            #     optimizer.step()
 
-                # for optimizer in self._optimizers:
-                #     optimizer.zero_grad()
-
-                # loss_output["loss"].backward()
-                # self.manual_backward(loss_output["loss"])
-                # for optimizer in self._optimizers:
-                #     optimizer.step()
-
-                # if not os.path.exists("./opt_params"):
-                #     os.makedirs("./opt_params")
+            # if not os.path.exists("./opt_params"):
+            #     os.makedirs("./opt_params")
+            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
                 # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
-                #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
-                #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
+            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
+                # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
+            # smpl_params = {"smpl_pose":self.smpl_pose.detach().cpu().numpy(), 
+            #             "smpl_shape":self.smpl_shape.detach().cpu().numpy(),
+            #             "smpl_trans":self.smpl_trans.detach().cpu().numpy()}
 
-                # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
+            # np.savez(f"./opt_params/smpl_params_{batch_idx[0]:04d}.npz", **smpl_params)
         return loss_output["loss"]
 
     def training_epoch_end(self, outputs) -> None:
@@ -545,7 +599,7 @@ class VolSDF(pl.LightningModule):
         
         x = x.reshape(-1, 3)
         if self.opt.model.use_smpl_deformer:
-            x_c = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
+            x_c, _ = self.model.deformer.forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
             output = self.model.implicit_network(x_c, cond)[0]
             sdf = output[:, 0:1]
         else:
@@ -566,30 +620,31 @@ class VolSDF(pl.LightningModule):
             sdf = sdf.reshape(-1,1)
         
         return {'occ': sdf}
-    
+
+    def get_deformed_mesh_fast_mode(self, verts, cond, smpl_tfs):
+        verts = torch.tensor(verts).cuda().float()
+        weights = self.model.deformer.query_weights(verts, cond)
+        verts_deformed = skinning(verts.unsqueeze(0),  weights, smpl_tfs).data.cpu().numpy()[0]
+        return verts_deformed
+
     def validation_step(self, batch, *args, **kwargs):
 
         output = {}
         inputs, targets = batch
-
+        inputs['current_epoch'] = self.current_epoch
         self.model.eval()
 
         device = inputs["smpl_params"].device
-        if self.current_epoch < 10000:
-            reference_pose = inputs["smpl_params"][:, 4:76]
-            reference_shape = inputs["smpl_params"][:, 76:]
-            reference_trans = inputs["smpl_params"][:, 1:4]
-            val_smpl_pose = reference_pose
-            val_smpl_shape = reference_shape
-            val_smpl_trans = reference_trans
+        if self.opt_smpl:
+            body_model_params = self.body_model_params(inputs['image_id'])
+            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            inputs['smpl_shape'] = body_model_params['betas']
+            inputs['smpl_trans'] = body_model_params['transl']
+
         else:
-            val_smpl_params = np.load(f"./opt_params/smpl_params_0000.npz")
-            val_smpl_pose = torch.from_numpy(val_smpl_params["smpl_pose"]).to(device)
-            val_smpl_shape = torch.from_numpy(val_smpl_params["smpl_shape"]).to(device)
-            val_smpl_trans = torch.from_numpy(val_smpl_params["smpl_trans"]).to(device)
-        inputs["smpl_pose"] = val_smpl_pose
-        inputs["smpl_shape"] = val_smpl_shape
-        inputs["smpl_trans"] = val_smpl_trans
+            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
 
         cond = {'smpl': inputs["smpl_pose"][:, 3:]/np.pi}
         mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
@@ -606,7 +661,7 @@ class VolSDF(pl.LightningModule):
             'canonical_weighted':mesh_canonical
         })
 
-        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0,0] * targets["img_size"][0,1]))
+        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0] * targets["img_size"][1]))
 
         res = []
         for s in split:
@@ -620,11 +675,9 @@ class VolSDF(pl.LightningModule):
                     out[k] = v
 
             res.append({
-                'points': out['points'].detach(),
+                # 'points': out['points'].detach(),
                 'rgb_values': out['rgb_values'].detach(),
                 'normal_values': out['normal_values'].detach(),
-                # 'network_object_mask': out['network_object_mask'].detach(),
-                # 'object_mask': out['object_mask'].detach()
             })
         batch_size = targets['rgb'].shape[0]
 
@@ -648,7 +701,7 @@ class VolSDF(pl.LightningModule):
         return batch_parts
 
     def validation_epoch_end(self, outputs) -> None:
-        img_size = outputs[0]["img_size"].squeeze(0)
+        img_size = outputs[0]["img_size"]
 
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
@@ -680,42 +733,96 @@ class VolSDF(pl.LightningModule):
         cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
     
     def test_step(self, batch, *args, **kwargs):
-        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        inputs, targets, pixel_per_batch, total_pixels, idx, free_view_render, canonical_vis, animation = batch
         num_splits = (total_pixels + pixel_per_batch -
                        1) // pixel_per_batch
         results = []
-        os.makedirs("test_rendering", exist_ok=True)
-        os.makedirs("test_normal", exist_ok=True)
-        os.makedirs("test_mesh", exist_ok=True)
+        if free_view_render:
 
-        scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
-        smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
-        smpl_tfs = smpl_outputs['smpl_tfs']
-        smpl_verts = smpl_outputs['smpl_verts']
-        cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+            if canonical_vis:
+                os.makedirs("test_canonical_fvr", exist_ok=True)
+                os.makedirs("test_canonical_fvr_normal", exist_ok=True)
+            elif animation:
+                os.makedirs("test_animation_fvr", exist_ok=True)
+                os.makedirs("test_animation_fvr_normal", exist_ok=True)
+            else:
+                os.makedirs("test_fvr", exist_ok=True)
+                os.makedirs("test_fvr_normal", exist_ok=True)
+                os.makedirs("test_fvr_mask", exist_ok=True)
+        
+        else:
+            if canonical_vis:
+                os.makedirs("test_canonical_rendering", exist_ok=True)
+                os.makedirs("test_canonical_normal", exist_ok=True)
+                os.makedirs("test_canonical_fg_rendering", exist_ok=True)
+            else:
+                scale, smpl_trans, smpl_pose, smpl_shape = torch.split(inputs["smpl_params"], [1, 3, 72, 10], dim=1)
 
-        mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-        mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-        mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
-        mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}.ply")
+                if self.opt_smpl:
+                    body_model_params = self.body_model_params(inputs['idx'])
+                    smpl_shape = body_model_params['betas']
+                    if not animation:
+                        smpl_trans = body_model_params['transl']
+                        smpl_pose = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+                    
+                smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+                smpl_tfs = smpl_outputs['smpl_tfs']
+                smpl_verts = smpl_outputs['smpl_verts']
+                cond = {'smpl': smpl_pose[:, 3:]/np.pi}
+
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                # mesh_deformed = generate_mesh(lambda x: self.query_od(x, cond, smpl_tfs, smpl_verts), smpl_verts[0], point_batch=10000, res_up=3)
+                verts_deformed = self.get_deformed_mesh_fast_mode(mesh_canonical.vertices, cond, smpl_tfs)
+                mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
+                if animation:
+                    os.makedirs("test_animation_rendering", exist_ok=True)
+                    os.makedirs("test_animation_normal", exist_ok=True)
+                    os.makedirs("test_animation_fg_rendering", exist_ok=True)
+                    os.makedirs("test_animation_mask", exist_ok=True)
+                    os.makedirs("test_animation_mesh", exist_ok=True)
+
+                    mesh_canonical.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    mesh_deformed.export(f"test_animation_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
+                else:
+                    os.makedirs("test_mask", exist_ok=True)
+                    os.makedirs("test_rendering", exist_ok=True)
+                    os.makedirs("test_fg_rendering", exist_ok=True)
+                    os.makedirs("test_normal", exist_ok=True)
+                    os.makedirs("test_mesh", exist_ok=True)
+                    os.makedirs("test_negative_entropy", exist_ok=True)
+                    
+                    mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
         for i in range(num_splits):
-            print("current batch:", i)
+            # print("current batch:", i)
             indices = list(range(i * pixel_per_batch,
                                 min((i + 1) * pixel_per_batch, total_pixels)))
-            batch_inputs = {"object_mask": inputs["object_mask"][:, indices],
-                            "uv": inputs["uv"][:, indices],
-                            # "P": inputs["P"],
-                            # "C": inputs["C"],
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
+                            "P": inputs["P"],
+                            "C": inputs["C"],
                             "intrinsics": inputs['intrinsics'],
                             "pose": inputs['pose'],
                             "smpl_params": inputs["smpl_params"],
                             "smpl_pose": inputs["smpl_params"][:, 4:76],
                             "smpl_shape": inputs["smpl_params"][:, 76:],
-                            "smpl_trans": inputs["smpl_params"][:, 1:4]}
-            if self.opt.model.use_body_parsing:
-                batch_inputs['body_parsing'] = inputs['body_parsing'][:, indices]
-            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone(),
+                            "smpl_trans": inputs["smpl_params"][:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+            if not canonical_vis and (not animation):
+                if self.opt_smpl:
+                    if free_view_render:
+                        body_model_params = self.body_model_params(inputs['image_id'])
+                    else:
+                        body_model_params = self.body_model_params(inputs['idx'])
+
+                    batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                    batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                    batch_inputs.update({'smpl_trans': body_model_params['transl']})
+            if free_view_render:
+                batch_inputs.update({'image_id': inputs['image_id']})
+
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
                              "img_size": targets["img_size"]}
 
             # torch.cuda.memory_stats(device="cuda:0")
@@ -724,28 +831,57 @@ class VolSDF(pl.LightningModule):
                 model_outputs = self.model(batch_inputs)
             results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
                             "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
                             **batch_targets})         
 
-        img_size = results[0]["img_size"].squeeze(0)
+        img_size = results[0]["img_size"]
         rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
         rgb_pred = rgb_pred.reshape(*img_size, -1)
 
         normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
         normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
-        rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-        rgb_gt = rgb_gt.reshape(*img_size, -1)
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
+
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
         if 'normal' in results[0].keys():
             normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
             normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
             normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
         else:
             normal = torch.cat([normal_pred], dim=0).cpu().numpy()
-        rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        
         rgb = (rgb * 255).astype(np.uint8)
 
         normal = (normal * 255).astype(np.uint8)
 
-        cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-
+        
+        if free_view_render:
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
+                cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
+            else:
+                cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        else:
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            elif animation:
+                cv2.imwrite(f"test_animation_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_animation_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+            else:
+                cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+                cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])

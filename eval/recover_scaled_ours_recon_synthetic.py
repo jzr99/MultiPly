@@ -10,9 +10,9 @@ import sys
 sys.path.append('/home/chen/RGB-PINA/rgb2pose')
 from smplx import SMPL
 
-seq = 'outdoors_fencing_01'
+seq = '00020_Gorilla'
 gender = 'male'
-if seq == 'outdoors_fencing_01':
+if seq == 'Wildmotion1':
     start_idx = 0 # 546
 
 DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
@@ -20,12 +20,9 @@ save_dir = f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 mesh_paths = sorted(glob.glob(f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh/*_deformed.ply'))
-gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/3DPW_GT/{seq}/smpl_mesh/*.obj'))
+gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
 cam_path = f'/home/chen/RGB-PINA/data/{seq}/cameras_normalize.npz'
 cam = dict(np.load(cam_path))
-
-seq_dir = '/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl' # f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
-seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
 
 estimated = True
 resize_factor = 2
@@ -39,6 +36,7 @@ transl = checkpoint['state_dict']['body_model_params.transl.weight']
 body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight']
 
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
+assert len(gt_smpl_mesh_paths) == len(mesh_paths)
 for idx, mesh_path in tqdm(enumerate(mesh_paths)):
     scaled_mesh = trimesh.load(mesh_path, process=False)
     scaling_factor = cam[f'scale_mat_{idx}'][0, 0]
@@ -47,9 +45,9 @@ for idx, mesh_path in tqdm(enumerate(mesh_paths)):
 
     if estimated:
         smpl_output = smpl_model(betas = betas,
-                                body_pose = body_pose[idx:idx+1],
-                                global_orient = global_orient[idx:idx+1],
-                                transl = transl[idx:idx+1])
+                                 body_pose = body_pose[idx:idx+1],
+                                 global_orient = global_orient[idx:idx+1],
+                                 transl = transl[idx:idx+1])
         smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
         smpl_mesh = trimesh.Trimesh(vertices=smpl_verts, faces=smpl_model.faces, process=False)
         gt_smpl_mesh = trimesh.load(gt_smpl_mesh_paths[idx], process=False)
@@ -57,8 +55,6 @@ for idx, mesh_path in tqdm(enumerate(mesh_paths)):
         
         aligned_verts = transform_mesh(scaled_mesh.vertices, scale, t, R)
         scaled_mesh = trimesh.Trimesh(aligned_verts, scaled_mesh.faces, process=False)
-        # _ = smpl_mesh.export('/home/chen/Desktop/tmp_smpl.ply')
-        # _ = scaled_mesh.export('/home/chen/Desktop/tmp_scaled.ply')
 
     else:
         cam_P = cam[f'world_mat_{idx}']

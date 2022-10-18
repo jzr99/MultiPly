@@ -19,16 +19,23 @@ def crop_image(img, bbox, batch=False):
 gt_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/ground_truth'
 gt_mask_paths = sorted(glob.glob(f'{gt_mask_dir}/*.png'))[:131]
 our_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose/test_mask'
+our_wo_density_reg_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_no_density_reg/test_mask'
 RVM_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/RVM_masks'
 SMPL_mask_dir = '/home/chen/RGB-PINA/data/Helge_outdoor/mask'
 pointrend_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/pointrend'
 sprites_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/sprites_mask'
 
 resize_factor = 2
+
 ours_precision = []
 ours_recall = []
 ours_f1 = []
 ours_iou = []
+
+ours_wo_density_reg_precision = []
+ours_wo_density_reg_recall = []
+ours_wo_density_reg_f1 = []
+ours_wo_density_reg_iou = []
 
 RVM_precision = []
 RVM_recall = []
@@ -71,6 +78,7 @@ for gt_mask in tqdm(gt_mask_paths):
 
     gt_mask = crop_image(gt_mask, crop_bbox).reshape(-1).astype(np.uint8)
     ours_mask = crop_image((cv2.imread(f'{our_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
+    ours_wo_density_reg_mask = crop_image((cv2.imread(f'{our_wo_density_reg_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
     RVM_mask = crop_image((cv2.imread(f'{RVM_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
     SMPL_mask = crop_image((cv2.imread(f'{SMPL_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
     pointrend_mask = crop_image((cv2.imread(f'{pointrend_mask_dir}/{frame_num-300:04d}.png')[..., -1] == 255), crop_bbox).reshape(-1).astype(np.uint8)
@@ -89,6 +97,11 @@ for gt_mask in tqdm(gt_mask_paths):
     # ours_recall.append(recall_score(gt_mask, ours_mask, average='macro'))
     ours_f1.append(f1_score(gt_mask, ours_mask, average='macro'))
     ours_iou.append(get_mask_iou(gt_mask, ours_mask))
+
+    ours_wo_density_reg_precision.append(precision_score(gt_mask, ours_wo_density_reg_mask, average='macro'))
+    # ours_wo_density_reg_recall.append(recall_score(gt_mask, ours_wo_density_reg_mask, average='macro'))
+    ours_wo_density_reg_f1.append(f1_score(gt_mask, ours_wo_density_reg_mask, average='macro'))
+    ours_wo_density_reg_iou.append(get_mask_iou(gt_mask, ours_wo_density_reg_mask))
 
     RVM_precision.append(precision_score(gt_mask, RVM_mask, average='macro'))
     # RVM_recall.append(recall_score(gt_mask, RVM_mask, average='macro'))
@@ -114,6 +127,11 @@ print('ours_precision:', np.mean(ours_precision))
 # print('ours_recall:', np.mean(ours_recall))
 print('ours_f1:', np.mean(ours_f1))
 print('ours_iou:', np.mean(ours_iou))
+
+print('ours_wo_density_reg_precision:', np.mean(ours_wo_density_reg_precision))
+# print('ours_wo_density_reg_recall:', np.mean(ours_wo_density_reg_recall))
+print('ours_wo_density_reg_f1:', np.mean(ours_wo_density_reg_f1))
+print('ours_wo_density_reg_iou:', np.mean(ours_wo_density_reg_iou))
 
 print('RVM_precision:', np.mean(RVM_precision))
 # print('RVM_recall:', np.mean(RVM_recall))

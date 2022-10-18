@@ -84,17 +84,17 @@ def compute_metric(mesh, gt_mesh, num_samples=10000):
 
     return output_dict
 
-seq = 'outdoors_fencing_01'
+seq = '00020_Gorilla'
 if seq == 'outdoors_fencing_01':
     start_idx = 0 # 546
 
-gt_mesh_dir = f'/home/chen/disk2/3DPW_GT/{seq}/mesh'
+gt_mesh_dir = f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/meshes_vis'
 # ours_mesh_w_ori_pose_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
 # selfrecon_mesh_w_ori_pose_dir = f'/home/chen/SelfReconCode/data/{seq}/result/final_meshes_transformed'
 ours_mesh_w_est_pose_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
-selfrecon_mesh_w_est_pose_dir = f'/home/chen/SelfReconCode/data/{seq}/result/final_meshes_transformed'
-icon_mesh_w_est_pose_dir = f'/home/chen/disk2/ICON_new_results/test_mesh'
-ours_mesh_wo_opt_smpl_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/test_mesh_scaled'
+selfrecon_mesh_w_est_pose_dir = f'/home/chen/disk2/SelfRecon_results/{seq}/result/final_meshes_transformed'
+icon_mesh_w_est_pose_dir = f'/home/chen/disk2/ICON_new_results/{seq}/icon-filter/test_mesh'
+# ours_mesh_wo_opt_smpl_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/test_mesh_scaled'
 
 skip = 1
 
@@ -104,7 +104,7 @@ gt_mesh_paths = sorted(glob.glob(f'{gt_mesh_dir}/*.obj'))[::skip]
 ours_mesh_w_est_pose_paths = sorted(glob.glob(f'{ours_mesh_w_est_pose_dir}/*.ply'))[::skip]
 selfrecon_mesh_w_est_pose_paths = sorted(glob.glob(f'{selfrecon_mesh_w_est_pose_dir}/*.ply'))[::skip]
 icon_mesh_w_est_pose_paths = sorted(glob.glob(f'{icon_mesh_w_est_pose_dir}/*.obj'))[::skip]
-ours_mesh_wo_opt_smpl_paths = sorted(glob.glob(f'{ours_mesh_wo_opt_smpl_dir}/*.ply'))[::skip]
+# ours_mesh_wo_opt_smpl_paths = sorted(glob.glob(f'{ours_mesh_wo_opt_smpl_dir}/*.ply'))[::skip]
 
 ours_cd = []
 selfrecon_cd = []
@@ -121,43 +121,44 @@ selfrecon_iou = []
 icon_iou = []
 ours_wo_opt_smpl_iou = []
 
+assert len(gt_mesh_paths) == len(ours_mesh_w_est_pose_paths) == len(selfrecon_mesh_w_est_pose_paths) == len(icon_mesh_w_est_pose_paths)
 for idx, our_mesh_w_est_pose_path in tqdm(enumerate(ours_mesh_w_est_pose_paths)):
 
     # load target and source meshes
-    gt_mesh = trimesh.load(gt_mesh_paths[idx + start_idx], process=False)
-    # ours_mesh_w_est_pose = trimesh.load(our_mesh_w_est_pose_path, process=False)
-    # selfrecon_mesh_w_est_pose = trimesh.load(selfrecon_mesh_w_est_pose_paths[idx], process=False)
-    # icon_mesh_w_ori_pose = trimesh.load(icon_mesh_w_est_pose_paths[idx], process=False)
-    ours_mesh_wo_opt_smpl = trimesh.load(ours_mesh_wo_opt_smpl_paths[idx], process=False)
+    gt_mesh = trimesh.load(gt_mesh_paths[idx], process=False)
+    ours_mesh_w_est_pose = trimesh.load(our_mesh_w_est_pose_path, process=False)
+    selfrecon_mesh_w_est_pose = trimesh.load(selfrecon_mesh_w_est_pose_paths[idx], process=False)
+    icon_mesh_w_ori_pose = trimesh.load(icon_mesh_w_est_pose_paths[idx], process=False)
+    # ours_mesh_wo_opt_smpl = trimesh.load(ours_mesh_wo_opt_smpl_paths[idx], process=False)
 
     # print('ours:', dist_m2m(gt_mesh, ours_mesh_w_est_pose))
     # print('selfrecon:', dist_m2m(gt_mesh, selfrecon_mesh_w_est_pose))
     # print('icon:', dist_m2m(gt_mesh, icon_mesh_w_ori_pose))
 
-    # ours_dict = compute_metric(ours_mesh_w_est_pose, gt_mesh)
-    # selfrecon_dict = compute_metric(selfrecon_mesh_w_est_pose, gt_mesh)
-    # icon_dict = compute_metric(icon_mesh_w_ori_pose, gt_mesh)
-    ours_wo_opt_smpl_dict = compute_metric(ours_mesh_wo_opt_smpl, gt_mesh)
+    ours_dict = compute_metric(ours_mesh_w_est_pose, gt_mesh)
+    selfrecon_dict = compute_metric(selfrecon_mesh_w_est_pose, gt_mesh)
+    icon_dict = compute_metric(icon_mesh_w_ori_pose, gt_mesh)
+    # ours_wo_opt_smpl_dict = compute_metric(ours_mesh_wo_opt_smpl, gt_mesh)
     
-    # ours_cd.append(ours_dict['chamfer'])
-    # selfrecon_cd.append(selfrecon_dict['chamfer'])
-    # icon_cd.append(icon_dict['chamfer'])
-    ours_wo_opt_smpl_cd.append(ours_wo_opt_smpl_dict['chamfer'])
+    ours_cd.append(ours_dict['chamfer'])
+    selfrecon_cd.append(selfrecon_dict['chamfer'])
+    icon_cd.append(icon_dict['chamfer'])
+    # ours_wo_opt_smpl_cd.append(ours_wo_opt_smpl_dict['chamfer'])
 
-    # ours_nc.append(ours_dict['nc'])
-    # selfrecon_nc.append(selfrecon_dict['nc'])
-    # icon_nc.append(icon_dict['nc'])
-    ours_wo_opt_smpl_nc.append(ours_wo_opt_smpl_dict['nc'])
+    ours_nc.append(ours_dict['nc'])
+    selfrecon_nc.append(selfrecon_dict['nc'])
+    icon_nc.append(icon_dict['nc'])
+    # ours_wo_opt_smpl_nc.append(ours_wo_opt_smpl_dict['nc'])
 
-    # ours_iou.append(ours_dict['iou'])
-    # selfrecon_iou.append(selfrecon_dict['iou'])
-    # icon_iou.append(icon_dict['iou'])
-    ours_wo_opt_smpl_iou.append(ours_wo_opt_smpl_dict['iou'])
+    ours_iou.append(ours_dict['iou'])
+    selfrecon_iou.append(selfrecon_dict['iou'])
+    icon_iou.append(icon_dict['iou'])
+    # ours_wo_opt_smpl_iou.append(ours_wo_opt_smpl_dict['iou'])
 
-    # print('ours:', ours_dict)
-    # print('selfrecon:', selfrecon_dict)
-    # print('icon:', icon_dict)
-    print('ours_wo_opt_smpl:', ours_wo_opt_smpl_dict)
+    print('ours:', ours_dict)
+    print('selfrecon:', selfrecon_dict)
+    print('icon:', icon_dict)
+    # print('ours_wo_opt_smpl:', ours_wo_opt_smpl_dict)
 
 import ipdb
 ipdb.set_trace()

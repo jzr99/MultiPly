@@ -349,7 +349,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path='/home/chen/RGB-PINA/data/bike'):
+    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.animation = True if animation_path is not None else False
@@ -377,7 +377,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
             if self.animation:
-                self.test_indices = [2, 7, 12, 17, 22, 27, 32, 37, 42, 47]
+                self.test_indices = [2, 7, 12, 17]
                 if self.test_indices is not None:
                     self.animation_poses = np.load(os.path.join(animation_path, 'poses.npy'))[self.test_indices]
                 else:
@@ -392,7 +392,6 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             return len(self.dataset)
 
     def __getitem__(self, idx):
-        idx == 941
         # manually set index
         # idx += 422
         # if idx == len(self.dataset) - 1:

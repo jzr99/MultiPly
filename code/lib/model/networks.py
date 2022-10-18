@@ -23,9 +23,12 @@ class ImplicitNet(nn.Module):
             self.embed_fn = embed_fn
             dims[0] = input_ch
         self.cond = opt.cond   
-        if self.cond != 'none':
+        if self.cond == 'smpl':
             self.cond_layer = [0]
             self.cond_dim = 69
+        elif self.cond == 'frame':
+            self.cond_layer = [0]
+            self.cond_dim = 32
         self.dim_pose_embed = 0
         if self.dim_pose_embed > 0:
             # assert(cond=='smpl' or cond == 'anim')

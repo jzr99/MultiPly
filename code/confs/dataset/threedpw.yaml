@@ -1,22 +1,22 @@
 train:
     dataset: ThreeDPW
-    subject: "Wildmotion1_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "00020_Gorilla_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 291
+    end_frame: 148
     exclude_frames: 'none' # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102]
     batch_size: 1
     drop_last: False
     shuffle: True
     worker: 8
 
-    data_dir : Wildmotion1/
+    data_dir : 00020_Gorilla/
     num_sample : 512 # 2048 256
 
 valid:
     dataset: "ThreeDPWVal"
-    subject: "Wildmotion1_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "00020_Gorilla_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 291
+    end_frame: 148
     exclude_frames: 'none' # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97, 102]
     image_id: 0
 
@@ -25,15 +25,15 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : Wildmotion1/
+    data_dir : 00020_Gorilla/
     num_sample : -1
     pixel_per_batch: 2048  # 16000 256
 
 test:
     dataset: "ThreeDPWTest"
-    subject: "Wildmotion1_wo_disp_freeze_20_every_20_opt_pose"
+    subject: "00020_Gorilla_wo_disp_freeze_20_every_20_opt_pose"
     start_frame: 0
-    end_frame: 291
+    end_frame: 148
     exclude_frames: 'none'
     image_id: 0
 
@@ -42,6 +42,6 @@ test:
     shuffle: False
     worker: 0
 
-    data_dir : Wildmotion1/
+    data_dir : 00020_Gorilla/
     num_sample : -1
     pixel_per_batch: 2048

@@ -13,24 +13,21 @@ from smplx import SMPL
 
 from utils import rectify_pose, compute_similarity_transform, transform_mesh
 
-seq = 'outdoors_fencing_01'
+seq = '00020_Gorilla'
+gender = 'male'
 if seq == 'outdoors_fencing_01':
     start_idx = 0 # 546
 
 
 DIR = f'/home/chen/disk2/ICON_new_results'
-save_dir = f'{DIR}/test_mesh'
+save_dir = f'{DIR}/{seq}/icon-filter/test_mesh'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 mesh_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_recon.obj'))
 # smpl_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.npy'))
 smpl_mesh_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.obj'))
-gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/3DPW_GT/{seq}/smpl_mesh/*.obj'))
+gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
 
-seq_dir = '/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl' # f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
-seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
-
-gender = seq_file['genders'][0]
 if gender == 'f':
     gender = 'female'
 elif gender == 'm':
@@ -39,14 +36,8 @@ elif gender == 'm':
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
 
 estimated = True
-resize_factor = 2
 
-original_K = np.eye(4) 
-original_K[:3, :3] = seq_file['cam_intrinsics']
-original_K[0, 0] = original_K[0, 0] / resize_factor
-original_K[1, 1] = original_K[1, 1] / resize_factor
-original_K[0, 2] = original_K[0, 2] / resize_factor
-original_K[1, 2] = original_K[1, 2] / resize_factor
+assert len(smpl_mesh_paths) == len(gt_smpl_mesh_paths) == len(mesh_paths)
 for idx, mesh_path in tqdm(enumerate(mesh_paths)):
     scaled_mesh = trimesh.load(mesh_path, process=False)
     smpl_mesh = trimesh.load(smpl_mesh_paths[idx], process=False)

@@ -6,24 +6,23 @@ import trimesh
 import pickle as pkl
 from utils import rectify_pose, compute_similarity_transform, transform_mesh
 from tqdm import tqdm
-seq = 'outdoors_fencing_01'
+seq = '00020_Gorilla'
 if seq == 'outdoors_fencing_01':
     start_idx = 0
 
-DIR = f'/home/chen/SelfReconCode/data/{seq}/result'
+DIR = f'/home/chen/disk2/SelfRecon_results/{seq}/result'
 save_dir = f'{DIR}/final_meshes_transformed'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
 mesh_paths = sorted(glob.glob(f'{DIR}/final_meshes/*.ply'))
 smpl_mesh_paths = sorted(glob.glob(f'{DIR}/smpl_meshes/*.obj'))
-gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/3DPW_GT/{seq}/smpl_mesh/*.obj'))
-seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
-seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
+gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
 
 cam_extrinsic = np.eye(4)
 
 estimated = True
+assert len(smpl_mesh_paths) == len(gt_smpl_mesh_paths) == len(mesh_paths)
 for idx, mesh_path in enumerate(mesh_paths):
     scaled_mesh = trimesh.load(mesh_path, process=False)
     if estimated:

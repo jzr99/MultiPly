@@ -16,10 +16,10 @@ if seq == 'outdoors_fencing_01':
     start_idx = 0 # 546
 
 DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
-save_dir = f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
+save_dir = f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/test_mesh_scaled'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-mesh_paths = sorted(glob.glob(f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh/*_deformed.ply'))
+mesh_paths = sorted(glob.glob(f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/test_mesh/*_deformed.ply'))
 gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/3DPW_GT/{seq}/smpl_mesh/*.obj'))
 cam_path = f'/home/chen/RGB-PINA/data/{seq}/cameras_normalize.npz'
 cam = dict(np.load(cam_path))
@@ -30,13 +30,13 @@ seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
 estimated = True
 resize_factor = 2
 import torch
-checkpoint_path = sorted(glob.glob(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/checkpoints/*.ckpt'))[-1] 
+checkpoint_path = sorted(glob.glob(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/checkpoints/*.ckpt'))[-1] 
 checkpoint = torch.load(checkpoint_path)
 
-betas = checkpoint['state_dict']['body_model_params.betas.weight']
-global_orient = checkpoint['state_dict']['body_model_params.global_orient.weight']
-transl = checkpoint['state_dict']['body_model_params.transl.weight']
-body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight']
+betas = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'mean_shape.npy')))[None].float().cuda()
+global_orient = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'poses.npy'))[:, :3]).float().cuda()
+transl = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'normalize_trans.npy'))).float().cuda()
+body_pose = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'poses.npy'))[:, 3:]).float().cuda()
 
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
 for idx, mesh_path in tqdm(enumerate(mesh_paths)):
@@ -47,9 +47,9 @@ for idx, mesh_path in tqdm(enumerate(mesh_paths)):
 
     if estimated:
         smpl_output = smpl_model(betas = betas,
-                                body_pose = body_pose[idx:idx+1],
-                                global_orient = global_orient[idx:idx+1],
-                                transl = transl[idx:idx+1])
+                                 body_pose = body_pose[idx:idx+1],
+                                 global_orient = global_orient[idx:idx+1],
+                                 transl = transl[idx:idx+1])
         smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
         smpl_mesh = trimesh.Trimesh(vertices=smpl_verts, faces=smpl_model.faces, process=False)
         gt_smpl_mesh = trimesh.load(gt_smpl_mesh_paths[idx], process=False)

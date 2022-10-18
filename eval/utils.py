@@ -65,7 +65,7 @@ def compute_similarity_transform(S1, S2):
         R = V.dot(Z.dot(U.T))
 
         # 5. Recover scale. We enforce the scale to be equal to 1. since all baselines are based on SMPL (same scale as real humans)
-        scale = 1. # np.trace(R.dot(K)) / var1
+        scale = np.trace(R.dot(K)) / var1
 
         # 6. Recover translation.
         t = mu2 - scale * (R.dot(mu1))

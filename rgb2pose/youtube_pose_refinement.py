@@ -156,7 +156,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'Wildmotion1'
+    seq = '00020_Gorilla'
     dataset = 'synthetic' # 'youtube' 'monoperfcap' # 'neuman
     transpose = False
     gender = 'm'
@@ -293,9 +293,9 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 smpl_output = smpl_model(betas=opt_betas,
-                                        body_pose=opt_pose[:,3:],
-                                        global_orient=opt_pose[:,:3],
-                                        transl=opt_trans)
+                                         body_pose=opt_pose[:,3:],
+                                         global_orient=opt_pose[:,:3],
+                                         transl=opt_trans)
                 smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
 
                 smpl_joints_2d = cam(torch.index_select(smpl_output.joints, 1, smpl2op_mapping))
