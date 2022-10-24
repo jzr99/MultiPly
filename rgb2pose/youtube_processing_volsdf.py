@@ -24,10 +24,10 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = '00020_Gorilla'
-dataset = 'synthetic' # 'youtube' 'monoperfcap' # 'neuman
+seq = '00027_Phonecall'
+dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
 transpose = False
-gender = 'm'
+gender = 'f'
 if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':

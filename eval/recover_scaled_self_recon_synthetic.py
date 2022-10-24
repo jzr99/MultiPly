@@ -6,7 +6,7 @@ import trimesh
 import pickle as pkl
 from utils import rectify_pose, compute_similarity_transform, transform_mesh
 from tqdm import tqdm
-seq = '00020_Gorilla'
+seq = '00068_Dance'
 if seq == 'outdoors_fencing_01':
     start_idx = 0
 

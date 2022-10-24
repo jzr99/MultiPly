@@ -50,7 +50,7 @@ class VolSDFNetworkBG(nn.Module):
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.use_smpl_deformer = opt.use_smpl_deformer
-        self.gender = 'male'
+        self.gender = 'female'
         if self.use_smpl_deformer:
             self.deformer = SMPLDeformer(betas=betas, gender=self.gender) 
         else:
@@ -541,7 +541,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 148
+        self.end_frame = 150
         self.training_indices = list(range(self.start_frame, self.end_frame))
         self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
@@ -881,109 +881,109 @@ class VolSDF(pl.LightningModule):
                     mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
                     mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
-        # for i in range(num_splits):
-        #     # print("current batch:", i)
-        #     indices = list(range(i * pixel_per_batch,
-        #                         min((i + 1) * pixel_per_batch, total_pixels)))
-        #     batch_inputs = {"uv": inputs["uv"][:, indices],
-        #                     "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
-        #                     "P": inputs["P"],
-        #                     "C": inputs["C"],
-        #                     "intrinsics": inputs['intrinsics'],
-        #                     "pose": inputs['pose'],
-        #                     "smpl_params": inputs["smpl_params"],
-        #                     "smpl_pose": inputs["smpl_params"][:, 4:76],
-        #                     "smpl_shape": inputs["smpl_params"][:, 76:],
-        #                     "smpl_trans": inputs["smpl_params"][:, 1:4],
-        #                     "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
-        #     if not canonical_vis and (not animation):
-        #         if self.opt_smpl:
-        #             if free_view_render:
-        #                 body_model_params = self.body_model_params(inputs['image_id'])
-        #             else:
-        #                 body_model_params = self.body_model_params(inputs['idx'])
+        for i in range(num_splits):
+            # print("current batch:", i)
+            indices = list(range(i * pixel_per_batch,
+                                min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "bg_image": inputs["bg_image"][:, indices] if 'bg_image' in inputs.keys() else None,
+                            "P": inputs["P"],
+                            "C": inputs["C"],
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:, 4:76],
+                            "smpl_shape": inputs["smpl_params"][:, 76:],
+                            "smpl_trans": inputs["smpl_params"][:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+            if not canonical_vis and (not animation):
+                if self.opt_smpl:
+                    if free_view_render:
+                        body_model_params = self.body_model_params(inputs['image_id'])
+                    else:
+                        body_model_params = self.body_model_params(inputs['idx'])
 
-        #             batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
-        #             batch_inputs.update({'smpl_shape': body_model_params['betas']})
-        #             batch_inputs.update({'smpl_trans': body_model_params['transl']})
-        #     if free_view_render:
-        #         batch_inputs.update({'image_id': inputs['image_id']})
+                    batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                    batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                    batch_inputs.update({'smpl_trans': body_model_params['transl']})
+            if free_view_render:
+                batch_inputs.update({'image_id': inputs['image_id']})
 
-        #     batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
-        #                      "img_size": targets["img_size"]}
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+                             "img_size": targets["img_size"]}
 
-        #     # torch.cuda.memory_stats(device="cuda:0")
-        #     torch.cuda.empty_cache()
-        #     with torch.no_grad():
-        #         model_outputs = self.model(batch_inputs)
-        #     results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
-        #                     "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
-        #                     "normal_values": model_outputs["normal_values"].detach().clone(),
-        #                     "acc_map": model_outputs["acc_map"].detach().clone(),
-        #                     "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
-        #                     **batch_targets})         
+            # torch.cuda.memory_stats(device="cuda:0")
+            torch.cuda.empty_cache()
+            with torch.no_grad():
+                model_outputs = self.model(batch_inputs)
+            results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
+                            "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
+                            **batch_targets})         
 
-        # img_size = results[0]["img_size"]
-        # rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
-        # rgb_pred = rgb_pred.reshape(*img_size, -1)
+        img_size = results[0]["img_size"]
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
 
-        # fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
-        # fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
 
-        # normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
-        # normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
-        # pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
-        # pred_mask = pred_mask.reshape(*img_size, -1)
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
 
-        # negative_entropy = torch.cat([result["negative_entropy"] for result in results], dim=0)
-        # negative_entropy = negative_entropy.reshape(*img_size, -1)
-        # # now actually positive entropy
-        # negative_entropy *= -1
-        # negative_entropy /= negative_entropy.max()
+        negative_entropy = torch.cat([result["negative_entropy"] for result in results], dim=0)
+        negative_entropy = negative_entropy.reshape(*img_size, -1)
+        # now actually positive entropy
+        negative_entropy *= -1
+        negative_entropy /= negative_entropy.max()
 
-        # if results[0]['rgb'] is not None:
-        #     rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-        #     rgb_gt = rgb_gt.reshape(*img_size, -1)
-        #     rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
-        # else:
-        #     rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
-        # if 'normal' in results[0].keys():
-        #     normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
-        #     normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
-        #     normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
-        # else:
-        #     normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
         
-        # rgb = (rgb * 255).astype(np.uint8)
+        rgb = (rgb * 255).astype(np.uint8)
 
-        # fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
-        # fg_rgb = (fg_rgb * 255).astype(np.uint8)
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
 
-        # normal = (normal * 255).astype(np.uint8)
+        normal = (normal * 255).astype(np.uint8)
 
         
-        # if free_view_render:
-        #     if canonical_vis:
-        #         cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
-        #         cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
-        #     else:
-        #         cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        #         cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        # else:
-        #     if canonical_vis:
-        #         cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        #         cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-        #     elif animation:
-        #         cv2.imwrite(f"test_animation_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_animation_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        #         cv2.imwrite(f"test_animation_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_animation_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        #     else:
-        #         cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        #         cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        #         cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-        #         cv2.imwrite(f"test_negative_entropy/{int(idx.cpu().numpy()):04d}.png", negative_entropy.cpu().numpy() * 255)
+        if free_view_render:
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:,:,::-1])
+                cv2.imwrite(f"test_canonical_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:,:,::-1])
+            else:
+                cv2.imwrite(f"test_fvr/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fvr_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        else:
+            if canonical_vis:
+                cv2.imwrite(f"test_canonical_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_canonical_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+            elif animation:
+                cv2.imwrite(f"test_animation_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_animation_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+                cv2.imwrite(f"test_animation_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+            else:
+                cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+                cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+                cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+                cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+                cv2.imwrite(f"test_negative_entropy/{int(idx.cpu().numpy()):04d}.png", negative_entropy.cpu().numpy() * 255)

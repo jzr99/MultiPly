@@ -5,6 +5,9 @@ from .networks import ImplicitNet
 from ..utils.snarf_utils import broyden, hierarchical_softmax
 from .smpl import SMPLServer
 from pytorch3d import ops
+smpl_bones_relation = torch.tensor([[1,2,3], [0, 4, -1], [0, 5, -1], [0, 6, -1], [1, 7, -1], [2, 8, -1], [3, 9, -1], [4, 10, -1], [5, 11, -1], 
+                                    [6, 13, 14], [7, -1, -1], [8, -1, -1], [9, 15, -1], [9, 16, -1], [9, 17, -1], [12, -1, -1], [13, 18, -1], [14, 19, -1],
+                                    [16, 20, -1], [17, 21, -1], [18, 22, -1], [19, 23, -1], [20, -1, -1], [21, -1, -1]])
 class SMPLDeformer():
     def __init__(self, max_dist=0.05, K=5, gender='male', betas=None):
         super().__init__()
@@ -61,6 +64,29 @@ class SMPLDeformer():
     #     ipdb.set_trace()
 
     #     return neighbor_weights, outlier_mask
+
+    # def query_skinning_weights_smpl_multi(self, pts, smpl_verts, smpl_weights):
+
+    #     distance_batch, index_batch, neighbor_points = ops.knn_points(pts, smpl_verts.unsqueeze(0),
+    #                                                                   K=self.K, return_nn=True)
+    #     index_batch = index_batch[0]
+    #     distance_batch = torch.clamp(distance_batch, max=6)
+    #     weights = smpl_weights[:, index_batch, :]
+    #     argmax_out = torch.argmax(weights, dim=-1)
+    #     import ipdb
+    #     ipdb.set_trace()
+    #     mode_bones, _ = torch.mode(argmax_out, -1, keepdim=True)
+    #     minor_indices = torch.nonzero(argmax_out - mode_bones)
+    #     distance_batch[minor_indices[:, 0], minor_indices[:,1], minor_indices[:, 2]] = 6
+    
+    #     weights_conf = torch.exp(-distance_batch)
+    #     distance_batch = torch.sqrt(distance_batch)
+    #     weights_conf = weights_conf / weights_conf.sum(-1, keepdim=True)
+
+    #     weights = torch.sum(weights * weights_conf.unsqueeze(-1), dim=-2).detach()
+
+    #     outlier_mask = (distance_batch[..., 0] > 0.1)[0]
+    #     return weights, outlier_mask
 
     def query_skinning_weights_smpl_multi(self, pts, smpl_verts, smpl_weights):
 
