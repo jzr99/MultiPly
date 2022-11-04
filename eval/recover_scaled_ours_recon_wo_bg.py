@@ -10,50 +10,35 @@ import sys
 sys.path.append('/home/chen/RGB-PINA/rgb2pose')
 from smplx import SMPL
 
-seq = '00070_Dance'
-gender = 'female'
-# if seq == 'outdoors_fencing_01':
-    # start_idx = 0 # 546
-start_idx = 0
-skip = 2
+seq = 'outdoors_fencing_01'
+gender = 'male'
+if seq == 'outdoors_fencing_01':
+    start_idx = 0 # 546
+
 DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
-save_dir = f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
+save_dir = f'{DIR}/{seq}_masked_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-mesh_paths_raw = sorted(glob.glob(f'{DIR}/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh/*_deformed.ply'))
-gt_smpl_mesh_paths_raw = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
+mesh_paths = sorted(glob.glob(f'{DIR}/{seq}_masked_wo_disp_freeze_20_every_20_opt_pose/test_mesh/*_deformed.ply'))
+gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/3DPW_GT/{seq}/smpl_mesh/*.obj'))
 cam_path = f'/home/chen/RGB-PINA/data/{seq}/cameras_normalize.npz'
 cam = dict(np.load(cam_path))
 
-mesh_paths = mesh_paths_raw[start_idx::skip]
-gt_smpl_mesh_paths = gt_smpl_mesh_paths_raw[start_idx + 2::skip]
-if len(mesh_paths) > len(gt_smpl_mesh_paths):
-    if len(mesh_paths) - len(gt_smpl_mesh_paths) == 1:
-        gt_smpl_mesh_paths.append(gt_smpl_mesh_paths_raw[-1])
-    else:
-        import ipdb
-        ipdb.set_trace()
-elif len(mesh_paths) < len(gt_smpl_mesh_paths):
-    if len(mesh_paths) - len(gt_smpl_mesh_paths) == -1:
-        gt_smpl_mesh_paths.pop()
-    else:
-        import ipdb
-        ipdb.set_trace()
-else:
-    pass
+seq_dir = '/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl' # f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
+seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
+
 estimated = True
 resize_factor = 2
 import torch
-checkpoint_path = sorted(glob.glob(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/checkpoints/*.ckpt'))[-1] 
+checkpoint_path = sorted(glob.glob(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_masked_wo_disp_freeze_20_every_20_opt_pose/checkpoints/*.ckpt'))[-1] 
 checkpoint = torch.load(checkpoint_path)
 
-betas = checkpoint['state_dict']['body_model_params.betas.weight']
-global_orient = checkpoint['state_dict']['body_model_params.global_orient.weight'][start_idx::skip]
-transl = checkpoint['state_dict']['body_model_params.transl.weight'][start_idx::skip]
-body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight'][start_idx::skip]
+betas = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'mean_shape.npy')))[None].float().cuda()
+global_orient = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'poses.npy'))[:, :3]).float().cuda()
+transl = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'normalize_trans.npy'))).float().cuda()
+body_pose = torch.tensor(np.load(os.path.join('/home/chen/RGB-PINA/data', seq, 'poses.npy'))[:, 3:]).float().cuda()
 
 smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
-assert len(gt_smpl_mesh_paths) == len(mesh_paths)
 for idx, mesh_path in tqdm(enumerate(mesh_paths)):
     scaled_mesh = trimesh.load(mesh_path, process=False)
     scaling_factor = cam[f'scale_mat_{idx}'][0, 0]
@@ -72,6 +57,8 @@ for idx, mesh_path in tqdm(enumerate(mesh_paths)):
         
         aligned_verts = transform_mesh(scaled_mesh.vertices, scale, t, R)
         scaled_mesh = trimesh.Trimesh(aligned_verts, scaled_mesh.faces, process=False)
+        # _ = smpl_mesh.export('/home/chen/Desktop/tmp_smpl.ply')
+        # _ = scaled_mesh.export('/home/chen/Desktop/tmp_scaled.ply')
 
     else:
         cam_P = cam[f'world_mat_{idx}']

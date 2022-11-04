@@ -3,7 +3,7 @@ from .ray_tracing import RayTracing
 from .sample_network import SampleNetwork
 from .density import LaplaceDensity
 from .ray_sampler import ErrorBoundSampler, BBoxSampler
-from .deformer import ForwardDeformer, SMPLDeformer
+from .deformer import ForwardDeformer, SMPLDeformer, skinning
 from .smpl import SMPLServer
 from .body_model_params import BodyModelParams
 from .sampler import PointInSpace, PointOnBones
@@ -460,7 +460,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 581
+        self.end_frame = 942
         self.training_indices = list(range(self.start_frame, self.end_frame))
         self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
@@ -832,7 +832,7 @@ class VolSDF(pl.LightningModule):
             results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
                             "normal_values": model_outputs["normal_values"].detach().clone(),
                             "acc_map": model_outputs["acc_map"].detach().clone(),
-                            "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
+                            # "negative_entropy": model_outputs["negative_entropy"].detach().clone(),
                             **batch_targets})         
 
         img_size = results[0]["img_size"]

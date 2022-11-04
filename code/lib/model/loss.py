@@ -97,7 +97,6 @@ class VolSDFLoss(nn.Module):
         super().__init__()
         self.eikonal_weight = opt.eikonal_weight
         self.bone_weight = opt.bone_weight
-        # self.normal_loss_weight = opt.norm_weight
         self.density_reg_weight = 5e-3
         self.bg_shadow_weight = 5e-2
         self.off_surface_weight = 3e-3
@@ -117,10 +116,6 @@ class VolSDFLoss(nn.Module):
         eikonal_loss = ((grad_theta.norm(2, dim=-1) - 1)**2).mean()
         return eikonal_loss
         
-    def get_normal_loss(self, normal_values, surface_normal_gt, normal_weight, acc_map):
-        # TODO Check
-        normal_loss = torch.mean(normal_weight[:, None] * acc_map[:, None] * torch.norm((normal_values-surface_normal_gt) ** 2, dim=1)) # torch.mean(torch.norm((normal_values-surface_normal_gt) ** 2, dim=1)) # 
-        return normal_loss
     
     def get_bone_loss(self, w_pd, w_gt):
         bone_loss = self.l2_loss(w_pd, w_gt)
@@ -168,18 +163,21 @@ class VolSDFLoss(nn.Module):
                 'rgb_loss': rgb_loss,
                 'eikonal_loss': eikonal_loss,
                 'density_reg_loss': density_reg_loss,
-                # 'normal_loss': normal_loss,
                 'off_surface_loss': off_surface_loss,
                 'in_surface_loss': in_surface_loss,
             }
         else:
             bone_loss = self.get_bone_loss(model_outputs['w_pd'], model_outputs['w_gt'])
-            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss
+            loss = rgb_loss + self.eikonal_weight * eikonal_loss + self.density_reg_weight * density_reg_loss + self.off_surface_weight * (1 + epoch_for_off_surface ** 2 / 40) * off_surface_loss + \
+                   self.in_surface_weight * (1 - epoch_for_off_surface / 200) * in_surface_loss + self.eikonal_weight * eikonal_loss + self.bone_weight * bone_loss
             return {
                 'loss': loss,
                 'rgb_loss': rgb_loss,
                 'eikonal_loss': eikonal_loss,
                 'bone_loss': bone_loss,
+                'density_reg_loss': density_reg_loss,
+                'off_surface_loss': off_surface_loss,
+                'in_surface_loss': in_surface_loss,
             }
 
 class ThreeDLoss(nn.Module):

@@ -129,10 +129,10 @@ def render_trimesh(mesh,R,T, mode='np'):
     image = (255*image).data.cpu().numpy().astype(np.uint8)
     
     return image
-overlay = False
+overlay = True
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'courtyard_bodyScannerMotions_00'
+    seq = 'outdoors_fencing_01'
     if overlay:
         output_dir = f'/home/chen/disk2/3DPW/vis_results/{seq}'
     else:
@@ -140,7 +140,7 @@ if __name__ == '__main__':
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     img_dir = f'/home/chen/disk2/3DPW/imageFiles/{seq}'   
-    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/train/{seq}.pkl'
+    seq_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/{seq}.pkl'
     img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
     seq_file = pkl.load(open(seq_dir, 'rb'), encoding='latin1')
     gender = seq_file['genders'][0]

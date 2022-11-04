@@ -81,6 +81,9 @@ class VolSDFNetworkBG(nn.Module):
         self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
         self.smpl_face_vertices = index_vertices_by_faces(self.smpl_v_cano, self.smpl_f_cano)
 
+        self.mesh_v_cano = self.smpl_server.verts_c
+        self.mesh_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
+        self.mesh_face_vertices = index_vertices_by_faces(self.mesh_v_cano, self.mesh_f_cano)
     def sdf_func(self, x, cond, smpl_tfs, eval_mode=False):
         if hasattr(self, "deformer"):
             x_c, others = self.deformer(x, None, smpl_tfs, eval_mode)
@@ -156,6 +159,28 @@ class VolSDFNetworkBG(nn.Module):
         index_off_surface = (minimum > threshold).squeeze(1)
         index_in_surface = (minimum <= 0.).squeeze(1)
         return index_off_surface, index_in_surface
+    def check_off_in_surface_points_cano_mesh(self, x_cano, N_samples, threshold=0.05):
+
+        distance, _, _ = kaolin.metrics.trianglemesh.point_to_mesh_distance(x_cano.unsqueeze(0).contiguous(), self.mesh_face_vertices)
+
+        distance = torch.sqrt(distance) # kaolin outputs squared distance
+        sign = kaolin.ops.mesh.check_sign(self.mesh_v_cano, self.mesh_f_cano, x_cano.unsqueeze(0)).float()
+        sign = 1 - 2 * sign
+        signed_distance = sign * distance
+        batch_size = x_cano.shape[0] // N_samples
+        signed_distance = signed_distance.reshape(batch_size, N_samples, 1)
+
+        minimum = torch.min(signed_distance, 1)[0]
+        index_off_surface = (minimum > threshold).squeeze(1)
+        index_in_surface = (minimum <= 0.).squeeze(1)
+        return index_off_surface, index_in_surface
+
+    def query_oc(self, x, cond):
+        
+        x = x.reshape(-1, 3)
+        mnfld_pred = self.implicit_network(x, cond)[:,:,0].reshape(-1,1)
+        # mnfld_pred = self.model.density(mnfld_pred)
+        return {'occ':mnfld_pred}
     def forward(self, input):
         # Parse model input
         torch.set_grad_enabled(True)
@@ -185,6 +210,12 @@ class VolSDFNetworkBG(nn.Module):
         if self.training:
             if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
                 cond = {'smpl': smpl_pose[:, 3:] * 0.}
+            # if input['current_epoch'] % 20 == 0:
+            #     import ipdb; ipdb.set_trace()
+            #     mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            #     self.mesh_v_cano = torch.tensor(mesh_canonical.vertices[None], device = self.smpl_v_cano.device).float()
+            #     self.mesh_f_cano = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.smpl_v_cano.device)
+            #     self.mesh_face_vertices = index_vertices_by_faces(self.mesh_v_cano, self.mesh_f_cano)
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
@@ -246,7 +277,10 @@ class VolSDFNetworkBG(nn.Module):
         # ipdb.set_trace()
 
         if self.training:
-            index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
+            # index_off_surface, index_in_surface = self.check_off_in_suface_points_cano(canonical_points, N_samples)
+            # if threshold 
+            # threshold = 0.05 * (1 - min(160, input['current_epoch']) / 200)
+            index_off_surface, index_in_surface = self.check_off_in_surface_points_cano_mesh(canonical_points, N_samples, threshold=0.05)
             canonical_points = canonical_points.reshape(num_pixels, N_samples, 3) # [surface_mask]
 
             # normal = input["normal"].reshape(-1, 3)
@@ -541,14 +575,14 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 150
+        self.end_frame = 147
         self.training_indices = list(range(self.start_frame, self.end_frame))
         self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
             for i in self.exclude_frames:
                 self.training_indices.remove(i)
         assert len(self.training_indices) == self.num_training_frames
-        self.opt_smpl = True
+        self.opt_smpl = True # True
         self.training_modules = ["model"]
         if self.opt_smpl:
             self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
@@ -656,6 +690,12 @@ class VolSDF(pl.LightningModule):
             self.loss.alpha *= self.opt.model.alpha_factor
         # if self.current_epoch % 1 == 0:
         #     self.save_checkpoints(self.current_epoch)
+        if self.current_epoch != 0 and self.current_epoch % 20 == 0:
+            cond = {'smpl': torch.zeros(1, 69).float().cuda()}
+            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            self.model.mesh_v_cano = torch.tensor(mesh_canonical.vertices[None], device = self.model.smpl_v_cano.device).float()
+            self.model.mesh_f_cano = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.smpl_v_cano.device)
+            self.model.mesh_face_vertices = index_vertices_by_faces(self.model.mesh_v_cano, self.model.mesh_f_cano)
         return super().training_epoch_end(outputs)
 
     def query_oc(self, x, cond):
@@ -878,8 +918,8 @@ class VolSDF(pl.LightningModule):
                     os.makedirs("test_mesh", exist_ok=True)
                     os.makedirs("test_negative_entropy", exist_ok=True)
                     
-                    mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
+                    # mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    # mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
         for i in range(num_splits):
             # print("current batch:", i)

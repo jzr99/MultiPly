@@ -17,13 +17,13 @@ if __name__ == '__main__':
     uvs = []
     texture_paths = []
 
-    mesh = trimesh.load(os.path.join('/home/chen/RGB-PINA/code/outputs/ThreeDPW/bike_wo_disp_freeze_20_every_20_opt_pose_split/test_animation_mesh/0000_deformed.ply'), process=False)
+    mesh = trimesh.load(os.path.join('/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_wo_disp_freeze_20_every_20_opt_pose/test_mesh/0323_canonical.ply'), process=False)
     ours_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='ours', flat_shading=True)
 
-    mesh = trimesh.load('/home/chen/ml-neuman/debug_output_posed.obj', process=False)
-    neuman_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='neuman', flat_shading=True)
+    # mesh = trimesh.load('/home/chen/ml-neuman/debug_output_posed.obj', process=False)
+    # neuman_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='neuman', flat_shading=True)
 
     viewer = Viewer()
-    viewer.scene.add(ours_mesh, neuman_mesh)
-    # viewer.scene.add(ours_mesh)
+    # viewer.scene.add(ours_mesh, neuman_mesh)
+    viewer.scene.add(ours_mesh)
     viewer.run()

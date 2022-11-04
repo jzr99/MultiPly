@@ -9,7 +9,7 @@ smpl_bones_relation = torch.tensor([[1,2,3], [0, 4, -1], [0, 5, -1], [0, 6, -1],
                                     [6, 13, 14], [7, -1, -1], [8, -1, -1], [9, 15, -1], [9, 16, -1], [9, 17, -1], [12, -1, -1], [13, 18, -1], [14, 19, -1],
                                     [16, 20, -1], [17, 21, -1], [18, 22, -1], [19, 23, -1], [20, -1, -1], [21, -1, -1]])
 class SMPLDeformer():
-    def __init__(self, max_dist=0.05, K=5, gender='male', betas=None):
+    def __init__(self, max_dist=0.05, K=1, gender='male', betas=None):
         super().__init__()
 
         self.max_dist = max_dist

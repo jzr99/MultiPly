@@ -7,7 +7,7 @@ import os
 sys.path.append('/home/chen/RGB-PINA/rgb2pose')
 from smplx import SMPL
 
-seq = '00020_Gorilla'
+seq = '00070_Dance'
 smpl_output_dir = f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes'
 if not os.path.exists(smpl_output_dir):
     os.makedirs(smpl_output_dir)

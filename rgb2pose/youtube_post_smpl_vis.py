@@ -19,7 +19,7 @@ def render_trimesh(mesh,R,T, mode='np'):
     return image
 device = torch.device("cuda:0")
 DIR = '/home/chen/RGB-PINA/data'
-seq = 'Suarez'
+seq = 'manuel_outdoor1'
 gender = 'male'
 if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl'):
     os.makedirs(f'{DIR}/{seq}/joint_opt_smpl')
@@ -32,11 +32,11 @@ transl = checkpoint['state_dict']['body_model_params.transl.weight']
 body_pose = checkpoint['state_dict']['body_model_params.body_pose.weight']
 
 
-# np.save(os.path.join(DIR, seq, 'opt_mean_shape.npy'), betas.detach().cpu().numpy())
-# np.save(os.path.join(DIR, seq, 'opt_poses.npy'), torch.cat((global_orient, body_pose), dim=1).detach().cpu().numpy())
-# np.save(os.path.join(DIR, seq, 'opt_transl.npy'), transl.detach().cpu().numpy())
-# import ipdb
-# ipdb.set_trace()
+np.save(os.path.join(DIR, seq, 'opt_mean_shape.npy'), betas.detach().cpu().numpy())
+np.save(os.path.join(DIR, seq, 'opt_poses.npy'), torch.cat((global_orient, body_pose), dim=1).detach().cpu().numpy())
+np.save(os.path.join(DIR, seq, 'opt_transl.npy'), transl.detach().cpu().numpy())
+import ipdb
+ipdb.set_trace()
 
 camPs = np.load(f'/home/chen/RGB-PINA/data/{seq}/cameras.npz')
 

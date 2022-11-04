@@ -9,7 +9,7 @@ use_body_parsing: False
 with_bkgd: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 581 # 462 # 110
+num_training_frames: 942 # 462 # 110
 implicit_network:
     feature_vector_size: 256
     d_in: 3

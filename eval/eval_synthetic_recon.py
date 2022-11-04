@@ -4,11 +4,18 @@ import glob
 from tqdm import tqdm
 from scipy.spatial import KDTree
 def dist_m2m(mesh_src, mesh_tgt, num_samples=10000):
-    src_surf_pts, _ = trimesh.sample.sample_surface(mesh_src, num_samples)
-    tgt_surf_pts, _ = trimesh.sample.sample_surface(mesh_tgt, num_samples)
+    src_surf_pts, src_surf_faces = trimesh.sample.sample_surface(mesh_src, num_samples)
+    tgt_surf_pts, tgt_surf_faces = trimesh.sample.sample_surface(mesh_tgt, num_samples)
 
-    _, src_tgt_dist, _ = trimesh.proximity.closest_point(mesh_tgt, src_surf_pts)
-    _, tgt_src_dist, _ = trimesh.proximity.closest_point(mesh_src, tgt_surf_pts)
+    
+    src_surf_pts_normals = mesh_src.face_normals[src_surf_faces]
+    tgt_surf_pts_normals = mesh_tgt.face_normals[tgt_surf_faces]
+
+    src_surf_pts_normals = src_surf_pts_normals / np.linalg.norm(src_surf_pts_normals, axis=-1, keepdims=True)
+    tgt_surf_pts_normals = tgt_surf_pts_normals / np.linalg.norm(tgt_surf_pts_normals, axis=-1, keepdims=True)
+    
+    _, src_tgt_dist, src_tgt_triangle_id = trimesh.proximity.closest_point(mesh_tgt, src_surf_pts)
+    _, tgt_src_dist, tgt_src_triangle_id = trimesh.proximity.closest_point(mesh_src, tgt_surf_pts)
 
     src_tgt_dist[np.isnan(src_tgt_dist)] = 0
     tgt_src_dist[np.isnan(tgt_src_dist)] = 0
@@ -18,7 +25,26 @@ def dist_m2m(mesh_src, mesh_tgt, num_samples=10000):
     # L2-norm chamfer distance
     chamfer_dist = (src_tgt_dist + tgt_src_dist) / 2    
 
-    return chamfer_dist
+    # src_tgt_pts_normals = mesh_tgt.face_normals[src_tgt_triangle_id]
+    # tgt_src_pts_normals = mesh_src.face_normals[tgt_src_triangle_id]
+
+    # src_tgt_pts_normals = src_tgt_pts_normals / np.linalg.norm(src_tgt_pts_normals, axis=-1, keepdims=True)
+    # tgt_src_pts_normals = tgt_src_pts_normals / np.linalg.norm(tgt_src_pts_normals, axis=-1, keepdims=True)
+
+    # src_tgt_normals_dot_product = (src_tgt_pts_normals * src_surf_pts_normals).sum(axis=-1)
+    # tgt_src_normals_dot_product = (tgt_src_pts_normals * tgt_surf_pts_normals).sum(axis=-1)
+
+    # src_tgt_normals_dot_product = np.abs(src_tgt_normals_dot_product)
+    # tgt_src_normals_dot_product = np.abs(tgt_src_normals_dot_product)
+
+    # src_tgt_normals_dot_product[np.isnan(src_tgt_normals_dot_product)] = 1.
+    # tgt_src_normals_dot_product[np.isnan(tgt_src_normals_dot_product)] = 1.
+
+    # src_tgt_normals_dot_product = src_tgt_normals_dot_product.mean()
+    # tgt_src_normals_dot_product = tgt_src_normals_dot_product.mean()
+
+    # nc = (src_tgt_normals_dot_product + tgt_src_normals_dot_product) / 2
+    return chamfer_dist #, nc
 
 def compute_iou(mesh, gt_mesh):
     mesh_bounds = mesh.bounds
@@ -84,10 +110,11 @@ def compute_metric(mesh, gt_mesh, num_samples=10000):
 
     return output_dict
 
-seq = '00020_Gorilla'
-if seq == 'outdoors_fencing_01':
-    start_idx = 0 # 546
-
+seq = '00068_Dance'
+# if seq == 'outdoors_fencing_01':
+#     start_idx = 0 # 546
+start_idx = 1
+skip = 2
 gt_mesh_dir = f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/meshes_vis'
 # ours_mesh_w_ori_pose_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_mesh_scaled'
 # selfrecon_mesh_w_ori_pose_dir = f'/home/chen/SelfReconCode/data/{seq}/result/final_meshes_transformed'
@@ -95,17 +122,24 @@ ours_mesh_w_est_pose_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_
 selfrecon_mesh_w_est_pose_dir = f'/home/chen/disk2/SelfRecon_results/{seq}/result/final_meshes_transformed'
 icon_mesh_w_est_pose_dir = f'/home/chen/disk2/ICON_new_results/{seq}/icon-filter/test_mesh'
 # ours_mesh_wo_opt_smpl_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}_wo_disp_freeze_20_every_20_opt_pose_no/test_mesh_scaled'
-
-skip = 1
-
-gt_mesh_paths = sorted(glob.glob(f'{gt_mesh_dir}/*.obj'))[::skip]
+step = 1
+gt_mesh_paths_raw = sorted(glob.glob(f'{gt_mesh_dir}/*.obj'))
 # ours_mesh_w_ori_pose_paths = sorted(glob.glob(f'{ours_mesh_w_ori_pose_dir}/*.ply'))
 # selfrecon_mesh_w_ori_pose_paths = sorted(glob.glob(f'{selfrecon_mesh_w_ori_pose_dir}/*.ply'))
-ours_mesh_w_est_pose_paths = sorted(glob.glob(f'{ours_mesh_w_est_pose_dir}/*.ply'))[::skip]
-selfrecon_mesh_w_est_pose_paths = sorted(glob.glob(f'{selfrecon_mesh_w_est_pose_dir}/*.ply'))[::skip]
-icon_mesh_w_est_pose_paths = sorted(glob.glob(f'{icon_mesh_w_est_pose_dir}/*.obj'))[::skip]
+ours_mesh_w_est_pose_paths = sorted(glob.glob(f'{ours_mesh_w_est_pose_dir}/*.ply'))[::step]
+selfrecon_mesh_w_est_pose_paths = sorted(glob.glob(f'{selfrecon_mesh_w_est_pose_dir}/*.ply'))[::step]
+icon_mesh_w_est_pose_paths = sorted(glob.glob(f'{icon_mesh_w_est_pose_dir}/*.obj'))[::step]
 # ours_mesh_wo_opt_smpl_paths = sorted(glob.glob(f'{ours_mesh_wo_opt_smpl_dir}/*.ply'))[::skip]
+gt_mesh_paths = gt_mesh_paths_raw[start_idx + 2::skip]
+if len(ours_mesh_w_est_pose_paths) > len(gt_mesh_paths):
+    if len(ours_mesh_w_est_pose_paths) - len(gt_mesh_paths) == 1:
+        gt_mesh_paths.append(gt_mesh_paths_raw[-1])
+elif len(ours_mesh_w_est_pose_paths) < len(gt_mesh_paths):
+    if len(ours_mesh_w_est_pose_paths) - len(gt_mesh_paths) == -1:
+        gt_mesh_paths.pop()
 
+else:
+    pass
 ours_cd = []
 selfrecon_cd = []
 icon_cd = []
@@ -120,7 +154,8 @@ ours_iou = []
 selfrecon_iou = []
 icon_iou = []
 ours_wo_opt_smpl_iou = []
-
+import ipdb
+ipdb.set_trace()
 assert len(gt_mesh_paths) == len(ours_mesh_w_est_pose_paths) == len(selfrecon_mesh_w_est_pose_paths) == len(icon_mesh_w_est_pose_paths)
 for idx, our_mesh_w_est_pose_path in tqdm(enumerate(ours_mesh_w_est_pose_paths)):
 

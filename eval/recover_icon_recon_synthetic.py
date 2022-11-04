@@ -13,27 +13,46 @@ from smplx import SMPL
 
 from utils import rectify_pose, compute_similarity_transform, transform_mesh
 
-seq = '00020_Gorilla'
-gender = 'male'
-if seq == 'outdoors_fencing_01':
-    start_idx = 0 # 546
-
-
+seq = '00070_Dance'
+# gender = 'male'
+# if seq == 'outdoors_fencing_01':
+    # start_idx = 0 # 546
+start_idx = 0
+skip = 2
 DIR = f'/home/chen/disk2/ICON_new_results'
 save_dir = f'{DIR}/{seq}/icon-filter/test_mesh'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-mesh_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_recon.obj'))
+mesh_paths_raw = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_recon.obj'))
 # smpl_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.npy'))
-smpl_mesh_paths = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.obj'))
-gt_smpl_mesh_paths = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
+smpl_mesh_paths_raw = sorted(glob.glob(f'{DIR}/{seq}/icon-filter/obj/*_smpl.obj'))
+gt_smpl_mesh_paths_raw = sorted(glob.glob(f'/home/chen/disk2/RGB_PINA_MoCap/{seq}/smpl_meshes/*.obj'))
 
-if gender == 'f':
-    gender = 'female'
-elif gender == 'm':
-    gender = 'male'
+mesh_paths = mesh_paths_raw[start_idx::skip]
+smpl_mesh_paths = smpl_mesh_paths_raw[start_idx::skip]
+gt_smpl_mesh_paths = gt_smpl_mesh_paths_raw[start_idx + 2::skip]
 
-smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
+if len(mesh_paths) > len(gt_smpl_mesh_paths):
+    if len(mesh_paths) - len(gt_smpl_mesh_paths) == 1:
+        gt_smpl_mesh_paths.append(gt_smpl_mesh_paths_raw[-1])
+    else:
+        import ipdb
+        ipdb.set_trace()
+elif len(mesh_paths) < len(gt_smpl_mesh_paths):
+    if len(mesh_paths) - len(gt_smpl_mesh_paths) == -1:
+        gt_smpl_mesh_paths.pop()
+    else:
+        import ipdb
+        ipdb.set_trace()
+else:
+    pass
+
+# if gender == 'f':
+#     gender = 'female'
+# elif gender == 'm':
+#     gender = 'male'
+
+# smpl_model = SMPL('/home/chen/Models/smpl', gender=gender).cuda()
 
 estimated = True
 
