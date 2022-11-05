@@ -24,9 +24,9 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'emdb_00082_4'
+seq = 'exstrimalik'
 dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
-transpose = True
+transpose = False
 gender = 'm'
 if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic':
     DIR = '/home/chen/disk2/Youtube_Videos'

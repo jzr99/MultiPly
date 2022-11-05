@@ -50,7 +50,7 @@ class VolSDFNetworkBG(nn.Module):
         # self.object_bounding_sphere = opt.ray_tracer.object_bounding_sphere
         betas = np.load(betas_path)
         self.use_smpl_deformer = opt.use_smpl_deformer
-        self.gender = 'female'
+        self.gender = 'male'
         if self.use_smpl_deformer:
             self.deformer = SMPLDeformer(betas=betas, gender=self.gender) 
         else:
@@ -575,7 +575,7 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 147
+        self.end_frame = 274
         self.training_indices = list(range(self.start_frame, self.end_frame))
         self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
@@ -692,7 +692,7 @@ class VolSDF(pl.LightningModule):
         #     self.save_checkpoints(self.current_epoch)
         if self.current_epoch != 0 and self.current_epoch % 20 == 0:
             cond = {'smpl': torch.zeros(1, 69).float().cuda()}
-            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=2)
             self.model.mesh_v_cano = torch.tensor(mesh_canonical.vertices[None], device = self.model.smpl_v_cano.device).float()
             self.model.mesh_f_cano = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.smpl_v_cano.device)
             self.model.mesh_face_vertices = index_vertices_by_faces(self.model.mesh_v_cano, self.model.mesh_f_cano)
@@ -918,8 +918,8 @@ class VolSDF(pl.LightningModule):
                     os.makedirs("test_mesh", exist_ok=True)
                     os.makedirs("test_negative_entropy", exist_ok=True)
                     
-                    # mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                    # mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
+                    mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
         for i in range(num_splits):
             # print("current batch:", i)
