@@ -17,8 +17,8 @@ if __name__ == '__main__':
     uvs = []
     texture_paths = []
 
-    for idx in range(250):
-        mesh = trimesh.load(os.path.join(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/Invisible_wo_disp_freeze_20_every_20_opt_pose/test_mesh/{idx:04d}_deformed.ply'), process=False)
+    for idx in range(274):
+        mesh = trimesh.load(os.path.join(f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/exstrimalik_wo_disp_freeze_20_every_20_opt_pose/test_mesh/{idx:04d}_deformed.ply'), process=False)
         mesh.vertices = mesh.vertices - mesh.vertices.mean(axis=0)
         vertices.append(mesh.vertices)
         faces.append(mesh.faces)

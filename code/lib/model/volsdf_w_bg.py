@@ -918,8 +918,8 @@ class VolSDF(pl.LightningModule):
                     os.makedirs("test_mesh", exist_ok=True)
                     os.makedirs("test_negative_entropy", exist_ok=True)
                     
-                    mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                    mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
+                    # mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                    # mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
         for i in range(num_splits):
             # print("current batch:", i)

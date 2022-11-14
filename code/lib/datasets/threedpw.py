@@ -349,7 +349,7 @@ class ThreeDPWValDataset(torch.utils.data.Dataset):
         return inputs, images
 
 class ThreeDPWTestDataset(torch.utils.data.Dataset):
-    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path=None):
+    def __init__(self, opt, free_view_render=False, canonical_vis=False, animation_path='/home/chen/RGB-PINA/animation_assets/gLO_sBM_cAll_d14_mLO1_ch05'):
         self.free_view_render = free_view_render
         self.canonical_vis = canonical_vis
         self.animation = True if animation_path is not None else False
@@ -359,7 +359,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             steps = 60
             step_size = 6
             self.new_poses = []
-            self.image_id = 154
+            self.image_id = 198
             self.data = self.dataset[self.image_id]
             self.img_size = self.dataset.img_size # [self.image_id]
             self.total_pixels = np.prod(self.img_size)
@@ -377,7 +377,7 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             self.total_pixels = np.prod(self.img_size)
             self.pixel_per_batch = opt.pixel_per_batch
             if self.animation:
-                self.test_indices = [2, 7, 12, 17]
+                self.test_indices = None # [2, 7, 12, 17]
                 if self.test_indices is not None:
                     self.animation_poses = np.load(os.path.join(animation_path, 'poses.npy'))[self.test_indices]
                 else:
@@ -424,7 +424,10 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
                 inputs, images = data
         elif self.animation:
             # data = self.dataset[0]
-            data = self.dataset[self.test_indices[idx]]
+            if self.test_indices is not None:
+                data = self.dataset[self.test_indices[idx]]
+            else:
+                data = self.dataset[0]
 
             inputs, images = data
             inputs = {

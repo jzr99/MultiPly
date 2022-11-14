@@ -18,7 +18,7 @@ def crop_image(img, bbox, batch=False):
 
 gt_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/ground_truth'
 gt_mask_paths = sorted(glob.glob(f'{gt_mask_dir}/*.png'))[:131]
-our_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose/test_mask'
+our_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_cano_mesh/test_mask'
 our_wo_density_reg_mask_dir = '/home/chen/RGB-PINA/code/outputs/ThreeDPW/Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_no_density_reg/test_mask'
 RVM_mask_dir = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset/Helge_outdoor/RVM_masks'
 SMPL_mask_dir = '/home/chen/RGB-PINA/data/Helge_outdoor/mask'
