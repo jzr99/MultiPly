@@ -210,12 +210,6 @@ class VolSDFNetworkBG(nn.Module):
         if self.training:
             if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
                 cond = {'smpl': smpl_pose[:, 3:] * 0.}
-            # if input['current_epoch'] % 20 == 0:
-            #     import ipdb; ipdb.set_trace()
-            #     mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-            #     self.mesh_v_cano = torch.tensor(mesh_canonical.vertices[None], device = self.smpl_v_cano.device).float()
-            #     self.mesh_f_cano = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.smpl_v_cano.device)
-            #     self.mesh_face_vertices = index_vertices_by_faces(self.mesh_v_cano, self.mesh_f_cano)
         # ray_dirs, cam_loc = idr_utils.back_project(uv, input["P"], input["C"])
         ray_dirs, cam_loc = rend_util.get_camera_params(uv, pose, intrinsics)
         batch_size, num_pixels, _ = ray_dirs.shape
@@ -575,14 +569,14 @@ class VolSDF(pl.LightningModule):
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = 0
-        self.end_frame = 274
+        self.end_frame = 200
         self.training_indices = list(range(self.start_frame, self.end_frame))
         self.exclude_frames = None # [2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77, 82, 87, 92, 97]
         if self.exclude_frames is not None:
             for i in self.exclude_frames:
                 self.training_indices.remove(i)
         assert len(self.training_indices) == self.num_training_frames
-        self.opt_smpl = True # True
+        self.opt_smpl = True
         self.training_modules = ["model"]
         if self.opt_smpl:
             self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')

@@ -24,7 +24,7 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'beautiful_disaster'
+seq = 'emdb_00080_3'
 dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
 transpose = False
 gender = 'm'

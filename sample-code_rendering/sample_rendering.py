@@ -6,7 +6,7 @@ import os
 
 WIDTH = 1600
 HEIGHT = 1200
-FOCAL = 1600
+FOCAL = 1300
 
 def create_lookat_matrix(eye, at, up):
     forward = at - eye
@@ -23,7 +23,7 @@ def create_lookat_matrix(eye, at, up):
     return lookat
     
     
-def get_camera_rig(num_cameras, axis=(0.5, 1.5, 0.5), C=(0, 0, 1), at=(0.5, 0.5, 0.5)):
+def get_camera_rig(num_cameras, axis=(0, 1, 0), C=(0, 0, 1), at=(0, 0, 0)):
     # convert to np.ndarray
     axis = np.array(axis) / np.linalg.norm(axis)
     C = np.array(C)
@@ -42,7 +42,7 @@ def get_camera_rig(num_cameras, axis=(0.5, 1.5, 0.5), C=(0, 0, 1), at=(0.5, 0.5,
 
 def get_cameras(num_cameras):
     cameras = []
-    for C in [(0, 0, 2.1), (0, 0.5, 2.1), (0, 1, 2.1)]:
+    for C in [(0, 0, 2), (0, 0.5, 2), (0, 1, 2)]:
         for extrinsic in get_camera_rig(num_cameras, C=C):
             camera = pyrender.IntrinsicsCamera(fx=FOCAL,
                                                fy=FOCAL,
@@ -85,8 +85,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     raw_scan = trimesh.load(args.mesh)
-    # normalize to 0~1 for the Hash encoding
-    raw_scan.vertices += 0.5
     meshes = [raw_scan]
 
     os.makedirs("outputs/image", exist_ok=True)
@@ -111,6 +109,4 @@ if __name__ == "__main__":
         K[1, 2] = camera.cy
         P = K @ extrinsic
         d[f"cam_{i}"] = P
-        import ipdb
-        ipdb.set_trace()
     np.savez("outputs/cameras.npz", **d)

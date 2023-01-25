@@ -17,7 +17,7 @@ if __name__ == '__main__':
     uvs = []
     texture_paths = []
 
-    mesh = trimesh.load(os.path.join('/home/chen/RGB-PINA/code/outputs/ThreeDPW/exstrimalik_wo_disp_freeze_20_every_20_opt_pose/test_mesh/0198_deformed.ply'), process=False)
+    mesh = trimesh.load(os.path.join('/home/chen/RGB-PINA/code/outputs/ThreeDPW/exstrimalik_wo_disp_freeze_20_every_20_opt_pose/test_mesh/0006_canonical.ply'), process=False)
     ours_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='ours', flat_shading=True)
 
     # mesh = trimesh.load('/home/chen/ml-neuman/debug_output_posed.obj', process=False)

@@ -2,7 +2,7 @@ import cv2
 import os
 import numpy as np
 import imageio
-# import glob
+import glob
 
 def mask_comparison():
     name = 'video5'
@@ -108,33 +108,28 @@ def make_video3():
         writer_overlay.close()
 
 def make_video4():
-    seq = 'manuel_outdoor_wo_disp_freeze_20_every_20_opt_pose'
-    DIR = '/home/chen/RGB-PINA/code/outputs/ThreeDPW'
+    seq = 'Lan_2'
+    DIR = f'/home/chen/disk2/RGB-PINA_results/{seq}_wo_disp_freeze_20_every_20_opt_pose'
 
-    start_frame = 0
-    end_frame = 479
-    normal_overlay = False
-    img_lst = []
-    files = [f for f in os.listdir(os.path.join(DIR, seq, 'test_overlay_normal')) if '.png' in f]
-    files.sort()
-
-    image_writer = imageio.get_writer(os.path.join(DIR, seq, 'img.mp4'), fps=30)
-    overlay_writer = imageio.get_writer(os.path.join(DIR, seq, 'overlay.mp4'), fps=30)
-    entropy_writer = imageio.get_writer(os.path.join(DIR, seq, 'entropy.mp4'), fps=30)
-    for idx, f in enumerate(files[start_frame:]):
-        overlay_path = os.path.join(DIR, seq, 'test_overlay_normal', f)
-        img_path = os.path.join(DIR, seq, 'test_rendering', f)
-        entropy_path = os.path.join(DIR, seq, 'test_negative_entropy', f)
+    image_paths = sorted(glob.glob(f'/home/chen/RGB-PINA/data/{seq}/image/*.png'))
+    overlay_normal_paths = sorted(glob.glob(f'/home/chen/disk2/RGB-PINA_results/{seq}_wo_disp_freeze_20_every_20_opt_pose/test_overlay_normal/*.png'))
+    image_writer = imageio.get_writer(os.path.join(DIR, 'img.mp4'), fps=30, macro_block_size=1)
+    overlay_writer = imageio.get_writer(os.path.join(DIR, 'overlay.mp4'), fps=30, macro_block_size=1)
+    # entropy_writer = imageio.get_writer(os.path.join(DIR, seq, 'entropy.mp4'), fps=30)
+    for idx, img_path in enumerate(image_paths):
+        if idx == 94:
+            continue
+        overlay_path = overlay_normal_paths[idx]
 
         img = imageio.imread(img_path)
         overlay = imageio.imread(overlay_path)
-        entropy = imageio.imread(entropy_path)
+        # entropy = imageio.imread(entropy_path)
 
         image_writer.append_data(img)
         overlay_writer.append_data(overlay)
-        entropy_writer.append_data(entropy)
+        # entropy_writer.append_data(entropy)
     image_writer.close()
     overlay_writer.close()
-    entropy_writer.close()
+    # entropy_writer.close()
 if __name__ == '__main__':
     make_video4()

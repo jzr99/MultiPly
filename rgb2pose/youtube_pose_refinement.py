@@ -102,7 +102,7 @@ class Renderer():
                 # import pdb
                 # pdb.set_trace()
 
-                normals_vis = -normals* 0.5 + 0.5 # -1*normals* 0.5 + 0.5 
+                normals_vis = normals* 0.5 + 0.5 # -1*normals* 0.5 + 0.5 
                 normals_vis = normals_vis[:,:,[2,1,0]]
                 mesh_normal = Meshes(verts, faces, textures=Textures(verts_rgb=normals_vis))
                 image_normal = self.renderer(mesh_normal)
@@ -156,7 +156,7 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'beautiful_disaster'
+    seq = 'emdb_00080_3'
     dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
     transpose = False
     gender = 'm'

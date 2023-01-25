@@ -10,7 +10,7 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 274 # 462 # 110
+num_training_frames: 200 # 462 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -44,13 +44,13 @@ bg_implicit_network:
     weight_norm: False
     embedder_mode: 'fourier'
     multires: 10
-    cond: 'none' # 'none' # 'frame'
+    cond: 'frame' # 'none' # 'frame'
 bg_rendering_network:
     feature_vector_size: 256
     mode: 'nerf_frame_encoding' # 'nerf'
     d_in: 3
     d_out: 3
-    dims: [128]
+    dims: [128] # [128, 128]
     weight_norm: False
     multires_view: 4
 shadow_network:

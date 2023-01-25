@@ -3,8 +3,8 @@ import numpy as np
 import glob
 import os
 
-subject = 'emdb_00081_0'
-seq = f'{subject}_wo_disp_freeze_20_every_20_opt_pose'
+subject = 'Helge_outdoor'
+seq = 'Helge_outdoor_wo_disp_freeze_20_every_20_opt_pose_cano_mesh' # f'{subject}_wo_disp_freeze_20_every_20_opt_pose'
 result_dir = f'/home/chen/RGB-PINA/code/outputs/ThreeDPW/{seq}'
 data_dir = f'/home/chen/RGB-PINA/data/{subject}'
 
