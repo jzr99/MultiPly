@@ -18,17 +18,6 @@ def get_psnr(img1, img2, normalize_rgb=False):
     return psnr
 
 
-def load_rgb(path, normalize_rgb = False):
-    img = imageio.imread(path)
-    img = skimage.img_as_float32(img)
-
-    if normalize_rgb: # [-1,1] --> [0,1]
-        img -= 0.5
-        img *= 2.
-    img = img.transpose(2, 0, 1)
-    return img
-
-
 def load_K_Rt_from_P(filename, P=None):
     if P is None:
         lines = open(filename).read().splitlines()
@@ -81,18 +70,6 @@ def get_camera_params(uv, pose, intrinsics):
     ray_dirs = F.normalize(ray_dirs, dim=2)
 
     return ray_dirs, cam_loc
-
-
-def get_camera_for_plot(pose):
-    if pose.shape[1] == 7: #In case of quaternion vector representation
-        cam_loc = pose[:, 4:].detach()
-        R = quat_to_rot(pose[:,:4].detach())
-    else: # In case of pose matrix representation
-        cam_loc = pose[:, :3, 3]
-        R = pose[:, :3, :3]
-    cam_dir = R[:, :3, 2]
-    return cam_loc, cam_dir
-
 
 def lift(x, y, z, intrinsics):
     # parse intrinsics
@@ -168,91 +145,3 @@ def get_sphere_intersections(cam_loc, ray_directions, r = 1.0):
     sphere_intersections = sphere_intersections.clamp_min(0.0)
 
     return sphere_intersections
-
-def get_smpl_intersection(cam_loc, ray_directions, smpl_mesh, interval_dist=0.1):
-    # smpl mesh scaling or bounding box with scaling? 
-    bbox = smpl_mesh.apply_scale(1.2).bounding_box
-    n_imgs, n_pix, _ = ray_directions.shape
-    # smpl_mesh.apply_scale(1.1)
-    
-    ray_dirs = ray_directions[0].clone().cpu().numpy()
-    ray_origins = np.tile(cam_loc[0].clone().cpu().numpy(), n_pix).reshape(n_pix, 3)
-    locations, index_ray, _ = bbox.ray.intersects_location(ray_origins=ray_origins, ray_directions=ray_dirs, multiple_hits=False)
-    mask_intersect = np.zeros(ray_dirs.shape[0], dtype=np.bool)
-    
-    mask_intersect[index_ray] = True
-    unfinished_mask_start = torch.from_numpy(mask_intersect).cuda()
-    intersect_dis = np.linalg.norm(ray_origins[index_ray] - locations, axis=1)
-
-    curr_start_points = torch.zeros(n_pix, 3).cuda().float()
-    curr_start_points[unfinished_mask_start] = torch.tensor(locations - interval_dist * ray_dirs[mask_intersect]).cuda().float()
-    acc_start_dis = torch.zeros(n_pix).cuda().float()
-    acc_start_dis[unfinished_mask_start] = torch.tensor(intersect_dis - interval_dist).cuda().float()
-    acc_end_dis = torch.zeros(n_pix).cuda().float()
-    acc_end_dis[unfinished_mask_start] = torch.tensor(intersect_dis + interval_dist).cuda().float()
-
-    min_dis = acc_start_dis.clone()
-    max_dis = acc_end_dis.clone()
-    return curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis
-
-def get_bbox_intersection(cam_loc, ray_directions, smpl_mesh):
-    # smpl mesh scaling or bounding box with scaling? 
-    bbox = smpl_mesh.apply_scale(1.5).bounding_box
-
-    n_pix, _ = ray_directions.shape
-
-    ray_dirs_np = ray_directions.clone().cpu().numpy()
-    ray_origins_np = np.tile(cam_loc[0].clone().cpu().numpy(), n_pix).reshape(n_pix, 3)
-    locations, index_ray, _ = bbox.ray.intersects_location(ray_origins=ray_origins_np, ray_directions=ray_dirs_np, multiple_hits=True)
-    # strong assumption that either the ray has zero hit or two hits!
-    num_ray_hits = locations.shape[0] // 2
-    if num_ray_hits == n_pix:
-        dists = np.linalg.norm(ray_origins_np[index_ray] - locations, axis=1)
-        # condition is that all rays intersect the bbox
-        near = dists[:n_pix]
-        far = dists[n_pix:]
-        return torch.tensor(near).cuda().float(), torch.tensor(far).cuda().float(), None
-    else:
-
-        unhit_first_index_ray = set(np.arange(0, 512)).difference(index_ray[:num_ray_hits])
-        unhit_second_index_ray = set(np.arange(0, 512)).difference(index_ray[num_ray_hits:])
-        if unhit_first_index_ray != unhit_second_index_ray:
-            import ipdb
-            ipdb.set_trace()
-        unhit_index_ray = list(unhit_first_index_ray)
-        to_pad_index_ray = np.random.choice(index_ray[:num_ray_hits].shape[0], len(unhit_index_ray))
-        
-        near_hit_locations = np.zeros((n_pix, locations.shape[1]))
-        near_hit_locations[index_ray[:num_ray_hits]] = locations[:num_ray_hits]
-        # padding the invalid two hits 
-        near_hit_locations[unhit_index_ray] = locations[:num_ray_hits][to_pad_index_ray]
-
-        far_hit_locations = np.zeros((n_pix, locations.shape[1]))
-        far_hit_locations[index_ray[num_ray_hits:]] = locations[num_ray_hits:]
-        # padding the invalid two hits
-        far_hit_locations[unhit_index_ray] = locations[num_ray_hits:][to_pad_index_ray]
-
-        near = np.linalg.norm(ray_origins_np - near_hit_locations, axis=1)
-
-        far = np.linalg.norm(ray_origins_np - far_hit_locations, axis=1)
-
-        ray_dirs_np[unhit_index_ray] = ray_dirs_np[to_pad_index_ray]
-
-        padded_ray_dirs = torch.tensor(ray_dirs_np).cuda().float()
-        return torch.tensor(near).cuda().float(), torch.tensor(far).cuda().float(), padded_ray_dirs
-
-def get_new_cam_pose_fvr(pose, rotation_angle_y):
-    rot = scipy_R.from_euler('y', rotation_angle_y, degrees=True).as_matrix() # start+i*(2)
-    R, C = pose[:3, :3], pose[:3, 3]
-    T = -R@C
-    temp_P = np.eye(4, dtype=np.float32)
-    temp_P[:3,:3] = R
-    temp_P[:3, 3] = T
-    transform = np.eye(4)
-    transform[:3,:3] = rot
-    final_P = temp_P @ transform
-
-    new_pose = np.eye(4, dtype=np.float32)
-    new_pose[:3, :3] = final_P[:3, :3] 
-    new_pose[:3, 3] = -np.linalg.inv(final_P[:3, :3]) @ final_P[:3, 3]
-    return new_pose

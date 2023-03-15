@@ -3,22 +3,6 @@ from torch.nn import functional as F
 import trimesh
 import numpy as np
 
-# def back_project(uv, P, C):
-#     """compute the direction of ray through each pixel"""
-#     uv_extended = torch.cat([uv, torch.ones_like(uv)], dim=-1)
-#     import pdb
-#     pdb.set_trace()
-#     d = torch.linalg.solve(P, uv_extended.transpose(1, 2)).transpose(1, 2)[:, :, :3] - C
-#     d = F.normalize(d, dim=2)
-#     return d, C
-
-def back_project(uv, P, C):
-    """compute the direction of ray through each pixel"""
-    uv_extended = torch.cat([uv, torch.ones_like(uv)], dim=-1)
-    d = torch.bmm(P.inverse(), uv_extended.transpose(1, 2)).transpose(1, 2)[:, :, :3] - C
-    d = F.normalize(d, dim=2)
-    return d, C
-
 def get_sphere_intersection(cam_loc, ray_directions, r=1.0):
     # Input: n_images x 4 x 4 ; n_images x n_rays x 3
     # Output: n_images * n_rays x 2 (close and far) ; n_images * n_rays
@@ -44,32 +28,6 @@ def get_sphere_intersection(cam_loc, ray_directions, r=1.0):
 
     return sphere_intersections, mask_intersect
 
-def get_smpl_intersection(cam_loc, ray_directions, smpl_mesh, interval_dist=0.1):
-    # smpl mesh scaling or bounding box with scaling? 
-    bbox = smpl_mesh.apply_scale(1.5).bounding_box
-    n_imgs, n_pix, _ = ray_directions.shape
-    # smpl_mesh.apply_scale(1.1)
-    
-    ray_dirs = ray_directions[0].clone().cpu().numpy()
-    ray_origins = np.tile(cam_loc[0].clone().cpu().numpy(), n_pix).reshape(n_pix, 3)
-    locations, index_ray, _ = bbox.ray.intersects_location(ray_origins=ray_origins, ray_directions=ray_dirs, multiple_hits=False)
-    mask_intersect = np.zeros(ray_dirs.shape[0], dtype=np.bool)
-    
-    mask_intersect[index_ray] = True
-    unfinished_mask_start = torch.from_numpy(mask_intersect).cuda()
-    intersect_dis = np.linalg.norm(ray_origins[index_ray] - locations, axis=1)
-
-    curr_start_points = torch.zeros(n_pix, 3).cuda().float()
-    curr_start_points[unfinished_mask_start] = torch.tensor(locations - interval_dist * ray_dirs[mask_intersect]).cuda().float()
-    acc_start_dis = torch.zeros(n_pix).cuda().float()
-    acc_start_dis[unfinished_mask_start] = torch.tensor(intersect_dis - interval_dist).cuda().float()
-    acc_end_dis = torch.zeros(n_pix).cuda().float()
-    acc_end_dis[unfinished_mask_start] = torch.tensor(intersect_dis + interval_dist).cuda().float()
-
-    min_dis = acc_start_dis.clone()
-    max_dis = acc_end_dis.clone()
-    return curr_start_points, unfinished_mask_start, acc_start_dis, acc_end_dis, min_dis, max_dis
-
 def split_input(model_input, total_pixels, n_pixels = 10000):
     '''
      Split the input to fit Cuda memory for large resolution.
@@ -81,9 +39,6 @@ def split_input(model_input, total_pixels, n_pixels = 10000):
     for i, indx in enumerate(torch.split(torch.arange(total_pixels).cuda(), n_pixels, dim=0)):
         data = model_input.copy()
         data['uv'] = torch.index_select(model_input['uv'], 1, indx)
-        # data['object_mask'] = torch.index_select(model_input['object_mask'], 1, indx)
-        if 'bg_image' in data:
-            data['bg_image'] = torch.index_select(model_input['bg_image'], 1, indx)
         split.append(data)
     return split
 

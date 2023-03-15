@@ -1,4 +1,3 @@
-# https://github.com/JanaldoChen/Anim-NeRF
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,22 +15,6 @@ class BodyModelParams(nn.Module):
         if model_type == 'smpl':
             self.params_dim.update({
                 'body_pose': 69,
-            })
-        elif model_type == 'smplh':
-            self.params_dim.update({
-                'body_pose': 63,
-                'left_hand_pose': 6,
-                'right_hand_pose': 6,
-            })
-        elif model_type == 'smplx':
-            self.params_dim.update({
-                'body_pose': 63,
-                'left_hand_pose': 6,
-                'right_hand_pose': 6,
-                'jaw_pose': 3,
-                # 'leye_pose': 3,
-                # 'reye_pose': 3,
-                'expression': 10,
             })
         else:
             assert ValueError(f'Unknown model type {model_type}, exiting!')
@@ -51,10 +34,6 @@ class BodyModelParams(nn.Module):
                 setattr(self, param_name, param)
     
     def init_parameters(self, param_name, data, requires_grad=False):
-        # if param_name == 'betas':
-            # import ipdb
-            # ipdb.set_trace()
-            # data = torch.mean(data, dim=0, keepdim=True)
         getattr(self, param_name).weight.data = data[..., :self.params_dim[param_name]]
         getattr(self, param_name).weight.requires_grad = requires_grad
 

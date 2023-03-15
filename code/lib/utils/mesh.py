@@ -4,51 +4,6 @@ from skimage import measure
 from ..libmise import mise
 import trimesh
 
-
-def mesh_from_implicit_func(func,
-                            bbox,
-                            resolution=(256, 256, 256),
-                            level_set=0,
-                            extractt_max_component=False,
-                            coarse_bbox=False):
-    resolution = np.asarray(resolution)
-    if coarse_bbox:
-        grid, scale, offset = create_grid(bbox, resolution // 2)
-        val = MISE(func, grid)
-        verts, faces, _, _ = measure.marching_cubes(
-            val.transpose(1, 0, 2), level_set, gradient_direction="descent")
-        verts = verts / (resolution // 2) - 0.5
-        verts = verts * scale + offset
-
-        max_verts = verts.max(axis=0)
-        min_verts = verts.min(axis=0)
-        scale = max_verts - min_verts
-
-        bbox = (min_verts - 0.2 * scale, max_verts + 0.2 * scale)
-
-    grid, scale, offset = create_grid(bbox, resolution)
-    val = MISE(func, grid)
-    verts, faces, _, _ = measure.marching_cubes(
-        val.transpose(1, 0, 2), level_set, gradient_direction="descent")
-    verts = verts / resolution - 0.5
-    verts = verts * scale + offset
-
-    mesh = trimesh.Trimesh(verts, faces)
-    if extractt_max_component:
-        # remove disconnect part
-        connected_comp = mesh.split(only_watertight=False)
-        max_area = 0
-        max_comp = None
-        for comp in connected_comp:
-            if comp.area > max_area:
-                max_area = comp.area
-                max_comp = comp
-        mesh = max_comp
-        return mesh
-    else:
-        return mesh
-
-
 def create_grid(bbox, resolution):
     # create voxel grid
     resX, resY, resZ = resolution
@@ -70,8 +25,6 @@ def create_grid(bbox, resolution):
 def batch_eval(eval_func, pts, max_size=8192):
     outputs = []
     for batch in np.array_split(pts, (len(pts) + max_size - 1) // max_size):
-        # import pdb
-        # pdb.set_trace()
         outputs.append(eval_func(batch))
     return np.concatenate(outputs, axis=0)
 
@@ -99,8 +52,6 @@ def MISE(eval_fn, grid, threshold=0.0005, step=1):
         # TODO: replace to_eval with indices?
         to_eval[::step, ::step, ::step] = True
         mask = np.logical_and(to_eval, unoccupied)
-        # import pdb
-        # pdb.set_trace()
         values[mask] = batch_eval(eval_fn, grid[:, mask].T)
         if step <= 1:
             # has already reached leaf nodes
@@ -156,7 +107,6 @@ def generate_mesh(func, verts, level_set=0, res_init=32, res_up=3, point_batch=5
         points = mesh_extractor.query()
     
     value_grid = mesh_extractor.to_dense()
-    # value_grid = np.pad(value_grid, 1, "constant", constant_values=-1e6)
 
     # marching cube
     verts, faces, normals, values = measure.marching_cubes_lewiner(

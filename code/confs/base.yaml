@@ -3,8 +3,8 @@ hydra:
         dir: "outputs/${exp}/${run}"
 
 defaults:
-  - model: idr
-  - dataset: threedpw
+  - model: model_w_bg
+  - dataset: video
   - _self_
 
 seed: 42

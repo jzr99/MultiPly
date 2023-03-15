@@ -156,11 +156,11 @@ def estimate_translation_cv2(joints_3d, joints_2d, focal_length=600, img_size=np
 
 if __name__ == '__main__':
     device = torch.device("cuda:0")
-    seq = 'emdb_00080_3'
-    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
-    transpose = False
+    seq = 'C7_00'
+    dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman # threedpw # ma # emdb # tiktok
+    transpose = True
     gender = 'm'
-    if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic':
+    if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic' or dataset == 'emdb' or dataset == 'ma' or dataset == 'tiktok':
         DIR = '/home/chen/disk2/Youtube_Videos'
     elif dataset == 'monoperfcap':
         DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
@@ -228,6 +228,16 @@ if __name__ == '__main__':
     #     source_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl'
     #     source_file = pkl.load(open(source_dir, 'rb'), encoding='latin1')
     #     cam_intrinsics = source_file['cam_intrinsics']
+    elif dataset == 'emdb':
+        focal_length = 960
+        cam_intrinsics = np.array([[focal_length, 0., 360.],[0.,focal_length, 480.],[0.,0.,1.]])
+    elif dataset == 'ma':
+        focal_length = 1280
+        cam_intrinsics = np.array([[focal_length, 0., 360.],[0.,focal_length, 640.],[0.,0.,1.]])
+    elif dataset == 'tiktok':
+        focal_length = 1080
+        cam_intrinsics = np.array([[focal_length, 0., 302.],[0.,focal_length, 540.],[0.,0.,1.]])
+
     cam_extrinsics = np.eye(4)
     render_R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
     render_T = torch.tensor(cam_extrinsics[:3, 3])[None].float() 
@@ -251,6 +261,7 @@ if __name__ == '__main__':
             # tracking in case of two persons
             if len(seq_file['smpl_thetas']) >= 2:
                 dist = []
+                last_j3d = seq_file['joints'][actor_id]
                 for i in range(len(seq_file['smpl_thetas'])):
                     dist.append(np.linalg.norm(seq_file['joints'][i].mean(0) - last_j3d.mean(0, keepdims=True)))
                 # dist = [np.linalg.norm(seq_file['pj2d_org'][0].mean(0) - last_pj2d.mean(0, keepdims=True)), np.linalg.norm(seq_file['pj2d_org'][1].mean(0) - last_pj2d.mean(0, keepdims=True))]

@@ -24,11 +24,11 @@ def transform_smpl(curr_extrinsic, target_extrinsic, smpl_pose, smpl_trans, T_hi
 
 dial_kernel = np.ones((20, 20),np.uint8)
 
-seq = 'emdb_00080_3'
-dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman
-transpose = False
+seq = 'C7_00'
+dataset = 'youtube' # 'youtube' 'monoperfcap' # 'neuman # threedpw # ma # emdb # tiktok
+transpose = True
 gender = 'm'
-if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic':
+if dataset == 'youtube' or dataset == 'neuman' or dataset == 'threedpw' or dataset == 'synthetic' or dataset == 'emdb' or dataset == 'ma' or dataset == 'tiktok':
     DIR = '/home/chen/disk2/Youtube_Videos'
 elif dataset == 'monoperfcap':
     DIR = '/home/chen/disk2/MPI_INF_Dataset/MonoPerfCapDataset'
@@ -99,6 +99,15 @@ elif dataset == 'deepcap':
 #     source_dir = f'/home/chen/disk2/3DPW/sequenceFiles/test/outdoors_fencing_01.pkl'
 #     source_file = pkl.load(open(source_dir, 'rb'), encoding='latin1')
 #     cam_intrinsics = source_file['cam_intrinsics']
+elif dataset == 'emdb':
+    focal_length = 960
+    cam_intrinsics = np.array([[focal_length, 0., 360.],[0.,focal_length, 480.],[0.,0.,1.]])
+elif dataset == 'ma':
+    focal_length = 1280
+    cam_intrinsics = np.array([[focal_length, 0., 360.],[0.,focal_length, 640.],[0.,0.,1.]])
+elif dataset == 'tiktok':
+    focal_length = 1080
+    cam_intrinsics = np.array([[focal_length, 0., 302.],[0.,focal_length, 540.],[0.,0.,1.]])
 
 cam_extrinsics = np.eye(4)
 

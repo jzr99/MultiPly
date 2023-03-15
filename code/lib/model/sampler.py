@@ -1,6 +1,5 @@
 import torch
 
-
 class PointOnBones:
     def __init__(self, bone_ids):
         self.bone_ids = bone_ids

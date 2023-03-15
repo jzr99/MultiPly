@@ -17,15 +17,14 @@ if __name__ == '__main__':
     uvs = []
     texture_paths = []
 
-    mesh = trimesh.load(os.path.join('/home/chen/RGB-PINA/code/outputs/ThreeDPW/exstrimalik_wo_disp_freeze_20_every_20_opt_pose/test_mesh/0006_canonical.ply'), process=False)
-    ours_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='ours', flat_shading=True)
 
-    # mesh = trimesh.load('/home/chen/ml-neuman/debug_output_posed.obj', process=False)
-    # neuman_mesh = Meshes(mesh.vertices, mesh.faces, mesh.vertex_normals, name='neuman', flat_shading=True)
-
+    mesh_256 = trimesh.load(os.path.join('/home/chen/Vid2Avatar_release/code/outputs/ThreeDPW/seattle_wo_disp_freeze_20_every_20_opt_pose/test_mesh_256/0020_deformed.ply'), process=False)
+    mesh_512 = trimesh.load(os.path.join('/home/chen/Vid2Avatar_release/code/outputs/ThreeDPW/seattle_wo_disp_freeze_20_every_20_opt_pose/test_mesh/0020_deformed.ply'), process=False)
+    mesh_512 = Meshes(mesh_512.vertices, mesh_512.faces, mesh_512.vertex_normals, name='mesh_512', flat_shading=True)
+    mesh_256 = Meshes(mesh_256.vertices, mesh_256.faces, mesh_256.vertex_normals, name='mesh_256', flat_shading=True)
     viewer = Viewer()
-    # viewer.scene.add(ours_mesh, neuman_mesh)
-    viewer.scene.add(ours_mesh)
+    viewer.scene.add(mesh_512)
+    viewer.scene.add(mesh_256)
     viewer.scene.origin.enabled = False
-    viewer.scene.floor.enabled = False
+    viewer.scene.floor.enabled = True
     viewer.run()

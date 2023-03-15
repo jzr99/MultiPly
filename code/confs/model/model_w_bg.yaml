@@ -10,7 +10,7 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 200 # 462 # 110
+num_training_frames: 41 # 462 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -73,23 +73,6 @@ ray_sampler:
     add_tiny: 1.0e-6
 loss:
     eikonal_weight : 0.1
-    bone_weight : 10.0
-    reg_weight : 1.0
-    norm_weight : 0.1
-    alpha : 100.0
-deformer:
-    softmax_mode: hierarchical
-    # LBS MLP
-    # network:
-    feature_vector_size: 0
-    d_in: 3
-    d_out: 25
-    dims: [128, 128, 128, 128]
-    multires: 0
-    skip_in: []
-    cond_layer: []
-    dim_cond_embed: 0
-    weight_norm: True
-    init: 'none'
-    bias: 1
-    cond: 'none'
+    density_reg_weight: 5.0e-3
+    opacity_sparse_weight: 3.0e-3
+    in_shape_weight: 1.0e-2

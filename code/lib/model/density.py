@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch
 
-
 class Density(nn.Module):
     def __init__(self, params_init={}):
         super().__init__()
