@@ -1,4 +1,4 @@
-from lib.model.volsdf_w_bg import VolSDF
+from v2a_model import V2AModel
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -32,7 +32,7 @@ def main(opt):
     )
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
-    model = VolSDF(opt, betas_path)
+    model = V2AModel(opt, betas_path)
     trainset = create_dataset(opt.dataset.train)
     validset = create_dataset(opt.dataset.valid)
 

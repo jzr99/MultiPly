@@ -1,24 +1,14 @@
-
-from turtle import width
-from matplotlib.pyplot import contour
 from pytorch3d.renderer import (
     SfMPerspectiveCameras,
-    OpenGLPerspectiveCameras,
     RasterizationSettings,
     MeshRenderer,
     MeshRasterizer,
-    SoftSilhouetteShader,
     SoftPhongShader,
-    HardPhongShader,
     PointLights,
-    TexturesVertex,
-    Materials,
-    look_at_view_transform
 )
 from pytorch3d.structures import Meshes
 import numpy as np
 import torch
-from torch import unsqueeze
 import trimesh
 from pytorch3d.renderer.mesh import Textures
 import cv2
@@ -28,7 +18,7 @@ import glob
 import pickle as pkl
 from tqdm import tqdm
 from utils import smpl_to_pose, PerspectiveCamera
-from loss import joints_2d_loss, pose_temporal_loss, pose_prior_loss, foot_prior_loss, get_loss_weights
+from loss import joints_2d_loss, pose_temporal_loss, get_loss_weights
 smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
                                             use_face_contour=False, openpose_format='coco25'), dtype=torch.long).cuda()
 

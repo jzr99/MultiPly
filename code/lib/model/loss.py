@@ -6,7 +6,7 @@ class Loss(nn.Module):
     def __init__(self, opt):
         super().__init__()
         self.eikonal_weight = opt.eikonal_weight
-        self.density_reg_weight = opt.density_reg_weight
+        self.bce_weight = opt.bce_weight
         self.opacity_sparse_weight = opt.opacity_sparse_weight
         self.in_shape_weight = opt.in_shape_weight
         self.eps = 1e-6
@@ -44,21 +44,21 @@ class Loss(nn.Module):
         rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
-        density_reg_loss = self.get_bce_los(model_outputs['acc_map'])
+        bce_loss = self.get_bce_los(model_outputs['acc_map'])
         opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
         in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
 
         loss = rgb_loss + \
                self.eikonal_weight * eikonal_loss + \
-               self.density_reg_weight * density_reg_loss + \
+               self.bce_weight * bce_loss + \
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
             'eikonal_loss': eikonal_loss,
-            'density_reg_loss': density_reg_loss,
+            'bce_loss': bce_loss,
             'opacity_sparse_loss': opacity_sparse_loss,
             'in_shape_loss': in_shape_loss,
         }

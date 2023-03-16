@@ -240,4 +240,4 @@ class ThreeDPWTestDataset(torch.utils.data.Dataset):
             # "normal": images["normal"],
             "img_size": images["img_size"]
         }
-        return inputs, images, self.pixel_per_batch, self.total_pixels, idx, self.free_view_render, self.canonical_vis, self.animation
+        return inputs, images, self.pixel_per_batch, self.total_pixels, idx

@@ -1,6 +1,4 @@
 learning_rate : 5.0e-4
-alpha_milestones : []
-alpha_factor : 2
 sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: True
@@ -10,7 +8,7 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 41 # 462 # 110
+num_training_frames: 42 # 462 # 110
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -44,10 +42,10 @@ bg_implicit_network:
     weight_norm: False
     embedder_mode: 'fourier'
     multires: 10
-    cond: 'frame' # 'none' # 'frame'
+    cond: 'frame'
 bg_rendering_network:
     feature_vector_size: 256
-    mode: 'nerf_frame_encoding' # 'nerf'
+    mode: 'nerf_frame_encoding'
     d_in: 3
     d_out: 3
     dims: [128] # [128, 128]
@@ -73,6 +71,6 @@ ray_sampler:
     add_tiny: 1.0e-6
 loss:
     eikonal_weight : 0.1
-    density_reg_weight: 5.0e-3
+    bce_weight: 5.0e-3
     opacity_sparse_weight: 3.0e-3
     in_shape_weight: 1.0e-2
