@@ -19,8 +19,8 @@ class V2AModel(pl.LightningModule):
         self.model = V2A(opt.model, betas_path)
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
-        self.start_frame = 0
-        self.end_frame = 42
+        self.start_frame = opt.dataset.train.start_frame
+        self.end_frame = opt.dataset.train.end_frame
         self.training_indices = list(range(self.start_frame, self.end_frame))
         assert len(self.training_indices) == self.num_training_frames
         self.opt_smpl = True
@@ -257,72 +257,72 @@ class V2AModel(pl.LightningModule):
         mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
         mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
-        # for i in range(num_splits):
-        #     indices = list(range(i * pixel_per_batch,
-        #                         min((i + 1) * pixel_per_batch, total_pixels)))
-        #     batch_inputs = {"uv": inputs["uv"][:, indices],
-        #                     "P": inputs["P"],
-        #                     "C": inputs["C"],
-        #                     "intrinsics": inputs['intrinsics'],
-        #                     "pose": inputs['pose'],
-        #                     "smpl_params": inputs["smpl_params"],
-        #                     "smpl_pose": inputs["smpl_params"][:, 4:76],
-        #                     "smpl_shape": inputs["smpl_params"][:, 76:],
-        #                     "smpl_trans": inputs["smpl_params"][:, 1:4],
-        #                     "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+        for i in range(num_splits):
+            indices = list(range(i * pixel_per_batch,
+                                min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "P": inputs["P"],
+                            "C": inputs["C"],
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:, 4:76],
+                            "smpl_shape": inputs["smpl_params"][:, 76:],
+                            "smpl_trans": inputs["smpl_params"][:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
 
-        #     if self.opt_smpl:
-        #         body_model_params = self.body_model_params(inputs['idx'])
+            if self.opt_smpl:
+                body_model_params = self.body_model_params(inputs['idx'])
 
-        #         batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
-        #         batch_inputs.update({'smpl_shape': body_model_params['betas']})
-        #         batch_inputs.update({'smpl_trans': body_model_params['transl']})
+                batch_inputs.update({'smpl_pose': torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                batch_inputs.update({'smpl_trans': body_model_params['transl']})
 
-        #     batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
-        #                      "img_size": targets["img_size"]}
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+                             "img_size": targets["img_size"]}
 
-        #     with torch.no_grad():
-        #         model_outputs = self.model(batch_inputs)
-        #     results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(), 
-        #                     "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
-        #                     "normal_values": model_outputs["normal_values"].detach().clone(),
-        #                     "acc_map": model_outputs["acc_map"].detach().clone(),
-        #                     **batch_targets})         
+            with torch.no_grad():
+                model_outputs = self.model(batch_inputs)
+            results.append({"rgb_values":model_outputs["rgb_values"].detach().clone(),
+                            "fg_rgb_values":model_outputs["fg_rgb_values"].detach().clone(),
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
+                            **batch_targets})
 
-        # img_size = results[0]["img_size"]
-        # rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
-        # rgb_pred = rgb_pred.reshape(*img_size, -1)
+        img_size = results[0]["img_size"]
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
 
-        # fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
-        # fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
 
-        # normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
-        # normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
 
-        # pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
-        # pred_mask = pred_mask.reshape(*img_size, -1)
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
 
-        # if results[0]['rgb'] is not None:
-        #     rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
-        #     rgb_gt = rgb_gt.reshape(*img_size, -1)
-        #     rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
-        # else:
-        #     rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
-        # if 'normal' in results[0].keys():
-        #     normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
-        #     normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
-        #     normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
-        # else:
-        #     normal = torch.cat([normal_pred], dim=0).cpu().numpy()
-        
-        # rgb = (rgb * 255).astype(np.uint8)
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
 
-        # fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
-        # fg_rgb = (fg_rgb * 255).astype(np.uint8)
+        rgb = (rgb * 255).astype(np.uint8)
 
-        # normal = (normal * 255).astype(np.uint8)
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
 
-        # cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        # cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        # cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        # cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+        normal = (normal * 255).astype(np.uint8)
+
+        cv2.imwrite(f"test_mask/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        cv2.imwrite(f"test_rendering/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"test_fg_rendering/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])

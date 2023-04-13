@@ -6,6 +6,9 @@ def find_dataset_using_name(name):
         "ThreeDPW": ThreeDPWDataset,
         "ThreeDPWVal": ThreeDPWValDataset,
         "ThreeDPWTest": ThreeDPWTestDataset,
+        "Hi4D": ThreeDPWDataset,
+        "Hi4DVal": ThreeDPWValDataset,
+        "Hi4DTest": ThreeDPWTestDataset,
     }
     cls = mapping.get(name, None)
     if cls is None:
