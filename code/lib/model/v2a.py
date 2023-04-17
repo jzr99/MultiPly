@@ -135,7 +135,7 @@ class V2A(nn.Module):
         x = x.reshape(-1, 3)
         mnfld_pred = self.foreground_implicit_network_list[person_id](x, cond)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
-    def forward(self, input):
+    def forward(self, input, id=-1):
         # Parse model input
         torch.set_grad_enabled(True)
         intrinsics = input["intrinsics"]
@@ -175,8 +175,11 @@ class V2A(nn.Module):
         index_off_surface_list = []
         index_in_surface_list = []
         grad_theta_list = []
-
-        for person_id in range(num_person):
+        if id == -1:
+            person_list = range(num_person)
+        else:
+            person_list = [id]
+        for person_id in person_list:
             cond = {'smpl': smpl_pose[:, person_id, 3:] / np.pi}
             if self.training:
                 if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:

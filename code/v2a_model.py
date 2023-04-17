@@ -105,8 +105,8 @@ class V2AModel(pl.LightningModule):
             for person_id, smpl_server in enumerate(self.model.smpl_server_list):
                 cond = {'smpl': torch.zeros(1, 69).float().cuda()}
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=2)
-                self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.smpl_v_cano.device).float()
-                self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.smpl_v_cano.device)
+                self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.mesh_v_cano_list[person_id].device).float()
+                self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_id].device)
                 self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
         return super().training_epoch_end(outputs)
 
@@ -139,6 +139,16 @@ class V2AModel(pl.LightningModule):
         return verts_deformed
 
     def validation_step(self, batch, *args, **kwargs):
+        outputs = []
+        outputs.append(self.validation_step_single_person(batch, id=-1))
+        if self.num_person > 1:
+            for i in range(self.num_person):
+                outputs.append(self.validation_step_single_person(batch, id=i))
+
+        return outputs
+
+
+    def validation_step_single_person(self, batch, id):
 
         output = {}
         inputs, targets = batch
@@ -159,9 +169,12 @@ class V2AModel(pl.LightningModule):
         if self.opt_smpl:
             # body_model_params = self.body_model_params(batch_idx)
             body_params_list = [self.body_model_list[i](inputs['image_id']) for i in range(self.num_person)]
-            inputs['smpl_trans'] = torch.stack([body_model_params['transl'] for body_model_params in body_params_list], dim=1)
-            inputs['smpl_shape'] = torch.stack([body_model_params['betas'] for body_model_params in body_params_list], dim=1)
-            global_orient = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list], dim=1)
+            inputs['smpl_trans'] = torch.stack([body_model_params['transl'] for body_model_params in body_params_list],
+                                               dim=1)
+            inputs['smpl_shape'] = torch.stack([body_model_params['betas'] for body_model_params in body_params_list],
+                                               dim=1)
+            global_orient = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list],
+                                        dim=1)
             body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list], dim=1)
             inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
             # inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
@@ -176,23 +189,29 @@ class V2AModel(pl.LightningModule):
             inputs['smpl_trans'] = inputs["smpl_params"][..., 1:4]
 
         mesh_canonical_list = []
-        for person_id, smpl_server in enumerate(self.model.smpl_server_list):
-            cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:]/np.pi}
-            # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=3)
-            mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
-            mesh_canonical_list.append(mesh_canonical)
+        if id == -1:
+            for person_id, smpl_server in enumerate(self.model.smpl_server_list):
+                cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:] / np.pi}
+                # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
+                                               smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
+                mesh_canonical_list.append(mesh_canonical)
 
         output.update({
-            'canonical_weighted':mesh_canonical_list
+            'canonical_weighted': mesh_canonical_list
         })
 
-        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0] * targets["img_size"][1]))
+        split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'],
+                                                                                       targets["img_size"][0] *
+                                                                                       targets["img_size"][1]))
 
         res = []
         for s in split:
-
-            out = self.model(s)
+            if id==-1:
+                out = self.model(s)
+            else:
+                out = self.model(s, id)
 
             for k, v in out.items():
                 try:
@@ -215,13 +234,12 @@ class V2AModel(pl.LightningModule):
             "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
             **targets,
         })
-            
         return output
 
     def validation_step_end(self, batch_parts):
         return batch_parts
 
-    def validation_epoch_end(self, outputs) -> None:
+    def validation_epoch_end_person(self, outputs, person_id):
         img_size = outputs[0]["img_size"]
 
         rgb_pred = torch.cat([output["rgb_values"] for output in outputs], dim=0)
@@ -258,9 +276,18 @@ class V2AModel(pl.LightningModule):
         for i, canonical_mesh in enumerate(canonical_mesh_list):
             canonical_mesh.export(f"rendering/{self.current_epoch}_{i}.ply")
 
-        cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
-        cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])
-        cv2.imwrite(f"fg_rendering/{self.current_epoch}.png", fg_rgb[:, :, ::-1])
+        cv2.imwrite(f"rendering/{self.current_epoch}_person{person_id}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"normal/{self.current_epoch}_person{person_id}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"fg_rendering/{self.current_epoch}_person{person_id}.png", fg_rgb[:, :, ::-1])
+
+    def validation_epoch_end(self, outputs) -> None:
+        # import pdb; pdb.set_trace()
+        if self.num_person < 2:
+            self.validation_epoch_end_person([outputs[0][0]], person_id=-1)
+        else:
+            self.validation_epoch_end_person([outputs[0][0]], person_id=-1)
+            for i in range(self.num_person):
+                self.validation_epoch_end_person([outputs[0][i+1]], person_id=i)
     
     def test_step(self, batch, *args, **kwargs):
         inputs, targets, pixel_per_batch, total_pixels, idx = batch
