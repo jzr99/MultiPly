@@ -63,7 +63,7 @@ class ErrorBoundSampler(RaySampler):
             N_samples_inverse_sphere = 32
             self.inverse_sphere_sampler = UniformSampler(1.0, 0.0, N_samples_inverse_sphere, False, far=1.0)
 
-    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts):
+    def get_z_vals(self, ray_dirs, cam_loc, model, cond, smpl_tfs, eval_mode, smpl_verts, person_id):
         beta0 = model.density.get_beta().detach()
 
         # Start with uniform sampling
@@ -82,10 +82,10 @@ class ErrorBoundSampler(RaySampler):
             points = cam_loc.unsqueeze(1) + samples.unsqueeze(2) * ray_dirs.unsqueeze(1)
             points_flat = points.reshape(-1, 3)
             # Calculating the SDF only for the new sampled points
-            model.implicit_network.eval()
+            model.foreground_implicit_network_list[person_id].eval()
             with torch.no_grad():
-                samples_sdf = model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts)[0] 
-            model.implicit_network.train()
+                samples_sdf = model.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs, smpl_verts=smpl_verts, person_id=person_id)[0]
+            model.foreground_implicit_network_list[person_id].train()
             if samples_idx is not None:
                 sdf_merge = torch.cat([sdf.reshape(-1, z_vals.shape[1] - samples.shape[1]),
                                        samples_sdf.reshape(-1, samples.shape[1])], -1)

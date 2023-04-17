@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from .smpl import SMPLServer
 from pytorch3d import ops
 
-class SMPLDeformer():
+class SMPLDeformer(torch.nn.Module):
     def __init__(self, max_dist=0.05, K=1, gender='male', betas=None):
         super().__init__()
 

@@ -1,14 +1,15 @@
 from .threedpw import ThreeDPWDataset, ThreeDPWValDataset, ThreeDPWTestDataset
 from torch.utils.data import DataLoader
+from .Hi4D import Hi4DDataset, Hi4DTestDataset, Hi4DValDataset
 
 def find_dataset_using_name(name):
     mapping = {
         "ThreeDPW": ThreeDPWDataset,
         "ThreeDPWVal": ThreeDPWValDataset,
         "ThreeDPWTest": ThreeDPWTestDataset,
-        "Hi4D": ThreeDPWDataset,
-        "Hi4DVal": ThreeDPWValDataset,
-        "Hi4DTest": ThreeDPWTestDataset,
+        "Hi4D": Hi4DDataset,
+        "Hi4DVal": Hi4DValDataset,
+        "Hi4DTest": Hi4DTestDataset,
     }
     cls = mapping.get(name, None)
     if cls is None:

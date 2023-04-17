@@ -25,33 +25,37 @@ class V2AModel(pl.LightningModule):
         assert len(self.training_indices) == self.num_training_frames
         self.opt_smpl = True
         self.training_modules = ["model"]
+        self.num_person = opt.dataset.train.num_person
         if self.opt_smpl:
-            self.body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
-            self.load_body_model_params()
-            optim_params = self.body_model_params.param_names
-            for param_name in optim_params:
-                self.body_model_params.set_requires_grad(param_name, requires_grad=True)
-            self.training_modules += ['body_model_params']
-        
+            self.body_model_list = torch.nn.ModuleList()
+            for i in range(self.num_person):
+                body_model_params = BodyModelParams(opt.model.num_training_frames, model_type='smpl')
+                self.body_model_list.append(body_model_params)
+                self.load_body_model_params(i)
+                optim_params = self.body_model_list[i].param_names
+                for param_name in optim_params:
+                    self.body_model_list[i].set_requires_grad(param_name, requires_grad=True)
+            self.training_modules += ['body_model_list']
+
         self.loss = Loss(opt.model.loss)
         
-    def load_body_model_params(self):
-        body_model_params = {param_name: [] for param_name in self.body_model_params.param_names}
+    def load_body_model_params(self, index):
+        body_model_params = {param_name: [] for param_name in self.body_model_list[index].param_names}
         data_root = os.path.join('../data', self.opt.dataset.train.data_dir)
         data_root = hydra.utils.to_absolute_path(data_root)
 
-        body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None], dtype=torch.float32)
-        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices][:, :3], dtype=torch.float32)
-        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices] [:, 3:], dtype=torch.float32)
-        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.training_indices], dtype=torch.float32)
+        body_model_params['betas'] = torch.tensor(np.load(os.path.join(data_root, 'mean_shape.npy'))[None, index], dtype=torch.float32)
+        body_model_params['global_orient'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices][:, index, :3], dtype=torch.float32)
+        body_model_params['body_pose'] = torch.tensor(np.load(os.path.join(data_root, 'poses.npy'))[self.training_indices] [:, index, 3:], dtype=torch.float32)
+        body_model_params['transl'] = torch.tensor(np.load(os.path.join(data_root, 'normalize_trans.npy'))[self.training_indices][:, index], dtype=torch.float32)
 
         for param_name in body_model_params.keys():
-            self.body_model_params.init_parameters(param_name, body_model_params[param_name], requires_grad=False) 
+            self.body_model_list[index].init_parameters(param_name, body_model_params[param_name], requires_grad=False)
 
     def configure_optimizers(self):
         params = [{'params': self.model.parameters(), 'lr':self.opt.model.learning_rate}]
         if self.opt_smpl:
-            params.append({'params': self.body_model_params.parameters(), 'lr':self.opt.model.learning_rate*0.1})
+            params.append({'params': self.body_model_list.parameters(), 'lr':self.opt.model.learning_rate*0.1})
         self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate, eps=1e-8)
         self.scheduler = optim.lr_scheduler.MultiStepLR(
             self.optimizer, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
@@ -65,16 +69,26 @@ class V2AModel(pl.LightningModule):
         device = inputs["smpl_params"].device
 
         if self.opt_smpl:
-            body_model_params = self.body_model_params(batch_idx)
-            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-            inputs['smpl_shape'] = body_model_params['betas']
-            inputs['smpl_trans'] = body_model_params['transl']
+            # body_model_params = self.body_model_params(batch_idx)
+            body_params_list = [self.body_model_list[i](batch_idx) for i in range(self.num_person)]
+            inputs['smpl_trans'] = torch.stack([body_model_params['transl'] for body_model_params in body_params_list], dim=1)
+            inputs['smpl_shape'] = torch.stack([body_model_params['betas'] for body_model_params in body_params_list], dim=1)
+            global_orient = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list], dim=1)
+            body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list], dim=1)
+            inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+            # inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            # inputs['smpl_shape'] = body_model_params['betas']
+            # inputs['smpl_trans'] = body_model_params['transl']
         else:
-            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+            # inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            # inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            # inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+            inputs['smpl_pose'] = inputs["smpl_params"][..., 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][..., 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][..., 1:4]
 
         inputs['current_epoch'] = self.current_epoch
+        # import pdb;pdb.set_trace()
         model_outputs = self.model(inputs)
 
         loss_output = self.loss(model_outputs, targets)
@@ -88,17 +102,18 @@ class V2AModel(pl.LightningModule):
     def training_epoch_end(self, outputs) -> None:        
         # Canonical mesh update every 20 epochs
         if self.current_epoch != 0 and self.current_epoch % 20 == 0:
-            cond = {'smpl': torch.zeros(1, 69).float().cuda()}
-            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=2)
-            self.model.mesh_v_cano = torch.tensor(mesh_canonical.vertices[None], device = self.model.smpl_v_cano.device).float()
-            self.model.mesh_f_cano = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.smpl_v_cano.device)
-            self.model.mesh_face_vertices = index_vertices_by_faces(self.model.mesh_v_cano, self.model.mesh_f_cano)
+            for person_id, smpl_server in enumerate(self.model.smpl_server_list):
+                cond = {'smpl': torch.zeros(1, 69).float().cuda()}
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=2)
+                self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.smpl_v_cano.device).float()
+                self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.smpl_v_cano.device)
+                self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
         return super().training_epoch_end(outputs)
 
-    def query_oc(self, x, cond):
+    def query_oc(self, x, cond, person_id):
         
         x = x.reshape(-1, 3)
-        mnfld_pred = self.model.implicit_network(x, cond)[:,:,0].reshape(-1,1)
+        mnfld_pred = self.model.foreground_implicit_network_list[person_id](x, cond)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
 
     def query_wc(self, x):
@@ -131,24 +146,45 @@ class V2AModel(pl.LightningModule):
         self.model.eval()
 
         device = inputs["smpl_params"].device
+        # if self.opt_smpl:
+        #     body_model_params = self.body_model_params(inputs['image_id'])
+        #     inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+        #     inputs['smpl_shape'] = body_model_params['betas']
+        #     inputs['smpl_trans'] = body_model_params['transl']
+        #
+        # else:
+        #     inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+        #     inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+        #     inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
         if self.opt_smpl:
-            body_model_params = self.body_model_params(inputs['image_id'])
-            inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
-            inputs['smpl_shape'] = body_model_params['betas']
-            inputs['smpl_trans'] = body_model_params['transl']
-
+            # body_model_params = self.body_model_params(batch_idx)
+            body_params_list = [self.body_model_list[i](inputs['image_id']) for i in range(self.num_person)]
+            inputs['smpl_trans'] = torch.stack([body_model_params['transl'] for body_model_params in body_params_list], dim=1)
+            inputs['smpl_shape'] = torch.stack([body_model_params['betas'] for body_model_params in body_params_list], dim=1)
+            global_orient = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list], dim=1)
+            body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list], dim=1)
+            inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+            # inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
+            # inputs['smpl_shape'] = body_model_params['betas']
+            # inputs['smpl_trans'] = body_model_params['transl']
         else:
-            inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
-            inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
-            inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+            # inputs['smpl_pose'] = inputs["smpl_params"][:, 4:76]
+            # inputs['smpl_shape'] = inputs["smpl_params"][:, 76:]
+            # inputs['smpl_trans'] = inputs["smpl_params"][:, 1:4]
+            inputs['smpl_pose'] = inputs["smpl_params"][..., 4:76]
+            inputs['smpl_shape'] = inputs["smpl_params"][..., 76:]
+            inputs['smpl_trans'] = inputs["smpl_params"][..., 1:4]
 
-        cond = {'smpl': inputs["smpl_pose"][:, 3:]/np.pi}
-        mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-        
-        mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
-        
+        mesh_canonical_list = []
+        for person_id, smpl_server in enumerate(self.model.smpl_server_list):
+            cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:]/np.pi}
+            # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=3)
+            mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
+            mesh_canonical_list.append(mesh_canonical)
+
         output.update({
-            'canonical_weighted':mesh_canonical
+            'canonical_weighted':mesh_canonical_list
         })
 
         split = idr_utils.split_input(inputs, targets["total_pixels"][0], n_pixels=min(targets['pixel_per_batch'], targets["img_size"][0] * targets["img_size"][1]))
@@ -218,8 +254,9 @@ class V2AModel(pl.LightningModule):
         os.makedirs("normal", exist_ok=True)
         os.makedirs('fg_rendering', exist_ok=True)
 
-        canonical_mesh = outputs[0]['canonical_weighted']
-        canonical_mesh.export(f"rendering/{self.current_epoch}.ply")
+        canonical_mesh_list = outputs[0]['canonical_weighted']
+        for i, canonical_mesh in enumerate(canonical_mesh_list):
+            canonical_mesh.export(f"rendering/{self.current_epoch}_{i}.ply")
 
         cv2.imwrite(f"rendering/{self.current_epoch}.png", rgb[:, :, ::-1])
         cv2.imwrite(f"normal/{self.current_epoch}.png", normal[:, :, ::-1])

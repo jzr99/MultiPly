@@ -1,19 +1,19 @@
 train:
     dataset: Hi4D
-    subject: "pair01_hug01_cam4"
+    subject: "pair01_hug01_cam4_all"
     start_frame: 0
     end_frame: 120
     batch_size: 1
     drop_last: False
     shuffle: True
     worker: 8
-
-    data_dir : Hi4D_pair01_hug01_cam4/
+    num_person: 2
+    data_dir : Hi4D_pair01_hug01_cam4_all/
     num_sample : 512
 
 valid:
     dataset: "Hi4DVal"
-    subject: "pair01_hug01_cam4"
+    subject: "pair01_hug01_cam4_all"
     start_frame: 0
     end_frame: 120
     image_id: 0
@@ -23,13 +23,13 @@ valid:
     shuffle: False
     worker: 8
 
-    data_dir : Hi4D_pair01_hug01_cam4/
+    data_dir : Hi4D_pair01_hug01_cam4_all/
     num_sample : -1
     pixel_per_batch: 2048
 
 test:
     dataset: "Hi4DTest"
-    subject: "pair01_hug01_cam4"
+    subject: "pair01_hug01_cam4_all"
     start_frame: 0
     end_frame: 120
     image_id: 0
@@ -39,6 +39,6 @@ test:
     shuffle: False
     worker: 0
 
-    data_dir : Hi4D_pair01_hug01_cam4/
+    data_dir : Hi4D_pair01_hug01_cam4_all/
     num_sample : 0
     pixel_per_batch: 2048

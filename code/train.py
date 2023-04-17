@@ -26,10 +26,10 @@ def main(opt):
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
-        check_val_every_n_epoch=50,
+        check_val_every_n_epoch=10,
         logger=logger,
         log_every_n_steps=1,
-        num_sanity_val_steps=0
+        num_sanity_val_steps=1
     )
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
