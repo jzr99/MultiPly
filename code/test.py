@@ -20,7 +20,8 @@ def main(opt):
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
     trainer = pl.Trainer(
-        gpus=1,
+        devices=1,
+        # gpus=1,
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
@@ -32,10 +33,10 @@ def main(opt):
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = V2AModel(opt, betas_path)
-    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+    # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     testset = create_dataset(opt.dataset.test)
 
-    trainer.test(model, testset, ckpt_path=checkpoint)
+    trainer.test(model, testset, ckpt_path="checkpoints/last-v3.ckpt")
 
 if __name__ == '__main__':
     main()
