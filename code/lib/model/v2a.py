@@ -48,15 +48,17 @@ class V2A(nn.Module):
         self.sampler = PointInSpace()
 
         self.use_smpl_deformer = opt.use_smpl_deformer
-        self.gender = 'male'
+        # self.gender = 'male'
+        self.gender_list = np.load(betas_path[:-14] + "gender.npy")
         if self.use_smpl_deformer:
             self.deformer_list = torch.nn.ModuleList()
+            # self.deformer_list = []
             if len(betas.shape) == 2:
                 for i in range(betas.shape[0]):
-                    deformer = SMPLDeformer(betas=betas[i], gender=self.gender)
+                    deformer = SMPLDeformer(betas=betas[i], gender=self.gender_list[i])
                     self.deformer_list.append(deformer)
             else:
-                deformer = SMPLDeformer(betas=betas, gender=self.gender)
+                deformer = SMPLDeformer(betas=betas, gender='male')
                 self.deformer_list.append(deformer)
 
 
@@ -72,10 +74,10 @@ class V2A(nn.Module):
         self.smpl_server_list = torch.nn.ModuleList()
         if len(betas.shape) == 2:
             for i in range(betas.shape[0]):
-                smpl_server = SMPLServer(gender=self.gender, betas=betas[i])
+                smpl_server = SMPLServer(gender=self.gender_list[i], betas=betas[i])
                 self.smpl_server_list.append(smpl_server)
         else:
-            smpl_server = SMPLServer(gender=self.gender, betas=betas)
+            smpl_server = SMPLServer(gender='male', betas=betas)
             self.smpl_server_list.append(smpl_server)
         # self.smpl_server = SMPLServer(gender=self.gender, betas=betas)
         # self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
@@ -358,6 +360,7 @@ class V2A(nn.Module):
         for i in range(num_dim):
             d_out = torch.zeros_like(pnts_d, requires_grad=False, device=pnts_d.device)
             d_out[:, i] = 1
+            # import ipdb;ipdb.set_trace()
             grad = torch.autograd.grad(
                 outputs=pnts_d,
                 inputs=pnts_c,
