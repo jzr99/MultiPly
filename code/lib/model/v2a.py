@@ -16,6 +16,7 @@ from torch.autograd import grad
 import hydra
 import kaolin
 from kaolin.ops.mesh import index_vertices_by_faces
+from pytorch3d import ops
 class V2A(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -177,6 +178,7 @@ class V2A(nn.Module):
         index_off_surface_list = []
         index_in_surface_list = []
         grad_theta_list = []
+        interpenetration_loss = torch.zeros(1,device=smpl_pose.device)
         if id == -1:
             person_list = range(num_person)
         else:
@@ -186,6 +188,8 @@ class V2A(nn.Module):
             if self.training:
                 if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
                     cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
+            # if True:
+            #     cond = {'smpl': input["smpl_pose_cond_24"][:, person_id, 3:] / np.pi}
             z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs_list[person_id], eval_mode=True, smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
 
             z_vals, z_vals_bg = z_vals
@@ -224,6 +228,33 @@ class V2A(nn.Module):
 
                 differentiable_points = canonical_points
 
+                # sample point for interpenetration loss
+                assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
+                assert len(person_list) == 2
+                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
+                partner_id = 1-person_id
+
+                x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
+                                                                          inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
+                output = self.foreground_implicit_network_list[partner_id](x_c, cond)[0]
+                sdf = output[:, 0:1]
+                sdf = sdf.reshape(-1)
+                if (sdf < -0.01).any():
+                    penetrate_point = sample_point[:, sdf < -0.01]
+                    # if there is a possibility that it actually make it penetrate? like smpl is outside but implicit is inside?
+                    # TODO try to penelize implicit function
+                    distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point, smpl_output_list[partner_id]['smpl_verts'], K=1, return_nn=True)
+                    # (N, P1, K, D) for neighbor_points
+                    neighbor_points = neighbor_points.mean(dim=2)
+                    # filter outlier point
+                    stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.5
+                    if stable_point.any():
+                        penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
+                        neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
+                        # TODO make the neightbor_points move torwards its normal by a little margin
+                        interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point, neighbor_points)
+
             else:
                 differentiable_points = canonical_points.reshape(num_pixels, N_samples, 3).reshape(-1, 3)
                 grad_theta = None
@@ -234,6 +265,9 @@ class V2A(nn.Module):
             view = -dirs.reshape(-1, 3)
 
             if differentiable_points.shape[0] > 0:
+                # if True:
+                #     # cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
+                #     cond = {'smpl': input["smpl_pose_cond_24"][:, person_id, 3:] / np.pi}
                 fg_rgb_flat, others = self.get_rbg_value(points_flat, differentiable_points, view,
                                                          cond, smpl_tfs_list[person_id], feature_vectors=feature_vectors, person_id=person_id, is_training=self.training)
                 normal_values = others['normals']
@@ -322,6 +356,7 @@ class V2A(nn.Module):
                 'acc_map': torch.sum(weights, -1),
                 'sdf_output': sdf_output,
                 'grad_theta': grad_theta,
+                'interpenetration_loss': interpenetration_loss,
                 'epoch': input['current_epoch'],
             }
         else:

@@ -48,12 +48,13 @@ class Loss(nn.Module):
         opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
         in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
-
+        interpenetration_loss = model_outputs['interpenetration_loss']
         loss = rgb_loss + \
                self.eikonal_weight * eikonal_loss + \
                self.bce_weight * bce_loss + \
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
-               self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss
+               self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
+               interpenetration_loss
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
@@ -61,4 +62,5 @@ class Loss(nn.Module):
             'bce_loss': bce_loss,
             'opacity_sparse_loss': opacity_sparse_loss,
             'in_shape_loss': in_shape_loss,
+            'interpenetration_loss': interpenetration_loss,
         }

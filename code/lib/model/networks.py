@@ -157,6 +157,8 @@ class RenderingNet(nn.Module):
                 view_dirs = self.embedview_fn(view_dirs)
             elif self.mode == 'pose_no_view':
                 points = self.embedview_fn(points)
+            elif self.mode == 'idr':
+                view_dirs = self.embedview_fn(view_dirs)
 
         if self.mode == 'idr':
             rendering_input = torch.cat([points, view_dirs, normals, feature_vectors], dim=-1)
