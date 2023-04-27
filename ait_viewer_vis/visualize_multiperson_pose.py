@@ -1,5 +1,6 @@
-
-Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/downtown_warmWelcome_00"
+Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00/joint_opt_smpl"
+Root_dir_gender = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/courtyard_shakeHands_00"
+# Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/courtyard_shakeHands_00"
 # Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/downtown_warmWelcome_00/joint_opt_smpl"
 import skvideo
 skvideo.setFFmpegPath('/usr/local/bin/')
@@ -112,9 +113,10 @@ def main(args):
     # render SMPL
     if "smpl" in args.vis:
         # gender = dict(np.load(os.path.join(root, "meta.npz")))["genders"]
+        gender = np.load(os.path.join(Root_dir_gender, 'gender.npy'))
         for p in range(2):
             # smpl_layer = SMPLLayer(model_type="smpl", gender=gender[p])
-            smpl_layer = SMPLLayer(model_type="smpl", gender='male')
+            smpl_layer = SMPLLayer(model_type="smpl", gender=gender[p])
             # smpl_paths = sorted(glob.glob(f"{root}/results/mono_smpl/{args.exp}/{args.cams}/*.npz"))
             #
             # poses_body, poses_root, betas, trans, colors = [], [], [], [], []
