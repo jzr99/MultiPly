@@ -9,10 +9,13 @@ class Loss(nn.Module):
         self.bce_weight = opt.bce_weight
         self.opacity_sparse_weight = opt.opacity_sparse_weight
         self.in_shape_weight = opt.in_shape_weight
+        self.sam_mask_weight = opt.sam_mask_weight
         self.eps = 1e-6
         self.milestone = 200
+        self.sam_milestone = 1000
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
+        self.sigmoid = nn.Sigmoid()
     
     # L1 reconstruction loss for RGB values
     def get_rgb_loss(self, rgb_values, rgb_gt):
@@ -39,6 +42,13 @@ class Loss(nn.Module):
         in_shape_loss = self.l1_loss(acc_map[index_in_surface], torch.ones_like(acc_map[index_in_surface]))
         return in_shape_loss
 
+    def get_sam_mask_loss(self, sam_mask, acc_person):
+        sam_mask = self.sigmoid(sam_mask)
+        valid_mask = sam_mask.sum(dim=1) <= (1 + 100 * self.eps)
+        loss = self.l1_loss(acc_person[valid_mask], sam_mask[valid_mask])
+        # import pdb;pdb.set_trace()
+        return loss
+
     def forward(self, model_outputs, ground_truth):
         nan_filter = ~torch.any(model_outputs['rgb_values'].isnan(), dim=1)
         rgb_gt = ground_truth['rgb'][0].cuda()
@@ -49,12 +59,19 @@ class Loss(nn.Module):
         in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
+        temporal_loss = model_outputs['temporal_loss']
+        if 'sam_mask' in model_outputs.keys():
+            sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
+        else:
+            sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)
         loss = rgb_loss + \
                self.eikonal_weight * eikonal_loss + \
                self.bce_weight * bce_loss + \
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
-               interpenetration_loss
+               interpenetration_loss + temporal_loss + \
+               self.sam_mask_weight * sam_mask_loss
+               # self.sam_mask_weight * (1 - min(self.sam_milestone, model_outputs['epoch']) / self.sam_milestone) * sam_mask_loss
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
@@ -63,4 +80,6 @@ class Loss(nn.Module):
             'opacity_sparse_loss': opacity_sparse_loss,
             'in_shape_loss': in_shape_loss,
             'interpenetration_loss': interpenetration_loss,
+            'temporal_loss': temporal_loss,
+            'sam_mask_loss': sam_mask_loss,
         }

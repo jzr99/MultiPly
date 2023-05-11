@@ -4,7 +4,7 @@ hydra:
 
 defaults:
   - model: model_w_bg
-  - dataset: hi4d # video
+  - dataset: 3DPW # hi4d # video # 3DPW
   - _self_
 
 seed: 42

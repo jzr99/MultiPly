@@ -101,6 +101,13 @@ class V2A(nn.Module):
             self.mesh_f_cano_list.append(torch.tensor(smpl_server.smpl.faces.astype(np.int64), device=smpl_server.verts_c.device))
             self.mesh_face_vertices_list.append(index_vertices_by_faces(self.mesh_v_cano_list[-1], self.mesh_f_cano_list[-1]))
 
+        self.sam_0_mask = None
+        self.sam_1_mask = None
+        # if True:
+        #     self.sam_0_mask = np.load('/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/0_sam_opt.npy')
+        #     self.sam_1_mask = np.load(
+        #         '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/1_sam_opt.npy')
+
     def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, person_id):
         if hasattr(self, "deformer_list"):
             x_c, outlier_mask = self.deformer_list[person_id].forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
@@ -141,6 +148,10 @@ class V2A(nn.Module):
     def forward(self, input, id=-1):
         # Parse model input
         torch.set_grad_enabled(True)
+        # if self.sam_0_mask is not None:
+        #     sam_mask = torch.from_numpy(np.stack([self.sam_0_mask[input['idx']], self.sam_1_mask[input['idx']]], axis=0)).float().to(input["smpl_pose"].device)
+        # else:
+        #     sam_mask = None
         intrinsics = input["intrinsics"]
         pose = input["pose"]
         uv = input["uv"]
@@ -174,11 +185,16 @@ class V2A(nn.Module):
         normal_values_list = []
         sdf_output_list = []
         z_vals_list = []
+        person_id_list = []
         z_max_list = []
         index_off_surface_list = []
         index_in_surface_list = []
         grad_theta_list = []
         interpenetration_loss = torch.zeros(1,device=smpl_pose.device)
+        temporal_loss = torch.zeros(1, device=smpl_pose.device)
+        # if input['current_epoch'] < 500 and input['idx'] > 85 and input['idx'] < 125:
+        if self.training and input['current_epoch'] > 250:
+            temporal_loss = torch.mean(torch.square(input["smpl_pose_last"] - input["smpl_pose"]))
         if id == -1:
             person_list = range(num_person)
         else:
@@ -188,6 +204,9 @@ class V2A(nn.Module):
             if self.training:
                 if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
                     cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
+                # if input['current_epoch'] < 500:
+                #     cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
+
             # if True:
             #     cond = {'smpl': input["smpl_pose_cond_24"][:, person_id, 3:] / np.pi}
             z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs_list[person_id], eval_mode=True, smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
@@ -261,6 +280,7 @@ class V2A(nn.Module):
 
             sdf_output = sdf_output.reshape(num_pixels, N_samples, 1).reshape(-1, 1)
             sdf_output_list.append(sdf_output.reshape(num_pixels, N_samples))
+            person_label = torch.ones_like(sdf_output.reshape(num_pixels, N_samples), device=sdf_output.device) * person_id
             z_vals = z_vals
             view = -dirs.reshape(-1, 3)
 
@@ -283,10 +303,12 @@ class V2A(nn.Module):
             normal_values_list.append(normal_values)
             z_max_list.append(z_max)
             z_vals_list.append(z_vals)
+            person_id_list.append(person_label)
 
 
         # DEBUG z_vals_bg use only last persons
         # DEBUG z_max is the same
+        person_id_cat = torch.cat(person_id_list, dim=1)
         z_vals = torch.cat(z_vals_list, dim=1)
         sdf_output = torch.cat(sdf_output_list, dim=1)
         fg_rgb = torch.cat(fg_rgb_list, dim=1)
@@ -298,6 +320,7 @@ class V2A(nn.Module):
         sdf_output = sdf_output[d1_index, sorted_index]
         fg_rgb = fg_rgb[d1_index, sorted_index]
         normal_values = normal_values[d1_index, sorted_index]
+        person_id_cat = person_id_cat[d1_index, sorted_index]
         # sdf_output = sdf_output[sorted_index].reshape(-1,1)
         # fg_rgb = fg_rgb[sorted_index]
         # normal_values = normal_values[sorted_index]
@@ -305,7 +328,17 @@ class V2A(nn.Module):
         weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
         # import pdb; pdb.set_trace()
         fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
-
+        acc_person_list = []
+        for person_id in person_list:
+            number_pixel = weights.shape[0]
+            weight_idx = (person_id_cat==person_id).reshape(-1)
+            weight_person_i = weights.reshape(-1)[weight_idx]
+            weight_person_i = weight_person_i.reshape(number_pixel, -1)
+            # weight_person_i = weights[person_id_cat==person_id]
+            acc_person_i = torch.sum(weight_person_i, dim=-1)
+            acc_person_list.append(acc_person_i)
+        # import ipdb;ipdb.set_trace()
+        acc_person = torch.stack(acc_person_list, dim=1)
         # Background rendering
         if input['idx'] is not None:
             N_bg_samples = z_vals_bg.shape[1]
@@ -347,6 +380,8 @@ class V2A(nn.Module):
             index_in_surface = torch.any(torch.stack(index_in_surface_list, dim=0), dim=0)
             grad_theta = torch.cat(grad_theta_list, dim=1)
             output = {
+                # 'sam_mask': sam_mask,
+                # 'uv': input["uv"],
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,
@@ -357,12 +392,18 @@ class V2A(nn.Module):
                 'sdf_output': sdf_output,
                 'grad_theta': grad_theta,
                 'interpenetration_loss': interpenetration_loss,
+                'temporal_loss': temporal_loss,
+                'acc_person_list': acc_person, # Number pixel, Number person
                 'epoch': input['current_epoch'],
             }
+            # import pdb;pdb.set_trace()
+            if 'sam_mask' in input.keys():
+                output.update({"sam_mask": input['sam_mask'].squeeze()})
         else:
             fg_output_rgb = fg_rgb_values + bg_transmittance.unsqueeze(-1) * torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
             output = {
                 'acc_map': torch.sum(weights, -1),
+                'acc_person_list': acc_person,
                 'rgb_values': rgb_values,
                 'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,

@@ -13,6 +13,9 @@ from kaolin.ops.mesh import index_vertices_by_faces
 import trimesh
 from lib.model.deformer import skinning
 from lib.utils import idr_utils
+from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, overload, Sequence, Tuple, Union
+from pytorch_lightning.core.optimizer import LightningOptimizer
+from torch.optim.optimizer import Optimizer
 class V2AModel(pl.LightningModule):
     def __init__(self, opt, betas_path) -> None:
         super().__init__()
@@ -57,6 +60,7 @@ class V2AModel(pl.LightningModule):
         if self.opt_smpl:
             params.append({'params': self.body_model_list.parameters(), 'lr':self.opt.model.learning_rate*0.1})
         self.optimizer = optim.Adam(params, lr=self.opt.model.learning_rate, eps=1e-8)
+        # self.optimizer = optim.SGD(params, lr=self.opt.model.learning_rate*100000)
         self.scheduler = optim.lr_scheduler.MultiStepLR(
             self.optimizer, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
         return [self.optimizer], [self.scheduler]
@@ -65,6 +69,25 @@ class V2AModel(pl.LightningModule):
         inputs, targets = batch
 
         batch_idx = inputs["idx"]
+        # import ipdb;ipdb.set_trace()
+        if self.current_epoch < 500 and batch_idx > 85 and batch_idx < 125:
+            for param in self.model.foreground_implicit_network_list.parameters():
+                param.requires_grad = False
+            for param in self.model.foreground_rendering_network_list.parameters():
+                param.requires_grad = False
+            for param in self.model.bg_implicit_network.parameters():
+                param.requires_grad = False
+            for param in self.model.bg_rendering_network.parameters():
+                param.requires_grad = False
+        else:
+            for param in self.model.foreground_implicit_network_list.parameters():
+                param.requires_grad = True
+            for param in self.model.foreground_rendering_network_list.parameters():
+                param.requires_grad = True
+            for param in self.model.bg_implicit_network.parameters():
+                param.requires_grad = True
+            for param in self.model.bg_rendering_network.parameters():
+                param.requires_grad = True
         
         device = inputs["smpl_params"].device
 
@@ -76,6 +99,16 @@ class V2AModel(pl.LightningModule):
             global_orient = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list], dim=1)
             body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list], dim=1)
             inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+
+            if batch_idx == 0:
+                last_idx = batch_idx
+            else:
+                last_idx = batch_idx - 1
+            body_params_list_last = [self.body_model_list[i](last_idx) for i in range(self.num_person)]
+            global_orient_last = torch.stack([body_model_params['global_orient'] for body_model_params in body_params_list_last],
+                                        dim=1)
+            body_pose_last = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list_last], dim=1)
+            inputs['smpl_pose_last'] = torch.cat((global_orient_last, body_pose_last), dim=2)
             # inputs['smpl_pose'] = torch.cat((body_model_params['global_orient'], body_model_params['body_pose']), dim=1)
             # inputs['smpl_shape'] = body_model_params['betas']
             # inputs['smpl_trans'] = body_model_params['transl']
@@ -99,7 +132,112 @@ class V2AModel(pl.LightningModule):
                 self.log(k, v.item(), prog_bar=True, on_step=True)
         return loss_output["loss"]
 
-    def training_epoch_end(self, outputs) -> None:        
+    # def backward(
+    #     self, loss, optimizer, optimizer_idx, *args, **kwargs
+    # ) -> None:
+    #     """Called to perform backward on the loss returned in :meth:`training_step`. Override this hook with your
+    #     own implementation if you need to.
+    #
+    #     Args:
+    #         loss: The loss tensor returned by :meth:`training_step`. If gradient accumulation is used, the loss here
+    #             holds the normalized value (scaled by 1 / accumulation steps).
+    #         optimizer: Current optimizer being used. ``None`` if using manual optimization.
+    #         optimizer_idx: Index of the current optimizer being used. ``None`` if using manual optimization.
+    #
+    #     Example::
+    #
+    #         def backward(self, loss, optimizer, optimizer_idx):
+    #             loss.backward()
+    #     """
+    #     if self._fabric:
+    #         self._fabric.backward(loss, *args, **kwargs)
+    #     else:
+    #         loss.backward(*args, **kwargs)
+    #     import ipdb; ipdb.set_trace()
+
+    # def optimizer_step(
+    #     self,
+    #     epoch: int,
+    #     batch_idx: int,
+    #     optimizer: Union[Optimizer, LightningOptimizer],
+    #     optimizer_idx: int = 0,
+    #     optimizer_closure: Optional[Callable[[], Any]] = None,
+    #     on_tpu: bool = False,
+    #     using_lbfgs: bool = False,
+    # ) -> None:
+    #     r"""
+    #     Override this method to adjust the default way the :class:`~pytorch_lightning.trainer.trainer.Trainer` calls
+    #     each optimizer.
+    #
+    #     By default, Lightning calls ``step()`` and ``zero_grad()`` as shown in the example once per optimizer.
+    #     This method (and ``zero_grad()``) won't be called during the accumulation phase when
+    #     ``Trainer(accumulate_grad_batches != 1)``. Overriding this hook has no benefit with manual optimization.
+    #
+    #     Args:
+    #         epoch: Current epoch
+    #         batch_idx: Index of current batch
+    #         optimizer: A PyTorch optimizer
+    #         optimizer_idx: If you used multiple optimizers, this indexes into that list.
+    #         optimizer_closure: The optimizer closure. This closure must be executed as it includes the
+    #             calls to ``training_step()``, ``optimizer.zero_grad()``, and ``backward()``.
+    #         on_tpu: ``True`` if TPU backward is required
+    #         using_lbfgs: True if the matching optimizer is :class:`torch.optim.LBFGS`
+    #
+    #     Examples::
+    #
+    #         # DEFAULT
+    #         def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx,
+    #                            optimizer_closure, on_tpu, using_lbfgs):
+    #             optimizer.step(closure=optimizer_closure)
+    #
+    #         # Alternating schedule for optimizer steps (i.e.: GANs)
+    #         def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx,
+    #                            optimizer_closure, on_tpu, using_lbfgs):
+    #             # update generator opt every step
+    #             if optimizer_idx == 0:
+    #                 optimizer.step(closure=optimizer_closure)
+    #
+    #             # update discriminator opt every 2 steps
+    #             if optimizer_idx == 1:
+    #                 if (batch_idx + 1) % 2 == 0 :
+    #                     optimizer.step(closure=optimizer_closure)
+    #                 else:
+    #                     # call the closure by itself to run `training_step` + `backward` without an optimizer step
+    #                     optimizer_closure()
+    #
+    #             # ...
+    #             # add as many optimizers as you want
+    #
+    #     Here's another example showing how to use this for more advanced things such as
+    #     learning rate warm-up:
+    #
+    #     .. code-block:: python
+    #
+    #         # learning rate warm-up
+    #         def optimizer_step(
+    #             self,
+    #             epoch,
+    #             batch_idx,
+    #             optimizer,
+    #             optimizer_idx,
+    #             optimizer_closure,
+    #             on_tpu,
+    #             using_lbfgs,
+    #         ):
+    #             # update params
+    #             optimizer.step(closure=optimizer_closure)
+    #
+    #             # manually warm up lr without a scheduler
+    #             if self.trainer.global_step < 500:
+    #                 lr_scale = min(1.0, float(self.trainer.global_step + 1) / 500.0)
+    #                 for pg in optimizer.param_groups:
+    #                     pg["lr"] = lr_scale * self.learning_rate
+    #
+    #     """
+    #     import ipdb; ipdb.set_trace()
+    #     optimizer.step(closure=optimizer_closure)
+
+    def training_epoch_end(self, outputs) -> None:
         # Canonical mesh update every 20 epochs
         if self.current_epoch != 0 and self.current_epoch % 20 == 0:
             for person_id, smpl_server in enumerate(self.model.smpl_server_list):
@@ -379,6 +517,7 @@ class V2AModel(pl.LightningModule):
                             "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
                             "normal_values": model_outputs["normal_values"].detach().clone(),
                             "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "acc_person_list": model_outputs["acc_person_list"].detach().clone(),
                             **batch_targets})
 
         img_size = results[0]["img_size"]
@@ -393,6 +532,15 @@ class V2AModel(pl.LightningModule):
 
         pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
         pred_mask = pred_mask.reshape(*img_size, -1)
+
+        if id==-1:
+            instance_mask = torch.cat([result["acc_person_list"] for result in results], dim=0)
+            instance_mask = instance_mask.reshape(*img_size, -1)
+            for i in range(instance_mask.shape[2]):
+                instance_mask_i = instance_mask[:, :, i]
+                os.makedirs(f"test_instance_mask/{i}", exist_ok=True)
+                cv2.imwrite(f"test_instance_mask/{i}/{int(idx.cpu().numpy()):04d}.png", instance_mask_i.cpu().numpy() * 255)
+
 
         if results[0]['rgb'] is not None:
             rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)

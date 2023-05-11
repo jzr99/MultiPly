@@ -8,7 +8,7 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 120 # 42 # 462 # 110
+num_training_frames: 160 # 105 # 120 # 42 # 462 # 110 # 105
 dim_frame_encoding: 32
 implicit_network:
     feature_vector_size: 256
@@ -74,3 +74,4 @@ loss:
     bce_weight: 5.0e-3
     opacity_sparse_weight: 3.0e-3
     in_shape_weight: 1.0e-2
+    sam_mask_weight: 3.0e-2

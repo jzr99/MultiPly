@@ -113,6 +113,15 @@ class Hi4DDataset(torch.utils.data.Dataset):
         # other properties
         self.num_sample = opt.num_sample
         self.sampling_strategy = "weighted"
+        self.using_SAM = opt.using_SAM
+        print("opt.using_SAM ", opt.using_SAM)
+
+        if self.using_SAM:
+            self.sam_0_mask = np.load(
+                '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/0_sam_opt.npy')
+            self.sam_1_mask = np.load(
+                '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/1_sam_opt.npy')
+            self.sam_mask = np.stack([self.sam_0_mask, self.sam_1_mask], axis=-1)
 
     def __len__(self):
         return self.n_images # len(self.images)
@@ -121,6 +130,9 @@ class Hi4DDataset(torch.utils.data.Dataset):
         body_model_params = {}
         return body_model_params
     def __getitem__(self, idx):
+        if self.using_SAM:
+            sam_mask = self.sam_mask[idx]
+
         # normalize RGB
         img = cv2.imread(self.img_paths[idx])
         # preprocess: BGR -> RGB -> Normalize
@@ -153,7 +165,8 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 "uv": uv,
                 "object_mask": mask,
             }
-
+            if self.using_SAM:
+                data.update({"sam_mask": sam_mask})
             samples, index_outside = weighted_sampling(data, img_size, self.num_sample)
             inputs = {
                 "uv": samples["uv"].astype(np.float32),
@@ -165,6 +178,8 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 'index_outside': index_outside,
                 "idx": idx
             }
+            if self.using_SAM:
+                inputs.update({"sam_mask": samples['sam_mask']})
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
         else:
