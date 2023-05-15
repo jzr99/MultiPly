@@ -80,6 +80,9 @@ class SMPLServer(torch.nn.Module):
         joints = smpl_output.joints.clone()
         output['smpl_jnts'] = joints * scale.unsqueeze(1) + transl.unsqueeze(1) * scale.unsqueeze(1)
 
+        all_joints = smpl_output.all_joints.clone()
+        output['smpl_all_jnts'] = all_joints * scale.unsqueeze(1) + transl.unsqueeze(1) * scale.unsqueeze(1)
+
         tf_mats = smpl_output.T.clone()
         tf_mats[:, :, :3, :] = tf_mats[:, :, :3, :] * scale.unsqueeze(1).unsqueeze(1)
         tf_mats[:, :, :3, 3] = tf_mats[:, :, :3, 3] + transl.unsqueeze(1) * scale.unsqueeze(1)

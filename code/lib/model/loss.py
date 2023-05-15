@@ -60,7 +60,7 @@ class Loss(nn.Module):
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
         temporal_loss = model_outputs['temporal_loss']
-        if 'sam_mask' in model_outputs.keys():
+        if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > 200:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
             sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)

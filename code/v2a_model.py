@@ -13,9 +13,13 @@ from kaolin.ops.mesh import index_vertices_by_faces
 import trimesh
 from lib.model.deformer import skinning
 from lib.utils import idr_utils
+from lib.datasets import create_dataset
+from tqdm import tqdm
+from lib.model.render import Renderer
 from typing import Any, Callable, Dict, Generator, List, Mapping, Optional, overload, Sequence, Tuple, Union
 from pytorch_lightning.core.optimizer import LightningOptimizer
 from torch.optim.optimizer import Optimizer
+from lib.model.sam_model import SAMServer
 class V2AModel(pl.LightningModule):
     def __init__(self, opt, betas_path) -> None:
         super().__init__()
@@ -41,6 +45,9 @@ class V2AModel(pl.LightningModule):
             self.training_modules += ['body_model_list']
 
         self.loss = Loss(opt.model.loss)
+        self.sam_server = SAMServer(opt.dataset.train)
+
+
         
     def load_body_model_params(self, index):
         body_model_params = {param_name: [] for param_name in self.body_model_list[index].param_names}
@@ -66,6 +73,9 @@ class V2AModel(pl.LightningModule):
         return [self.optimizer], [self.scheduler]
 
     def training_step(self, batch):
+        # self.get_instance_mask()
+        # self.get_sam_mask()
+
         inputs, targets = batch
 
         batch_idx = inputs["idx"]
@@ -246,7 +256,238 @@ class V2AModel(pl.LightningModule):
                 self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.mesh_v_cano_list[person_id].device).float()
                 self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_id].device)
                 self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
+        if self.current_epoch % 50 == 0:
+            self.get_instance_mask()
+            self.get_sam_mask()
         return super().training_epoch_end(outputs)
+
+    def get_sam_mask(self):
+        print("start get refined SAM mask")
+        self.sam_server.get_sam_mask(self.current_epoch)
+    def get_instance_mask(self):
+        print("start get SMPL instance mask")
+        self.model.eval()
+        os.makedirs(f"stage_mask/{self.current_epoch:05d}/all", exist_ok=True)
+        os.makedirs(f"stage_rendering/{self.current_epoch:05d}/all", exist_ok=True)
+        os.makedirs(f"stage_fg_rendering/{self.current_epoch:05d}/all", exist_ok=True)
+        os.makedirs(f"stage_normal/{self.current_epoch:05d}/all", exist_ok=True)
+        # os.makedirs(f"stage_mesh/{self.current_epoch:05d}/all", exist_ok=True)
+        testset = create_dataset(self.opt.dataset.test)
+        keypoint_list = [[] for _ in range(len(self.model.smpl_server_list))]
+        all_person_smpl_mask_list =[]
+        for batch_ndx, batch in enumerate(tqdm(testset)):
+            # generate instance mask for all test images
+            inputs, targets, pixel_per_batch, total_pixels, idx = batch
+            inputs = {key: value.cuda() for key, value in inputs.items()}
+            # targets = {key: value.cuda() for key, value in targets.items()}
+            num_splits = (total_pixels + pixel_per_batch -
+                          1) // pixel_per_batch
+            results = []
+            for i in range(num_splits):
+                indices = list(range(i * pixel_per_batch,
+                                     min((i + 1) * pixel_per_batch, total_pixels)))
+                batch_inputs = {"uv": inputs["uv"][:, indices],
+                                "P": inputs["P"],
+                                "C": inputs["C"],
+                                "intrinsics": inputs['intrinsics'],
+                                "pose": inputs['pose'],
+                                "smpl_params": inputs["smpl_params"],
+                                "smpl_pose": inputs["smpl_params"][:, :, 4:76],
+                                "smpl_shape": inputs["smpl_params"][:, :, 76:],
+                                "smpl_trans": inputs["smpl_params"][:, :, 1:4],
+                                "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+
+                if self.opt_smpl:
+                    body_params_list = [self.body_model_list[i](inputs['idx']) for i in range(self.num_person)]
+                    batch_inputs['smpl_trans'] = torch.stack(
+                        [body_model_params['transl'] for body_model_params in body_params_list],
+                        dim=1)
+                    batch_inputs['smpl_shape'] = torch.stack(
+                        [body_model_params['betas'] for body_model_params in body_params_list],
+                        dim=1)
+                    global_orient = torch.stack(
+                        [body_model_params['global_orient'] for body_model_params in body_params_list],
+                        dim=1)
+                    body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list],
+                                            dim=1)
+                    batch_inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+
+                batch_targets = {
+                    "rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+                    "img_size": targets["img_size"]}
+                # here -1 means enable all human VolSDF
+
+                # model_outputs = self.model(batch_inputs, -1)
+                # results.append({"rgb_values": model_outputs["rgb_values"].detach().clone(),
+                #                 "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
+                #                 "normal_values": model_outputs["normal_values"].detach().clone(),
+                #                 "acc_map": model_outputs["acc_map"].detach().clone(),
+                #                 "acc_person_list": model_outputs["acc_person_list"].detach().clone(),
+                #                 **batch_targets})
+                results.append({**batch_targets})
+
+            img_size = targets["img_size"]
+            P = batch_inputs["P"][0].cpu().numpy()
+            P_norm = np.eye(4)
+            P_norm[:, :] = P[:, :]
+            assert batch_inputs["smpl_params"][:, 0, 0] == batch_inputs["smpl_params"][:, 1, 0]
+            scale = batch_inputs["smpl_params"][:, 0, 0]
+            scale_eye = np.eye(4)
+            scale_eye[0, 0] = scale
+            scale_eye[1, 1] = scale
+            scale_eye[2, 2] = scale
+            P_norm = P_norm @ scale_eye
+            # 其实蛮奇怪的，最后一维的偏移没有乘以scale，也就是说（P_norm，1/scale * vert）和 （P，verts）不完全等效？
+
+            out = cv2.decomposeProjectionMatrix(P_norm[:3, :])
+            cam_intrinsics = out[0]
+            render_R = out[1]
+            cam_center = out[2]
+            cam_center = (cam_center[:3] / cam_center[3])[:, 0]
+            render_T = -render_R @ cam_center
+            render_R = torch.tensor(render_R)[None].float()
+            render_T = torch.tensor(render_T)[None].float()
+            renderer = Renderer(img_size=[img_size[0], img_size[1]],
+                                cam_intrinsic=cam_intrinsics)
+
+            img_size = targets["img_size"]
+            # renderer = Renderer(img_size=[img_size[0], img_size[1]], cam_intrinsic=batch_inputs["intrinsics"][0].cpu().numpy())
+            # pose = batch_inputs["pose"][0].cpu().numpy()
+            # render_R = torch.tensor(pose[:3, :3])[None].float()
+            # render_T = torch.tensor(pose[:3, 3])[None].float()
+            renderer.set_camera(render_R, render_T)
+            verts_list = []
+            faces_list = []
+            colors_list = []
+            color_dict = [[255, 0.0, 0.0], [0.0, 255, 0.0]]
+            for person_idx, smpl_server in enumerate(self.model.smpl_server_list):
+                smpl_outputs = smpl_server(batch_inputs["smpl_params"][:, person_idx, 0], batch_inputs['smpl_trans'][:, person_idx], batch_inputs['smpl_pose'][:, person_idx], batch_inputs['smpl_shape'][:, person_idx])
+                # smpl_outputs["smpl_verts"] shape (1, 6890, 3)
+                verts_color = torch.tensor(color_dict[person_idx]).repeat(smpl_outputs["smpl_verts"].shape[1], 1)
+                # import pdb;pdb.set_trace()
+                # print(verts_color.shape)
+
+                # here we invert the scale back!!!!!
+                smpl_mesh = trimesh.Trimesh((1/scale.squeeze().detach().cpu()) * smpl_outputs["smpl_verts"].squeeze().detach().cpu(), smpl_server.smpl.faces, process=False, vertex_colors=verts_color.cpu())
+                verts = torch.tensor(smpl_mesh.vertices).cuda().float()[None]
+                faces = torch.tensor(smpl_mesh.faces).cuda()[None]
+                colors = torch.tensor(smpl_mesh.visual.vertex_colors).float().cuda()[None,..., :3] / 255
+
+                verts_list.append(verts)
+                faces_list.append(faces)
+                colors_list.append(colors)
+                P = batch_inputs["P"][0].cpu().numpy()
+                smpl_joints = smpl_outputs["smpl_all_jnts"].detach().cpu().numpy().squeeze()
+                # print(smpl_joints.shape)
+                # exit()
+                smpl_joints = smpl_joints[:27]  # original smpl point + nose + eyes
+                # smpl_joints = smpl_outputs["smpl_verts"].squeeze().detach().cpu().numpy()
+                pix_list = []
+                # get the ground truth image
+                img_size = results[0]["img_size"]
+                rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+                input_img = rgb_gt.reshape(*img_size, -1).detach().cpu().numpy()
+                input_img = (input_img * 255).astype(np.uint8)
+
+                for j in range(0, smpl_joints.shape[0]):
+                    padded_v = np.pad(smpl_joints[j], (0, 1), 'constant', constant_values=(0, 1))
+                    temp = P @ padded_v.T  # np.load('/home/chen/snarf_idr_cg_1/data/buff_new/cameras.npz')['cam_0'] @ padded_v.T
+                    pix = (temp / temp[2])[:2]
+                    output_img = cv2.circle(input_img, tuple(pix.astype(np.int32)), 3, (0, 255, 255), -1)
+                    pix_list.append(pix.astype(np.int32))
+                pix_tensor = np.stack(pix_list, axis=0)
+                keypoint_list[person_idx].append(pix_tensor)
+                # if not os.path.exists(f'stage_joint_opt_smpl_joint/{person_idx}'):
+                #     os.makedirs(f'stage_joint_opt_smpl_joint/{person_idx}')
+                # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint/{person_idx}', '%04d.png' % idx), output_img[:, :, ::-1])
+            renderer_smpl_img = renderer.render_multiple_meshes(verts_list, faces_list, colors_list)
+            renderer_smpl_img = (255 * renderer_smpl_img).data.cpu().numpy().astype(np.uint8)
+            renderer_smpl_img = renderer_smpl_img[0]
+            img_size = results[0]["img_size"]
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            input_img = rgb_gt.reshape(*img_size, -1).detach().cpu().numpy()
+            input_img = (input_img * 255).astype(np.uint8)
+            if input_img.shape[0] < input_img.shape[1]:
+                renderer_smpl_img = renderer_smpl_img[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
+            else:
+                renderer_smpl_img = renderer_smpl_img[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+            valid_mask = (renderer_smpl_img[:, :, -1] > 0)[:, :, np.newaxis]
+
+            valid_render_image = renderer_smpl_img[:, :, :-1] * valid_mask
+            person_1_mask = (valid_render_image[:, :, 0] >= 250) & (valid_render_image[:, :, 0] >= valid_render_image[:, :, 1])
+            person_2_mask = (valid_render_image[:, :, 1] >= 250) & (valid_render_image[:, :, 1] >= valid_render_image[:, :, 0])
+            all_person_mask = np.stack([person_1_mask, person_2_mask], axis=0)
+            all_person_smpl_mask_list.append(all_person_mask)
+            person_1_mask = person_1_mask[:, :, np.newaxis]
+            person_2_mask = person_2_mask[:, :, np.newaxis]
+            all_red_image = np.ones_like(valid_render_image) * np.array([255, 0, 0]).reshape(1, 1, 3)
+            output_img_person_1 = (all_red_image * person_1_mask + input_img * (1 - person_1_mask)).astype(np.uint8)
+            output_img_person_2 = (all_red_image * person_2_mask + input_img * (1 - person_2_mask)).astype(np.uint8)
+            # output_img = (renderer_smpl_img[:, :, :-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
+            # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint', 'smpl_render_%04d.png' % idx), output_img[:,:,::-1])
+            os.makedirs(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", exist_ok=True)
+            cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '1_smpl_render_%04d.png' % idx), output_img_person_1[:,:,::-1])
+            cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '2_smpl_render_%04d.png' % idx), output_img_person_2[:,:,::-1])
+            # import pdb; pdb.set_trace()
+            # img_size = results[0]["img_size"]
+            # rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+            # rgb_pred = rgb_pred.reshape(*img_size, -1)
+            #
+            # fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+            # fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+            #
+            # normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+            # normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+            #
+            # pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+            # pred_mask = pred_mask.reshape(*img_size, -1)
+            #
+            # instance_mask = torch.cat([result["acc_person_list"] for result in results], dim=0)
+            # instance_mask = instance_mask.reshape(*img_size, -1)
+            # for i in range(instance_mask.shape[2]):
+            #     instance_mask_i = instance_mask[:, :, i]
+            #     os.makedirs(f"stage_instance_mask/{self.current_epoch:05d}/{i}", exist_ok=True)
+            #     cv2.imwrite(f"stage_instance_mask/{self.current_epoch:05d}/{i}/{int(idx.cpu().numpy()):04d}.png",
+            #                 instance_mask_i.cpu().numpy() * 255)
+            #
+            # if results[0]['rgb'] is not None:
+            #     rgb_pred = rgb_pred.cpu()
+            #     rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            #     rgb_gt = rgb_gt.reshape(*img_size, -1)
+            #     rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+            # else:
+            #     rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+            # if 'normal' in results[0].keys():
+            #     normal_pred = normal_pred.cpu()
+            #     normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            #     normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            #     normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+            # else:
+            #     normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+            #
+            # rgb = (rgb * 255).astype(np.uint8)
+            #
+            # fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+            # fg_rgb = (fg_rgb * 255).astype(np.uint8)
+            #
+            # normal = (normal * 255).astype(np.uint8)
+            #
+            # cv2.imwrite(f"stage_mask/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+            # cv2.imwrite(f"stage_rendering/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+            # cv2.imwrite(f"stage_normal/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+            # cv2.imwrite(f"stage_fg_rendering/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+
+        all_person_smpl_mask_list = np.array(all_person_smpl_mask_list)
+        keypoint_list = np.array(keypoint_list)
+        keypoint_list = keypoint_list.transpose(1, 0, 2, 3)
+        os.makedirs(f"stage_instance_mask/{self.current_epoch:05d}", exist_ok=True)
+        np.save(f'stage_instance_mask/{self.current_epoch:05d}/all_person_smpl_mask.npy', all_person_smpl_mask_list)
+        np.save(f'stage_instance_mask/{self.current_epoch:05d}/2d_keypoint.npy', keypoint_list)
+        # shape (160, 2, 960, 540)
+        print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
+        # shape (160, 2, 27, 2)
+        print("keypoint_list.shape ", keypoint_list.shape)
+        self.model.train()
 
     def query_oc(self, x, cond, person_id):
         

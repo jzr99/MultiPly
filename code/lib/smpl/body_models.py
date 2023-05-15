@@ -45,7 +45,7 @@ ModelOutput = namedtuple('ModelOutput',
                           'global_orient',
                           'body_pose', 'expression',
                           'left_hand_pose', 'right_hand_pose',
-                          'jaw_pose', 'T', 'T_weighted', 'weights'])
+                          'jaw_pose', 'T', 'T_weighted', 'weights', 'all_joints'])
 ModelOutput.__new__.__defaults__ = (None,) * len(ModelOutput._fields)
 
 class SMPL(nn.Module):
@@ -361,5 +361,5 @@ class SMPL(nn.Module):
                              joints=joints_smpl,
                              betas=self.betas,
                              full_pose=full_pose if return_full_pose else None,
-                             T=T, T_weighted=T_weighted, weights=W)
+                             T=T, T_weighted=T_weighted, weights=W, all_joints=joints)
         return output

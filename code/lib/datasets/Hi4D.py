@@ -115,13 +115,16 @@ class Hi4DDataset(torch.utils.data.Dataset):
         self.sampling_strategy = "weighted"
         self.using_SAM = opt.using_SAM
         print("opt.using_SAM ", opt.using_SAM)
+        self.pre_mask_path = ""
+        self.pre_mask = None
 
-        if self.using_SAM:
-            self.sam_0_mask = np.load(
-                '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/0_sam_opt.npy')
-            self.sam_1_mask = np.load(
-                '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/1_sam_opt.npy')
-            self.sam_mask = np.stack([self.sam_0_mask, self.sam_1_mask], axis=-1)
+        # if self.using_SAM:
+            # self.sam_0_mask = np.load(
+            #     '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/0_sam_opt.npy')
+            # self.sam_1_mask = np.load(
+            #     '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/1_sam_opt.npy')
+            # self.sam_mask = np.stack([self.sam_0_mask, self.sam_1_mask], axis=-1)
+
 
     def __len__(self):
         return self.n_images # len(self.images)
@@ -131,7 +134,25 @@ class Hi4DDataset(torch.utils.data.Dataset):
         return body_model_params
     def __getitem__(self, idx):
         if self.using_SAM:
-            sam_mask = self.sam_mask[idx]
+            mask_list = sorted(glob.glob(f"stage_sam_mask/*"))
+            if len(mask_list) == 0:
+                if idx == 0:
+                    print("epoch 0, not using sam mask")
+                sam_mask = None
+            else:
+                mask_path = os.path.join(mask_list[-1], "sam_opt_mask.npy")
+                if mask_path != self.pre_mask_path:
+                    # shape from (F, P, H, W) to (F, H, W, P)
+                    sam_mask = np.load(mask_path).transpose(0, 2, 3, 1)
+                    self.pre_mask_path = mask_path
+                    self.pre_mask = sam_mask
+                    sam_mask = sam_mask[idx]
+                else:
+                    mask_path = self.pre_mask_path
+                    sam_mask = self.pre_mask
+                    sam_mask = sam_mask[idx]
+                if idx == 0:
+                    print("current using sam mask from file ", mask_path)
 
         # normalize RGB
         img = cv2.imread(self.img_paths[idx])
@@ -165,7 +186,7 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 "uv": uv,
                 "object_mask": mask,
             }
-            if self.using_SAM:
+            if self.using_SAM and sam_mask is not None:
                 data.update({"sam_mask": sam_mask})
             samples, index_outside = weighted_sampling(data, img_size, self.num_sample)
             inputs = {
@@ -178,7 +199,7 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 'index_outside': index_outside,
                 "idx": idx
             }
-            if self.using_SAM:
+            if self.using_SAM and sam_mask is not None:
                 inputs.update({"sam_mask": samples['sam_mask']})
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images
