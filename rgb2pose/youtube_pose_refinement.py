@@ -18,7 +18,7 @@ import glob
 import pickle as pkl
 from tqdm import tqdm
 from utils import smpl_to_pose, PerspectiveCamera
-from loss import joints_2d_loss, pose_temporal_loss, get_loss_weights
+# from loss import joints_2d_loss, pose_temporal_loss, get_loss_weights
 smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
                                             use_face_contour=False, openpose_format='coco25'), dtype=torch.long).cuda()
 

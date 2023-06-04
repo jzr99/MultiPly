@@ -117,6 +117,15 @@ class Hi4DDataset(torch.utils.data.Dataset):
         print("opt.using_SAM ", opt.using_SAM)
         self.pre_mask_path = ""
         self.pre_mask = None
+        self.smpl_sam_iou = np.ones(len(self.img_paths))
+        self.uncertain_thereshold = 0.0
+        self.uncertain_frame_list = []
+        try:
+            # the higher the ratio, the more uncertain frames
+            self.ratio_uncertain = opt.ratio_uncertain
+            print("ratio_uncertain: ", self.ratio_uncertain)
+        except:
+            self.ratio_uncertain = 0.5
 
         # if self.using_SAM:
             # self.sam_0_mask = np.load(
@@ -133,6 +142,7 @@ class Hi4DDataset(torch.utils.data.Dataset):
         body_model_params = {}
         return body_model_params
     def __getitem__(self, idx):
+        is_certain = True
         if self.using_SAM:
             mask_list = sorted(glob.glob(f"stage_sam_mask/*"))
             if len(mask_list) == 0:
@@ -142,6 +152,20 @@ class Hi4DDataset(torch.utils.data.Dataset):
             else:
                 mask_path = os.path.join(mask_list[-1], "sam_opt_mask.npy")
                 if mask_path != self.pre_mask_path:
+                    smpl_mask_list = sorted(glob.glob(f"stage_instance_mask/*"))
+                    smpl_mask_path = os.path.join(smpl_mask_list[-1], "all_person_smpl_mask.npy")
+                    smpl_mask = np.load(smpl_mask_path) > 0.8
+                    sam_mask_binary = np.load(mask_path) > 0.0
+                    self.smpl_sam_iou = np.logical_and(sam_mask_binary, smpl_mask).sum(axis=(2, 3)) / np.logical_or(sam_mask_binary, smpl_mask).sum(axis=(2, 3))
+                    self.smpl_sam_iou = self.smpl_sam_iou.mean(axis=-1)
+                    # ascending order
+                    sorted_smpl_sam_iou = np.sort(self.smpl_sam_iou)
+                    self.uncertain_thereshold = sorted_smpl_sam_iou[int(len(sorted_smpl_sam_iou) * self.ratio_uncertain)]
+                    self.uncertain_frame_list = []
+                    for i, iou in enumerate(self.smpl_sam_iou):
+                        if iou < self.uncertain_thereshold:
+                            self.uncertain_frame_list.append(i)
+
                     # shape from (F, P, H, W) to (F, H, W, P)
                     sam_mask = np.load(mask_path).transpose(0, 2, 3, 1)
                     self.pre_mask_path = mask_path
@@ -153,6 +177,11 @@ class Hi4DDataset(torch.utils.data.Dataset):
                     sam_mask = sam_mask[idx]
                 if idx == 0:
                     print("current using sam mask from file ", mask_path)
+                    print("uncertain_thereshold ", self.uncertain_thereshold)
+                    print("uncertain_frame_list ", self.uncertain_frame_list)
+
+            iou_frame_i = self.smpl_sam_iou[idx]
+            is_certain = iou_frame_i >= self.uncertain_thereshold
 
         # normalize RGB
         img = cv2.imread(self.img_paths[idx])
@@ -197,7 +226,9 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 "pose": self.pose_all[idx],
                 "smpl_params": smpl_params,
                 'index_outside': index_outside,
-                "idx": idx
+                "idx": idx,
+                "smpl_sam_iou": self.smpl_sam_iou,
+                "is_certain": is_certain,
             }
             if self.using_SAM and sam_mask is not None:
                 inputs.update({"sam_mask": samples['sam_mask']})

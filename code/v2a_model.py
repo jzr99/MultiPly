@@ -46,6 +46,7 @@ class V2AModel(pl.LightningModule):
 
         self.loss = Loss(opt.model.loss)
         self.sam_server = SAMServer(opt.dataset.train)
+        self.using_sam = opt.dataset.train.using_SAM
 
 
         
@@ -80,24 +81,28 @@ class V2AModel(pl.LightningModule):
 
         batch_idx = inputs["idx"]
         # import ipdb;ipdb.set_trace()
-        if self.current_epoch < 500 and batch_idx > 85 and batch_idx < 125:
-            for param in self.model.foreground_implicit_network_list.parameters():
-                param.requires_grad = False
-            for param in self.model.foreground_rendering_network_list.parameters():
-                param.requires_grad = False
-            for param in self.model.bg_implicit_network.parameters():
-                param.requires_grad = False
-            for param in self.model.bg_rendering_network.parameters():
-                param.requires_grad = False
-        else:
-            for param in self.model.foreground_implicit_network_list.parameters():
-                param.requires_grad = True
-            for param in self.model.foreground_rendering_network_list.parameters():
-                param.requires_grad = True
-            for param in self.model.bg_implicit_network.parameters():
-                param.requires_grad = True
-            for param in self.model.bg_rendering_network.parameters():
-                param.requires_grad = True
+        if self.using_sam:
+            is_certain = inputs["is_certain"].squeeze()
+            # if self.current_epoch < 500 and batch_idx > 85 and batch_idx < 125: # this is for warmwelcome
+            if self.current_epoch < 500 and not is_certain:
+            # if self.current_epoch < 500 and batch_idx > 38 and batch_idx < 106: # this is for piggyback
+                for param in self.model.foreground_implicit_network_list.parameters():
+                    param.requires_grad = False
+                for param in self.model.foreground_rendering_network_list.parameters():
+                    param.requires_grad = False
+                for param in self.model.bg_implicit_network.parameters():
+                    param.requires_grad = False
+                for param in self.model.bg_rendering_network.parameters():
+                    param.requires_grad = False
+            else:
+                for param in self.model.foreground_implicit_network_list.parameters():
+                    param.requires_grad = True
+                for param in self.model.foreground_rendering_network_list.parameters():
+                    param.requires_grad = True
+                for param in self.model.bg_implicit_network.parameters():
+                    param.requires_grad = True
+                for param in self.model.bg_rendering_network.parameters():
+                    param.requires_grad = True
         
         device = inputs["smpl_params"].device
 
@@ -338,7 +343,7 @@ class V2AModel(pl.LightningModule):
             scale_eye[2, 2] = scale
             P_norm = P_norm @ scale_eye
             # 其实蛮奇怪的，最后一维的偏移没有乘以scale，也就是说（P_norm，1/scale * vert）和 （P，verts）不完全等效？
-
+            # TODO camera pose P is not correct  after scale, may influence shooting the ray
             out = cv2.decomposeProjectionMatrix(P_norm[:3, :])
             cam_intrinsics = out[0]
             render_R = out[1]

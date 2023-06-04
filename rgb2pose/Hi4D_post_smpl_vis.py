@@ -20,10 +20,13 @@ def render_trimesh(mesh,R,T, mode='np'):
 device = torch.device("cuda:0")
 DATA_DIR = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data"
 DIR = '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D'
-seq = 'courtyard_shakeHands_00_no_pose_condition_interpenetration_loss'
+# seq = 'courtyard_shakeHands_00_no_pose_condition_interpenetration_loss'
+seq = 'courtyard_shakeHands_00_loop'
+# seq = 'courtyard_shakeHands_00'
 data_seq = 'courtyard_shakeHands_00'
-checkpoint_version = 'last-v2.ckpt'
-person_id = 0
+# checkpoint_version = 'epoch=0499-loss=0.03910435736179352.ckpt'
+checkpoint_version = 'last-v1.ckpt'
+person_id = 1
 # gender = 'male'
 if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl'):
     os.makedirs(f'{DIR}/{seq}/joint_opt_smpl')
@@ -67,6 +70,7 @@ cam_intrinsics = out[0]
 import ipdb;ipdb.set_trace()
 
 renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
+keypoint_list = []
 
 for i in trange(global_orient.shape[0]):
 
@@ -99,3 +103,24 @@ for i in trange(global_orient.shape[0]):
     if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl/{person_id}'):
         os.makedirs(f'{DIR}/{seq}/joint_opt_smpl/{person_id}')
     cv2.imwrite(os.path.join(f'{DIR}/{seq}/joint_opt_smpl/{person_id}', '%04d.png' % i), output_img)
+
+    P = camPs[f'cam_{i}']
+    smpl_joints = smpl_output.joints.data.cpu().numpy().squeeze()
+    # print(smpl_joints.shape)
+    # exit()
+    smpl_joints = smpl_joints[:27] # original smpl point + nose + eyes
+    pix_list = []
+    for j in range(0, smpl_joints.shape[0]):
+        padded_v = np.pad(smpl_joints[j], (0, 1), 'constant', constant_values=(0, 1))
+        temp = P @ padded_v.T  # np.load('/home/chen/snarf_idr_cg_1/data/buff_new/cameras.npz')['cam_0'] @ padded_v.T
+        pix = (temp / temp[2])[:2]
+        output_img = cv2.circle(input_img, tuple(pix.astype(np.int32)), 3, (0, 255, 255), -1)
+        pix_list.append(pix.astype(np.int32))
+    pix_tensor = np.stack(pix_list, axis=0)
+    keypoint_list.append(pix_tensor)
+    if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl_joint/{person_id}'):
+        os.makedirs(f'{DIR}/{seq}/joint_opt_smpl_joint/{person_id}')
+    cv2.imwrite(os.path.join(f'{DIR}/{seq}/joint_opt_smpl_joint/{person_id}', '%04d.png' % i), output_img)
+
+np.save(f'{DIR}/{seq}/joint_opt_smpl_joint/{person_id}.npy', np.stack(keypoint_list, axis=0))
+print(np.stack(keypoint_list, axis=0).shape)

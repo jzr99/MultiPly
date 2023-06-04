@@ -192,6 +192,7 @@ class V2A(nn.Module):
         grad_theta_list = []
         interpenetration_loss = torch.zeros(1,device=smpl_pose.device)
         temporal_loss = torch.zeros(1, device=smpl_pose.device)
+        smpl_surface_loss = torch.zeros(1, device=smpl_pose.device)
         # if input['current_epoch'] < 500 and input['idx'] > 85 and input['idx'] < 125:
         if self.training and input['current_epoch'] > 250:
             temporal_loss = torch.mean(torch.square(input["smpl_pose_last"] - input["smpl_pose"]))
@@ -246,6 +247,27 @@ class V2A(nn.Module):
                 grad_theta_list.append(grad_theta_person)
 
                 differentiable_points = canonical_points
+
+                # sample point form deformed SMPL
+                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'], dim=1, index=idx)
+                x_c, outlier_mask = self.deformer_list[person_id].forward(sample_point.reshape(-1, 3),
+                                                                           smpl_tfs_list[person_id],
+                                                                           return_weights=False,
+                                                                           inverse=True,
+                                                                           smpl_verts=smpl_output_list[person_id][
+                                                                               'smpl_verts'])
+                output = self.foreground_implicit_network_list[person_id](x_c, cond)[0]
+                sdf = output[:, 0:1]
+                sdf = sdf.reshape(-1)
+                threshold_smpl_sdf = 0.01
+                if (sdf > threshold_smpl_sdf).any():
+                    # TODO: Eikonal loss should be sampled also from the global
+                    unplausible_sdf = sdf[sdf > threshold_smpl_sdf]
+                    sdf_zero = torch.ones_like(unplausible_sdf, device=sdf.device) * threshold_smpl_sdf
+                    smpl_surface_loss += torch.nn.functional.l1_loss(unplausible_sdf, sdf_zero, reduction='mean')
+
+
 
                 # sample point for interpenetration loss
                 assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
@@ -394,6 +416,7 @@ class V2A(nn.Module):
                 'interpenetration_loss': interpenetration_loss,
                 'temporal_loss': temporal_loss,
                 'acc_person_list': acc_person, # Number pixel, Number person
+                'smpl_surface_loss': smpl_surface_loss,
                 'epoch': input['current_epoch'],
             }
             # import pdb;pdb.set_trace()

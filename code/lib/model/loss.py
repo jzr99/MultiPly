@@ -13,6 +13,7 @@ class Loss(nn.Module):
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
+        self.smpl_surface_milestone = 1000
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
         self.sigmoid = nn.Sigmoid()
@@ -60,6 +61,7 @@ class Loss(nn.Module):
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
         temporal_loss = model_outputs['temporal_loss']
+        smpl_surface_loss = model_outputs['smpl_surface_loss']
         if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > 200:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
@@ -70,7 +72,8 @@ class Loss(nn.Module):
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
                interpenetration_loss + temporal_loss + \
-               self.sam_mask_weight * sam_mask_loss
+               self.sam_mask_weight * sam_mask_loss + \
+               smpl_surface_loss * (1 - min(self.smpl_surface_milestone, model_outputs['epoch']) / self.smpl_surface_milestone)
                # self.sam_mask_weight * (1 - min(self.sam_milestone, model_outputs['epoch']) / self.sam_milestone) * sam_mask_loss
         return {
             'loss': loss,
@@ -82,4 +85,5 @@ class Loss(nn.Module):
             'interpenetration_loss': interpenetration_loss,
             'temporal_loss': temporal_loss,
             'sam_mask_loss': sam_mask_loss,
+            'smpl_surface_loss': smpl_surface_loss,
         }

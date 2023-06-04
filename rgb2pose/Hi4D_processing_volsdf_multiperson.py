@@ -42,20 +42,29 @@ dial_kernel = np.ones((20, 20),np.uint8)
 seq = 'C7_00'
 dataset = 'Hi4D' # 'youtube' # 'youtube' 'monoperfcap' # 'neuman # threedpw # ma # emdb # tiktok
 transpose = True
-gender = 'm'
+# gender = 'm'
 DIR = ''
 resize_factor = 2
 
 
 if dataset == 'Hi4D':
-    DIR = "/Users/jiangzeren/Downloads/eval/data/pair01/hug01"
+    # DIR = "/Users/jiangzeren/Downloads/eval/data/pair01/hug01"
+    DIR = "/cluster/project/infk/hilliges/jiangze/ROMP/global_scratch/ROMP/ROMP/dataset/Hi4D/Hi4D_all/Hi4D/pair19/piggyback19"
+    # camera_view = dict(np.load(os.path.join(DIR, "meta.npz")))["mono_cam"]
+    # print("camera_view", camera_view)
     camera_view = 4
     # person_index = 0
     img_dir = f'{DIR}/images/{camera_view}'
     seq_dir = f'{DIR}/smpl'
     mask_dir_0 = f'{DIR}/seg/img_seg_mask/{camera_view}/0'
     mask_dir_1 = f'{DIR}/seg/img_seg_mask/{camera_view}/1'
-    save_dir = '/Users/jiangzeren/Downloads/eval/V2A_multiperson'
+    gender_list = dict(np.load(os.path.join(DIR, "meta.npz")))["genders"]
+
+    # import pdb;pdb.set_trace()
+    # save_dir = '/Users/jiangzeren/Downloads/eval/V2A_multiperson'
+    save_dir = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data/Hi4D_pair19_piggyback19"
+    np.save(os.path.join(save_dir, "gender.npy"), gender_list)
+
 if not os.path.exists(os.path.join(save_dir, 'image')):
     os.makedirs(os.path.join(save_dir, 'image'))
 if not os.path.exists(os.path.join(save_dir, 'mask')):
@@ -77,18 +86,20 @@ if dataset == 'Hi4D':
 else:
     seq_file_paths = sorted(glob.glob(f"{seq_dir}/*.pkl"))
 
-if gender == 'f':
-    gender = 'female'
-elif gender == 'm':
-    gender = 'male'
+# if gender == 'f':
+#     gender = 'female'
+# elif gender == 'm':
+#     gender = 'male'
 
-smpl_model = SMPL('/Users/jiangzeren/Downloads/eval/SMPL_python_v.1.1.0/smpl/smpl', gender=gender)
+# smpl_model_0 = SMPL('/Users/jiangzeren/Downloads/eval/SMPL_python_v.1.1.0/smpl/smpl', gender=gender_list[0])
+smpl_model_0 = SMPL('/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/lib/smpl/smpl_model', gender=gender_list[0])
+smpl_model_1 = SMPL('/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/lib/smpl/smpl_model', gender=gender_list[1])
 # we use the betas from naked body not "clothed"
 if dataset == "Hi4D":
-    smpl_shape_0 = np.load("/Users/jiangzeren/Downloads/eval/data/pair01/hug01/smpl/000006.npz", allow_pickle=True)['betas'][0]
-    smpl_shape_1 = np.load("/Users/jiangzeren/Downloads/eval/data/pair01/hug01/smpl/000006.npz", allow_pickle=True)['betas'][1]
-    T_hip_0 = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape_0)[None].float()).squeeze().cpu().numpy()
-    T_hip_1 = smpl_model.get_T_hip(betas=torch.tensor(smpl_shape_1)[None].float()).squeeze().cpu().numpy()
+    smpl_shape_0 = np.load(f"{DIR}/smpl/000006.npz", allow_pickle=True)['betas'][0]
+    smpl_shape_1 = np.load(f"{DIR}/smpl/000006.npz", allow_pickle=True)['betas'][1]
+    T_hip_0 = smpl_model_0.get_T_hip(betas=torch.tensor(smpl_shape_0)[None].float()).squeeze().cpu().numpy()
+    T_hip_1 = smpl_model_1.get_T_hip(betas=torch.tensor(smpl_shape_1)[None].float()).squeeze().cpu().numpy()
 
 if dataset == 'youtube':
     focal_length = 1920 # 640 # 1920 # 1280 # 995.55555556
@@ -202,11 +213,11 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     target_extrinsic_1, smpl_pose_1, smpl_trans_1 = transform_smpl_remain_extrinsic(cam_extrinsics, target_extrinsic,
                                                                                     smpl_pose_1, smpl_trans_1, T_hip_1)
 
-    smpl_output_0 = smpl_model(betas=torch.tensor(smpl_shape_0)[None].float(),
+    smpl_output_0 = smpl_model_0(betas=torch.tensor(smpl_shape_0)[None].float(),
                              body_pose=torch.tensor(smpl_pose_0[3:])[None].float(),
                              global_orient=torch.tensor(smpl_pose_0[:3])[None].float(),
                              transl=torch.tensor(smpl_trans_0)[None].float())
-    smpl_output_1 = smpl_model(betas=torch.tensor(smpl_shape_1)[None].float(),
+    smpl_output_1 = smpl_model_1(betas=torch.tensor(smpl_shape_1)[None].float(),
                                body_pose=torch.tensor(smpl_pose_1[3:])[None].float(),
                                global_orient=torch.tensor(smpl_pose_1[:3])[None].float(),
                                transl=torch.tensor(smpl_trans_1)[None].float())
@@ -249,7 +260,7 @@ np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
 
 # re-project to images to debug
 
-smpl_output_0 = smpl_model(betas=torch.tensor(smpl_shape_0)[None].float(),
+smpl_output_0 = smpl_model_0(betas=torch.tensor(smpl_shape_0)[None].float(),
                          body_pose=torch.tensor(smpl_pose_0[3:])[None].float(),
                          global_orient=torch.tensor(smpl_pose_0[:3])[None].float(),
                          transl=torch.tensor(trans_0)[None].float())
@@ -264,7 +275,7 @@ for j in range(0, smpl_verts_0.shape[0]):
 
 cv2.imwrite(os.path.join(save_dir, 'test_0.png'), output_img)
 
-smpl_output_1 = smpl_model(betas=torch.tensor(smpl_shape_1)[None].float(),
+smpl_output_1 = smpl_model_1(betas=torch.tensor(smpl_shape_1)[None].float(),
                          body_pose=torch.tensor(smpl_pose_1[3:])[None].float(),
                          global_orient=torch.tensor(smpl_pose_1[:3])[None].float(),
                          transl=torch.tensor(trans_1)[None].float())

@@ -52,7 +52,7 @@ class SAMServer():
         np.random.seed(42)
         smpl_mask = np.load(f'stage_instance_mask/{current_epoch:05d}/all_person_smpl_mask.npy')
         smpl_joint = np.load(f'stage_instance_mask/{current_epoch:05d}/2d_keypoint.npy')
-
+        # smpl_joint = smpl_joint[:, :, [0, 4, 5, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 25, 26]]
         # img_paths = sorted(glob.glob("/content/drive/MyDrive/V2A_mask/image/*.png"))
         # mask_paths = sorted(glob.glob("/content/drive/MyDrive/V2A_mask/test_instance_mask/0/*.png"))
         # all_positive_point_0 = np.load("/content/drive/MyDrive/V2A_mask/0.npy")
@@ -71,6 +71,7 @@ class SAMServer():
             output_mask_per_frame = []
             for person_id in range(image_mask_all.shape[0]):
                 image_mask = image_mask_all[person_id]
+                negative_image_mask = image_mask_all[1 - person_id]
                 # get the xyxy bounding box from the binary mask
                 indices = np.argwhere(image_mask)
 
@@ -146,7 +147,7 @@ class SAMServer():
 
                 for j in range(negative_point_candidate.shape[0]):
                     p = negative_point_candidate[j]
-                    if image_mask[p[1], p[0]] < 0.7:
+                    if image_mask[p[1], p[0]] < 0.7 and negative_image_mask[p[1], p[0]] > 0.7:
                         negative_points.append([p[0], p[1]])
                 # point_list = np.array(point_list)
 
