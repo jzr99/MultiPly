@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import numpy as np
 from torch.nn import functional as F
 
 class Loss(nn.Module):
@@ -13,7 +14,8 @@ class Loss(nn.Module):
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
-        self.smpl_surface_milestone = 1000
+        self.smpl_surface_milestone = opt.smpl_surface_milestone
+        self.depth_loss_milestone = 1000
         self.l1_loss = nn.L1Loss(reduction='mean')
         self.l2_loss = nn.MSELoss(reduction='mean')
         self.sigmoid = nn.Sigmoid()
@@ -50,7 +52,34 @@ class Loss(nn.Module):
         # import pdb;pdb.set_trace()
         return loss
 
+    def get_depth_order_loss(self, t_list, fg_rgb_values_each_person_list_nan_filter, mean_hitted_vertex_list, rgb_gt_nan_filter_hitted, cam_loc):
+        front_person_index = np.argmin(t_list, axis=0)
+        rgb_loss = torch.norm(fg_rgb_values_each_person_list_nan_filter - rgb_gt_nan_filter_hitted.reshape(1, -1, 3), dim=-1)
+        correct_rgb_person_index = torch.argmin(rgb_loss, dim=0)
+        # mean_hitted_vertex_list shape (2, 7, 3)
+        d1, d2, d3= mean_hitted_vertex_list.shape
+        # import pdb;pdb.set_trace()
+        front_vertex_position = mean_hitted_vertex_list[front_person_index, torch.arange(d2), :]
+        correct_vertex_position = mean_hitted_vertex_list[correct_rgb_person_index, torch.arange(d2), :]
+        dist_correct = torch.norm(correct_vertex_position - cam_loc, dim=-1)
+        dist_front = torch.norm(front_vertex_position - cam_loc, dim=-1)
+        loss = torch.log(1+torch.exp(dist_correct - dist_front)).sum()
+        return loss
+        # front_vertex_position = front_vertex_position[:, torch.arange(d2)]
+
     def forward(self, model_outputs, ground_truth):
+        if isinstance(model_outputs['fg_rgb_values_each_person_list'], list):
+            depth_order_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
+        else:
+            fg_rgb_values_each_person_list = model_outputs['fg_rgb_values_each_person_list']
+            fg_rgb_values_each_person_nan_filter = ~torch.any(torch.any(fg_rgb_values_each_person_list.isnan(), dim=-1), dim=0)
+            fg_rgb_values_each_person_list_nan_filter = fg_rgb_values_each_person_list[:, fg_rgb_values_each_person_nan_filter, :]
+            gt_rgb_each_person = ground_truth['rgb'][0].cuda()
+            gt_rgb_each_person = gt_rgb_each_person[model_outputs["hitted_mask_idx"]]
+            rgb_gt_nan_filter_hitted = gt_rgb_each_person[fg_rgb_values_each_person_nan_filter]
+            cam_loc = model_outputs['cam_loc'][model_outputs["hitted_mask_idx"]]
+            depth_order_loss = self.get_depth_order_loss(model_outputs['t_list'], fg_rgb_values_each_person_list_nan_filter, model_outputs['mean_hitted_vertex_list'], rgb_gt_nan_filter_hitted, cam_loc)
+
         nan_filter = ~torch.any(model_outputs['rgb_values'].isnan(), dim=1)
         rgb_gt = ground_truth['rgb'][0].cuda()
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
@@ -66,6 +95,10 @@ class Loss(nn.Module):
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
             sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)
+        if model_outputs['epoch'] > 300:
+            depth_order_loss = 1.0 * depth_order_loss * (1 - min(self.depth_loss_milestone, model_outputs['epoch']) / self.depth_loss_milestone)
+        else:
+            depth_order_loss = torch.zeros((1), device=model_outputs['acc_map'].device)
         loss = rgb_loss + \
                self.eikonal_weight * eikonal_loss + \
                self.bce_weight * bce_loss + \
@@ -73,11 +106,13 @@ class Loss(nn.Module):
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
                interpenetration_loss + temporal_loss + \
                self.sam_mask_weight * sam_mask_loss + \
-               smpl_surface_loss * (1 - min(self.smpl_surface_milestone, model_outputs['epoch']) / self.smpl_surface_milestone)
+               smpl_surface_loss * (1 - min(self.smpl_surface_milestone, model_outputs['epoch']) / self.smpl_surface_milestone) + \
+               depth_order_loss
                # self.sam_mask_weight * (1 - min(self.sam_milestone, model_outputs['epoch']) / self.sam_milestone) * sam_mask_loss
         return {
             'loss': loss,
             'rgb_loss': rgb_loss,
+            'depth_order_loss': depth_order_loss,
             'eikonal_loss': eikonal_loss,
             'bce_loss': bce_loss,
             'opacity_sparse_loss': opacity_sparse_loss,

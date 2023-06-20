@@ -167,10 +167,18 @@ class V2A(nn.Module):
         num_person = smpl_trans.shape[1]
         smpl_tfs_list = []
         smpl_output_list = []
+        raymeshintersector_list = []
         for i in range(num_person):
             smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
             smpl_output_list.append(smpl_output)
             smpl_tfs_list.append(smpl_output['smpl_tfs'])
+            # load into trimesh
+            smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(),
+                                        faces=self.smpl_server_list[i].faces, process=False)
+            raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
+            # TODO need to comfirm that camera ray is aligned with scaled smpl
+
+
 
         # smpl_params = smpl_params.detach()
         # smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(), faces=self.smpl_server.faces, process=False)
@@ -200,6 +208,10 @@ class V2A(nn.Module):
             person_list = range(num_person)
         else:
             person_list = [id]
+        hitted_face_idx_list = []
+        index_triangle_list = []
+        index_ray_list = []
+        locations_list = []
         for person_id in person_list:
             cond = {'smpl': smpl_pose[:, person_id, 3:] / np.pi}
             if self.training:
@@ -219,6 +231,14 @@ class V2A(nn.Module):
 
             points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
             points_flat = points.reshape(-1, 3)
+            # import pdb;pdb.set_trace()
+            # depth order loss related
+            face_hitted_list = raymeshintersector_list[person_id].intersects_first(cam_loc.cpu(), ray_dirs.cpu())
+            hitted_face_idx_list.append(face_hitted_list)
+            index_triangle, index_ray, locations = raymeshintersector_list[person_id].intersects_id(cam_loc.cpu(), ray_dirs.cpu(), multiple_hits=False, return_locations=True)
+            index_triangle_list.append(index_triangle)
+            index_ray_list.append(index_ray)
+            locations_list.append(locations)
 
 
             dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
@@ -260,7 +280,7 @@ class V2A(nn.Module):
                 output = self.foreground_implicit_network_list[person_id](x_c, cond)[0]
                 sdf = output[:, 0:1]
                 sdf = sdf.reshape(-1)
-                threshold_smpl_sdf = 0.01
+                threshold_smpl_sdf = 0.02
                 if (sdf > threshold_smpl_sdf).any():
                     # TODO: Eikonal loss should be sampled also from the global
                     unplausible_sdf = sdf[sdf > threshold_smpl_sdf]
@@ -327,7 +347,70 @@ class V2A(nn.Module):
             z_vals_list.append(z_vals)
             person_id_list.append(person_label)
 
+        hitted_face_idx_list = np.stack(hitted_face_idx_list, axis=0)
+        hitted_face_mask = hitted_face_idx_list > 0
+        # TODO this is wrong, change to sum >= 2 (done)
+        hitted_face_mask = np.sum(hitted_face_mask, axis=0) >= 2
+        # hitted_face_mask = np.prod(hitted_face_mask, axis=0)
+        # volume render each person separately
+        hitted_mask_idx = np.where(hitted_face_mask)[0]
+        hitted_face_idx = hitted_face_idx_list[:, hitted_mask_idx]
 
+        fg_rgb_values_each_person_list = []
+        t_list = []
+        mean_hitted_vertex_list = []
+        if len(hitted_mask_idx) > 0:
+            for person_id in person_list:
+                index_triangle_i, index_ray_i, locations_i = index_triangle_list[person_id], index_ray_list[person_id], locations_list[person_id]
+                # sort index_ray_i
+                sorted_idx = np.argsort(index_ray_i)
+                index_ray_i = index_ray_i[sorted_idx]
+                index_triangle_i = index_triangle_i[sorted_idx]
+                locations_i = locations_i[sorted_idx]
+
+                locations_i_idx = np.nonzero(np.in1d(index_ray_i, hitted_mask_idx))[0]
+                locations_i = locations_i[locations_i_idx]
+                index_triangle_i = index_triangle_i[locations_i_idx]
+                index_ray_i = index_ray_i[locations_i_idx]
+                assert (index_ray_i == hitted_mask_idx).all()
+                assert (hitted_face_idx[person_id] == index_triangle_i).all()
+                # TODO this may be wrong for person > 2, need an additional mask to indicate which person is hitted
+                assert (index_triangle_i != -1).all()
+                # (number_hitted_faces, 3)
+                vertex_index_i = self.smpl_server_list[person_id].faces[index_triangle_i]
+                # import pdb;pdb.set_trace()
+                vertex_index_i = vertex_index_i.reshape(-1)
+                vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
+                vertex_position = smpl_output_list[person_id]['smpl_verts'][0][vertex_index_i]
+                vertex_position = vertex_position.reshape(-1, 3, 3)
+                mean_hitted_vertex_list.append(vertex_position.mean(dim=1))
+                # TODO check if it is not away from location_i (done error around 5mm)
+
+
+                t = (locations_i - cam_loc[index_ray_i].cpu().numpy()) / (ray_dirs[index_ray_i].cpu().numpy() + 1e-12)
+                # TODO insure t is same for dimension -1
+                t = t[:,0]
+                t_list.append(t)
+                # index_triangle_i should be same as hitted_face_idx
+                # TODO still can reduce some computation power by disable when only one person in the scene
+                z_vals_i = z_vals_list[person_id]
+                fg_rgb_i = fg_rgb_list[person_id]
+                z_max_i = z_max_list[person_id]
+                sdf_output_i = sdf_output_list[person_id]
+                # idx = np.where(hitted_face_mask)[0]
+                z_vals_i = z_vals_i[hitted_mask_idx]
+                fg_rgb_i = fg_rgb_i[hitted_mask_idx]
+                z_max_i = z_max_i[hitted_mask_idx]
+                sdf_output_i = sdf_output_i[hitted_mask_idx]
+                weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
+                fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
+                fg_rgb_values_each_person_list.append(fg_rgb_values_i)
+            mean_hitted_vertex_list = torch.stack(mean_hitted_vertex_list, dim=0)
+            # (2, 7)
+            fg_rgb_values_each_person_list = torch.stack(fg_rgb_values_each_person_list, dim=0)
+            # (2,7,3)
+            t_list = np.stack(t_list, axis=0)
+            # import pdb; pdb.set_trace()
         # DEBUG z_vals_bg use only last persons
         # DEBUG z_max is the same
         person_id_cat = torch.cat(person_id_list, dim=1)
@@ -404,6 +487,12 @@ class V2A(nn.Module):
             output = {
                 # 'sam_mask': sam_mask,
                 # 'uv': input["uv"],
+                't_list': t_list,
+                'fg_rgb_values_each_person_list' : fg_rgb_values_each_person_list,
+                'cam_loc': cam_loc,
+                # 'smpl_output_list': smpl_output_list,
+                'hitted_mask_idx': hitted_mask_idx,
+                'mean_hitted_vertex_list': mean_hitted_vertex_list,
                 'points': points,
                 'rgb_values': rgb_values,
                 'normal_values': normal_values,

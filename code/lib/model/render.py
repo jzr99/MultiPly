@@ -86,6 +86,25 @@ class Renderer():
             image = self.renderer(scene)
             return image
 
+    def render_multiple_depth_map(self, verts_list, faces_list, verts_colors_list):
+        '''
+        verts_list: list of verts
+        faces_list: list of faces
+        verts_colors_list: list of verts_colors
+        '''
+        # with torch.no_grad():
+        mesh_list = []
+        depth_map_list = []
+        for v,f,c in zip(verts_list, faces_list, verts_colors_list):
+            m = Meshes(v, f, textures=Textures(verts_rgb=c))
+            mesh_list.append(m)
+            fragment = self.rasterizer(m)
+            # import pdb;pdb.set_trace()
+            depth_map_list.append(fragment.zbuf)
+        # scene = join_meshes_as_scene(mesh_list)
+        # image = self.renderer(scene)
+        return depth_map_list
+
 
 
 

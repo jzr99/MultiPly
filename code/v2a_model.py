@@ -47,6 +47,7 @@ class V2AModel(pl.LightningModule):
         self.loss = Loss(opt.model.loss)
         self.sam_server = SAMServer(opt.dataset.train)
         self.using_sam = opt.dataset.train.using_SAM
+        self.pose_correction_epoch = opt.model.pose_correction_epoch
 
 
         
@@ -84,7 +85,7 @@ class V2AModel(pl.LightningModule):
         if self.using_sam:
             is_certain = inputs["is_certain"].squeeze()
             # if self.current_epoch < 500 and batch_idx > 85 and batch_idx < 125: # this is for warmwelcome
-            if self.current_epoch < 500 and not is_certain:
+            if self.current_epoch < self.pose_correction_epoch and not is_certain:
             # if self.current_epoch < 500 and batch_idx > 38 and batch_idx < 106: # this is for piggyback
                 for param in self.model.foreground_implicit_network_list.parameters():
                     param.requires_grad = False
@@ -405,6 +406,7 @@ class V2AModel(pl.LightningModule):
                 # if not os.path.exists(f'stage_joint_opt_smpl_joint/{person_idx}'):
                 #     os.makedirs(f'stage_joint_opt_smpl_joint/{person_idx}')
                 # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint/{person_idx}', '%04d.png' % idx), output_img[:, :, ::-1])
+            renderer_depth_map = renderer.render_multiple_depth_map(verts_list, faces_list, colors_list)
             renderer_smpl_img = renderer.render_multiple_meshes(verts_list, faces_list, colors_list)
             renderer_smpl_img = (255 * renderer_smpl_img).data.cpu().numpy().astype(np.uint8)
             renderer_smpl_img = renderer_smpl_img[0]
@@ -416,6 +418,40 @@ class V2AModel(pl.LightningModule):
                 renderer_smpl_img = renderer_smpl_img[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
             else:
                 renderer_smpl_img = renderer_smpl_img[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+            reshape_depth_map_list = []
+            for map_id, depth_map_i in enumerate(renderer_depth_map):
+                depth_map_i = depth_map_i[0,:,:,0].data.cpu().numpy()
+                if input_img.shape[0] < input_img.shape[1]:
+                    depth_map_i = depth_map_i[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
+                else:
+                    depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+                reshape_depth_map_list.append(depth_map_i)
+
+            for map_id, depth_map_i in enumerate(reshape_depth_map_list):
+                # Processing depth map for better visualization
+                depth_map_processed = np.copy(depth_map_i)
+
+                # Assigning no interaction areas (-1s) to max value for visualization
+                no_interaction = depth_map_processed < 0
+                # depth_map_processed[no_interaction] = np.max(depth_map_processed[~no_interaction])
+                min_depth = 2.5
+                max_depth = 5
+                depth_map_processed[no_interaction] = max_depth
+                depth_map_processed = np.clip(depth_map_processed, min_depth, max_depth)
+                # do the min max normalization manually
+                depth_map_processed = (depth_map_processed - min_depth) / (max_depth - min_depth)
+                depth_map_processed = (depth_map_processed * 255).astype(np.uint8)
+
+                # Normalize the depth map to 0-255 for visual effect as image (assuming 8 bit depth)
+                # depth_map_processed = cv2.normalize(depth_map_processed, None, 255, 0, norm_type=cv2.NORM_MINMAX,
+                #                                     dtype=cv2.CV_8U)
+
+                # Apply the reversed 'JET' colormap
+                depth_map_processed = cv2.applyColorMap(255 - depth_map_processed, cv2.COLORMAP_JET)
+                os.makedirs(f"stage_depth_map/{self.current_epoch:05d}", exist_ok=True)
+                cv2.imwrite(os.path.join(f"stage_depth_map/{self.current_epoch:05d}",
+                                         f'{map_id}_smpl_render_%04d.png' % idx), depth_map_processed)
+
             valid_mask = (renderer_smpl_img[:, :, -1] > 0)[:, :, np.newaxis]
 
             valid_render_image = renderer_smpl_img[:, :, :-1] * valid_mask
