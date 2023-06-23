@@ -350,6 +350,7 @@ class V2A(nn.Module):
         hitted_face_idx_list = np.stack(hitted_face_idx_list, axis=0)
         hitted_face_mask = hitted_face_idx_list > 0
         # TODO this is wrong, change to sum >= 2 (done)
+        # TODO what if smpl is not overlap but implicit is overlap? should query ray intersection with deformed implicit surface
         hitted_face_mask = np.sum(hitted_face_mask, axis=0) >= 2
         # hitted_face_mask = np.prod(hitted_face_mask, axis=0)
         # volume render each person separately
@@ -402,6 +403,7 @@ class V2A(nn.Module):
                 fg_rgb_i = fg_rgb_i[hitted_mask_idx]
                 z_max_i = z_max_i[hitted_mask_idx]
                 sdf_output_i = sdf_output_i[hitted_mask_idx]
+                # TODO here I didn't consider the sum off the weight
                 weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
                 fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
                 fg_rgb_values_each_person_list.append(fg_rgb_values_i)

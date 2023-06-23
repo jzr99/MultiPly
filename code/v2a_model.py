@@ -281,6 +281,7 @@ class V2AModel(pl.LightningModule):
         testset = create_dataset(self.opt.dataset.test)
         keypoint_list = [[] for _ in range(len(self.model.smpl_server_list))]
         all_person_smpl_mask_list =[]
+        all_instance_mask_depth_list = []
         for batch_ndx, batch in enumerate(tqdm(testset)):
             # generate instance mask for all test images
             inputs, targets, pixel_per_batch, total_pixels, idx = batch
@@ -426,6 +427,30 @@ class V2AModel(pl.LightningModule):
                 else:
                     depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
                 reshape_depth_map_list.append(depth_map_i)
+            # get front depth map
+            max_depth_map_list = []
+            for map_id, depth_map_i in enumerate(reshape_depth_map_list):
+                depth_map_processed = np.copy(depth_map_i)
+                no_interaction = depth_map_processed < 0
+                max_depth = 999
+                depth_map_processed[no_interaction] = max_depth
+                max_depth_map_list.append(depth_map_processed)
+            max_depth_map = np.stack(max_depth_map_list, axis=0)
+            front_depth_map = np.min(max_depth_map, axis=0)
+            # get instance mask from depth map
+            instance_mask_list = []
+            for map_id, depth_map_i in enumerate(reshape_depth_map_list):
+                instance_mask = (depth_map_i == front_depth_map)
+                instance_mask_list.append(instance_mask)
+                all_red_image = np.ones((instance_mask.shape[0], instance_mask.shape[1], 3)) * np.array([255, 0, 0]).reshape(1, 1, 3)
+                instance_mask = instance_mask[:, :, np.newaxis]
+                output_img_person_1 = (all_red_image * instance_mask + input_img * (1 - instance_mask)).astype(np.uint8)
+                os.makedirs(f"stage_depth_instance_mask/{self.current_epoch:05d}", exist_ok=True)
+                cv2.imwrite(os.path.join(f"stage_depth_instance_mask/{self.current_epoch:05d}",
+                                         f'{map_id}_smpl_render_%04d.png' % idx), output_img_person_1[:, :, ::-1])
+            all_instance_mask_depth = np.stack(instance_mask_list, axis=0)
+            all_instance_mask_depth_list.append(all_instance_mask_depth)
+
 
             for map_id, depth_map_i in enumerate(reshape_depth_map_list):
                 # Processing depth map for better visualization
@@ -517,12 +542,15 @@ class V2AModel(pl.LightningModule):
             # cv2.imwrite(f"stage_rendering/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
             # cv2.imwrite(f"stage_normal/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
             # cv2.imwrite(f"stage_fg_rendering/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-
+        all_instance_mask_depth_list = np.array(all_instance_mask_depth_list)
         all_person_smpl_mask_list = np.array(all_person_smpl_mask_list)
+        print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
+        print("all_instance_mask_depth_list.shape ", all_instance_mask_depth_list.shape)
         keypoint_list = np.array(keypoint_list)
         keypoint_list = keypoint_list.transpose(1, 0, 2, 3)
         os.makedirs(f"stage_instance_mask/{self.current_epoch:05d}", exist_ok=True)
-        np.save(f'stage_instance_mask/{self.current_epoch:05d}/all_person_smpl_mask.npy', all_person_smpl_mask_list)
+        # np.save(f'stage_instance_mask/{self.current_epoch:05d}/all_person_smpl_mask.npy', all_person_smpl_mask_list)
+        np.save(f'stage_instance_mask/{self.current_epoch:05d}/all_person_smpl_mask.npy', all_instance_mask_depth_list)
         np.save(f'stage_instance_mask/{self.current_epoch:05d}/2d_keypoint.npy', keypoint_list)
         # shape (160, 2, 960, 540)
         print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
