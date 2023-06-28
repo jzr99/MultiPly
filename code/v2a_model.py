@@ -257,7 +257,17 @@ class V2AModel(pl.LightningModule):
         # Canonical mesh update every 20 epochs
         if self.current_epoch != 0 and self.current_epoch % 20 == 0:
             for person_id, smpl_server in enumerate(self.model.smpl_server_list):
-                cond = {'smpl': torch.zeros(1, 69).float().cuda()}
+                # cond = {'smpl': torch.zeros(1, 69).float().cuda()}
+                cond_pose = torch.zeros(1, 69).float().cuda()
+                if self.model.use_person_encoder:
+                    # import pdb;pdb.set_trace()
+                    person_id_tensor = torch.from_numpy(np.array([person_id])).long().to(cond_pose.device)
+                    person_encoding = self.model.person_latent_encoder(person_id_tensor)
+                    person_encoding = person_encoding.repeat(cond_pose.shape[0], 1)
+                    cond_pose_id = torch.cat([cond_pose, person_encoding], dim=1)
+                    cond = {'smpl_id': cond_pose_id}
+                else:
+                    cond = {'smpl': cond_pose}
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=2)
                 self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.mesh_v_cano_list[person_id].device).float()
                 self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_id].device)
@@ -639,7 +649,19 @@ class V2AModel(pl.LightningModule):
         mesh_canonical_list = []
         if id == -1:
             for person_id, smpl_server in enumerate(self.model.smpl_server_list):
-                cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:] / np.pi}
+                # cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:] / np.pi}
+
+                cond_pose = inputs["smpl_pose"][:, person_id, 3:] / np.pi
+                if self.model.use_person_encoder:
+                    # import pdb;pdb.set_trace()
+                    person_id_tensor = torch.from_numpy(np.array([person_id])).long().to(inputs["smpl_pose"].device)
+                    person_encoding = self.model.person_latent_encoder(person_id_tensor)
+                    person_encoding = person_encoding.repeat(inputs["smpl_pose"].shape[0], 1)
+                    cond_pose_id = torch.cat([cond_pose, person_encoding], dim=1)
+                    cond = {'smpl_id': cond_pose_id}
+                else:
+                    cond = {'smpl': cond_pose}
+
                 # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
                                                smpl_server.verts_c[0], point_batch=10000, res_up=3)

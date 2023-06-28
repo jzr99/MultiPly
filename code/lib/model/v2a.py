@@ -22,12 +22,32 @@ class V2A(nn.Module):
         super().__init__()
 
         betas = np.load(betas_path)
+        try:
+            self.use_person_encoder = opt.use_person_encoder
+            print("self.use_person_encoder ", self.use_person_encoder)
+        except:
+            self.use_person_encoder = False
+            print("self.use_person_encoder ", self.use_person_encoder)
+        # human id encoder
+        if self.use_person_encoder:
+            assert len(betas.shape) == 2
+            self.person_latent_encoder = nn.Embedding(betas.shape[0], 64)
+
         self.foreground_implicit_network_list = nn.ModuleList()
         self.foreground_rendering_network_list = nn.ModuleList()
         if len(betas.shape) == 2:
-            for i in range(betas.shape[0]):
-                self.foreground_implicit_network_list.append(ImplicitNet(opt.implicit_network))
-                self.foreground_rendering_network_list.append(RenderingNet(opt.rendering_network))
+            if self.use_person_encoder:
+                # we use shared network for all people
+                print('use shared network for all people')
+                implicit_model = ImplicitNet(opt.implicit_network)
+                render_model = RenderingNet(opt.rendering_network)
+                for i in range(betas.shape[0]):
+                    self.foreground_implicit_network_list.append(implicit_model)
+                    self.foreground_rendering_network_list.append(render_model)
+            else:
+                for i in range(betas.shape[0]):
+                    self.foreground_implicit_network_list.append(ImplicitNet(opt.implicit_network))
+                    self.foreground_rendering_network_list.append(RenderingNet(opt.rendering_network))
         else:
             self.foreground_implicit_network_list.append(ImplicitNet(opt.implicit_network))
             self.foreground_rendering_network_list.append(RenderingNet(opt.rendering_network))
@@ -84,7 +104,10 @@ class V2A(nn.Module):
         # self.sampler_bone = PointOnBones(self.smpl_server.bone_ids)
 
         if opt.smpl_init:
-            smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % 'male'))
+            if self.use_person_encoder:
+                smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256_id.pth' % 'male'))
+            else:
+                smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % 'male'))
             for implicit_network in self.foreground_implicit_network_list:
                 implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
             if not self.use_smpl_deformer:
@@ -175,7 +198,8 @@ class V2A(nn.Module):
             # load into trimesh
             smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(),
                                         faces=self.smpl_server_list[i].faces, process=False)
-            raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
+            if self.training:
+                raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
             # TODO need to comfirm that camera ray is aligned with scaled smpl
 
 
@@ -208,18 +232,40 @@ class V2A(nn.Module):
             person_list = range(num_person)
         else:
             person_list = [id]
+        # # use bounding box to determine the hitted person
+        # for person_id in person_list:
+        #     bounding_box_max = smpl_output_list[person_id]['smpl_verts'][0].max(dim=0)
+        #     bounding_box_min = smpl_output_list[person_id]['smpl_verts'][0].min(dim=0)
+        #     # determine camera ray hit which person
+        #     index_ray = (cam_loc[:, 0] > bounding_box_min[0]) & (cam_loc[:, 0] < bounding_box_max[0]) & \
+        #                 (cam_loc[:, 1] > bounding_box_min[1]) & (cam_loc[:, 1] < bounding_box_max[1]) & \
+        #                 (cam_loc[:, 2] > bounding_box_min[2]) & (cam_loc[:, 2] < bounding_box_max[2])
+        #     # index_ray_list.append(index_ray)
+        #     # person_id_list.append(person_id)
+
         hitted_face_idx_list = []
         index_triangle_list = []
         index_ray_list = []
         locations_list = []
         for person_id in person_list:
-            cond = {'smpl': smpl_pose[:, person_id, 3:] / np.pi}
+            cond_pose = smpl_pose[:, person_id, 3:] / np.pi
             if self.training:
                 if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
-                    cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
+                    cond_pose = smpl_pose[:, person_id, 3:] * 0.
+                    # cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
                 # if input['current_epoch'] < 500:
                 #     cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
 
+            # cond = {'smpl': smpl_pose[:, person_id, 3:] / np.pi}
+            if self.use_person_encoder:
+                # import pdb;pdb.set_trace()
+                person_id_tensor = torch.from_numpy(np.array([person_id])).long().to(smpl_pose.device)
+                person_encoding = self.person_latent_encoder(person_id_tensor)
+                person_encoding = person_encoding.repeat(smpl_pose.shape[0], 1)
+                cond_pose_id = torch.cat([cond_pose, person_encoding], dim=1)
+                cond = {'smpl_id': cond_pose_id}
+            else:
+                cond = {'smpl': cond_pose}
             # if True:
             #     cond = {'smpl': input["smpl_pose_cond_24"][:, person_id, 3:] / np.pi}
             z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs_list[person_id], eval_mode=True, smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
@@ -233,12 +279,13 @@ class V2A(nn.Module):
             points_flat = points.reshape(-1, 3)
             # import pdb;pdb.set_trace()
             # depth order loss related
-            face_hitted_list = raymeshintersector_list[person_id].intersects_first(cam_loc.cpu(), ray_dirs.cpu())
-            hitted_face_idx_list.append(face_hitted_list)
-            index_triangle, index_ray, locations = raymeshintersector_list[person_id].intersects_id(cam_loc.cpu(), ray_dirs.cpu(), multiple_hits=False, return_locations=True)
-            index_triangle_list.append(index_triangle)
-            index_ray_list.append(index_ray)
-            locations_list.append(locations)
+            if self.training:
+                face_hitted_list = raymeshintersector_list[person_id].intersects_first(cam_loc.cpu(), ray_dirs.cpu())
+                hitted_face_idx_list.append(face_hitted_list)
+                index_triangle, index_ray, locations = raymeshintersector_list[person_id].intersects_id(cam_loc.cpu(), ray_dirs.cpu(), multiple_hits=False, return_locations=True)
+                index_triangle_list.append(index_triangle)
+                index_ray_list.append(index_ray)
+                locations_list.append(locations)
 
 
             dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
@@ -347,72 +394,73 @@ class V2A(nn.Module):
             z_vals_list.append(z_vals)
             person_id_list.append(person_label)
 
-        hitted_face_idx_list = np.stack(hitted_face_idx_list, axis=0)
-        hitted_face_mask = hitted_face_idx_list > 0
-        # TODO this is wrong, change to sum >= 2 (done)
-        # TODO what if smpl is not overlap but implicit is overlap? should query ray intersection with deformed implicit surface
-        hitted_face_mask = np.sum(hitted_face_mask, axis=0) >= 2
-        # hitted_face_mask = np.prod(hitted_face_mask, axis=0)
-        # volume render each person separately
-        hitted_mask_idx = np.where(hitted_face_mask)[0]
-        hitted_face_idx = hitted_face_idx_list[:, hitted_mask_idx]
+        if self.training:
+            hitted_face_idx_list = np.stack(hitted_face_idx_list, axis=0)
+            hitted_face_mask = hitted_face_idx_list > 0
+            # TODO this is wrong, change to sum >= 2 (done)
+            # TODO what if smpl is not overlap but implicit is overlap? should query ray intersection with deformed implicit surface
+            hitted_face_mask = np.sum(hitted_face_mask, axis=0) >= 2
+            # hitted_face_mask = np.prod(hitted_face_mask, axis=0)
+            # volume render each person separately
+            hitted_mask_idx = np.where(hitted_face_mask)[0]
+            hitted_face_idx = hitted_face_idx_list[:, hitted_mask_idx]
 
-        fg_rgb_values_each_person_list = []
-        t_list = []
-        mean_hitted_vertex_list = []
-        if len(hitted_mask_idx) > 0:
-            for person_id in person_list:
-                index_triangle_i, index_ray_i, locations_i = index_triangle_list[person_id], index_ray_list[person_id], locations_list[person_id]
-                # sort index_ray_i
-                sorted_idx = np.argsort(index_ray_i)
-                index_ray_i = index_ray_i[sorted_idx]
-                index_triangle_i = index_triangle_i[sorted_idx]
-                locations_i = locations_i[sorted_idx]
+            fg_rgb_values_each_person_list = []
+            t_list = []
+            mean_hitted_vertex_list = []
+            if len(hitted_mask_idx) > 0:
+                for person_id in person_list:
+                    index_triangle_i, index_ray_i, locations_i = index_triangle_list[person_id], index_ray_list[person_id], locations_list[person_id]
+                    # sort index_ray_i
+                    sorted_idx = np.argsort(index_ray_i)
+                    index_ray_i = index_ray_i[sorted_idx]
+                    index_triangle_i = index_triangle_i[sorted_idx]
+                    locations_i = locations_i[sorted_idx]
 
-                locations_i_idx = np.nonzero(np.in1d(index_ray_i, hitted_mask_idx))[0]
-                locations_i = locations_i[locations_i_idx]
-                index_triangle_i = index_triangle_i[locations_i_idx]
-                index_ray_i = index_ray_i[locations_i_idx]
-                assert (index_ray_i == hitted_mask_idx).all()
-                assert (hitted_face_idx[person_id] == index_triangle_i).all()
-                # TODO this may be wrong for person > 2, need an additional mask to indicate which person is hitted
-                assert (index_triangle_i != -1).all()
-                # (number_hitted_faces, 3)
-                vertex_index_i = self.smpl_server_list[person_id].faces[index_triangle_i]
-                # import pdb;pdb.set_trace()
-                vertex_index_i = vertex_index_i.reshape(-1)
-                vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
-                vertex_position = smpl_output_list[person_id]['smpl_verts'][0][vertex_index_i]
-                vertex_position = vertex_position.reshape(-1, 3, 3)
-                mean_hitted_vertex_list.append(vertex_position.mean(dim=1))
-                # TODO check if it is not away from location_i (done error around 5mm)
+                    locations_i_idx = np.nonzero(np.in1d(index_ray_i, hitted_mask_idx))[0]
+                    locations_i = locations_i[locations_i_idx]
+                    index_triangle_i = index_triangle_i[locations_i_idx]
+                    index_ray_i = index_ray_i[locations_i_idx]
+                    assert (index_ray_i == hitted_mask_idx).all()
+                    assert (hitted_face_idx[person_id] == index_triangle_i).all()
+                    # TODO this may be wrong for person > 2, need an additional mask to indicate which person is hitted
+                    assert (index_triangle_i != -1).all()
+                    # (number_hitted_faces, 3)
+                    vertex_index_i = self.smpl_server_list[person_id].faces[index_triangle_i]
+                    # import pdb;pdb.set_trace()
+                    vertex_index_i = vertex_index_i.reshape(-1)
+                    vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
+                    vertex_position = smpl_output_list[person_id]['smpl_verts'][0][vertex_index_i]
+                    vertex_position = vertex_position.reshape(-1, 3, 3)
+                    mean_hitted_vertex_list.append(vertex_position.mean(dim=1))
+                    # TODO check if it is not away from location_i (done error around 5mm)
 
 
-                t = (locations_i - cam_loc[index_ray_i].cpu().numpy()) / (ray_dirs[index_ray_i].cpu().numpy() + 1e-12)
-                # TODO insure t is same for dimension -1
-                t = t[:,0]
-                t_list.append(t)
-                # index_triangle_i should be same as hitted_face_idx
-                # TODO still can reduce some computation power by disable when only one person in the scene
-                z_vals_i = z_vals_list[person_id]
-                fg_rgb_i = fg_rgb_list[person_id]
-                z_max_i = z_max_list[person_id]
-                sdf_output_i = sdf_output_list[person_id]
-                # idx = np.where(hitted_face_mask)[0]
-                z_vals_i = z_vals_i[hitted_mask_idx]
-                fg_rgb_i = fg_rgb_i[hitted_mask_idx]
-                z_max_i = z_max_i[hitted_mask_idx]
-                sdf_output_i = sdf_output_i[hitted_mask_idx]
-                # TODO here I didn't consider the sum off the weight
-                weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
-                fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
-                fg_rgb_values_each_person_list.append(fg_rgb_values_i)
-            mean_hitted_vertex_list = torch.stack(mean_hitted_vertex_list, dim=0)
-            # (2, 7)
-            fg_rgb_values_each_person_list = torch.stack(fg_rgb_values_each_person_list, dim=0)
-            # (2,7,3)
-            t_list = np.stack(t_list, axis=0)
-            # import pdb; pdb.set_trace()
+                    t = (locations_i - cam_loc[index_ray_i].cpu().numpy()) / (ray_dirs[index_ray_i].cpu().numpy() + 1e-12)
+                    # TODO insure t is same for dimension -1
+                    t = t[:,0]
+                    t_list.append(t)
+                    # index_triangle_i should be same as hitted_face_idx
+                    # TODO still can reduce some computation power by disable when only one person in the scene
+                    z_vals_i = z_vals_list[person_id]
+                    fg_rgb_i = fg_rgb_list[person_id]
+                    z_max_i = z_max_list[person_id]
+                    sdf_output_i = sdf_output_list[person_id]
+                    # idx = np.where(hitted_face_mask)[0]
+                    z_vals_i = z_vals_i[hitted_mask_idx]
+                    fg_rgb_i = fg_rgb_i[hitted_mask_idx]
+                    z_max_i = z_max_i[hitted_mask_idx]
+                    sdf_output_i = sdf_output_i[hitted_mask_idx]
+                    # TODO here I didn't consider the sum off the weight
+                    weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
+                    fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
+                    fg_rgb_values_each_person_list.append(fg_rgb_values_i)
+                mean_hitted_vertex_list = torch.stack(mean_hitted_vertex_list, dim=0)
+                # (2, 7)
+                fg_rgb_values_each_person_list = torch.stack(fg_rgb_values_each_person_list, dim=0)
+                # (2,7,3)
+                t_list = np.stack(t_list, axis=0)
+                # import pdb; pdb.set_trace()
         # DEBUG z_vals_bg use only last persons
         # DEBUG z_max is the same
         person_id_cat = torch.cat(person_id_list, dim=1)
@@ -532,7 +580,12 @@ class V2A(nn.Module):
         _, gradients, feature_vectors = self.forward_gradient(x, pnts_c, cond, tfs, person_id, create_graph=is_training, retain_graph=is_training)
         # ensure the gradient is normalized
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6)
-        fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs, cond['smpl'],
+        if self.use_person_encoder:
+            fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs,
+                                                                                    cond['smpl_id'][:, :69],
+                                                                                    feature_vectors, id_latent_code=cond['smpl_id'][:,69:])
+        else:
+            fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs, cond['smpl'],
                                                      feature_vectors)
         
         rgb_vals = fg_rendering_output[:, :3]

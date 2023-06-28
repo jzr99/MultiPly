@@ -223,10 +223,10 @@ def main(args):
         init_pose_list = np.array(init_pose_list)
         init_shape_list = np.array(init_shape_list)
         init_trans_list = np.array(init_trans_list)
-        interpolate_frame_list = list(range(211,224))
-        # import pdb;pdb.set_trace()
-        for person_i  in range(2):
-            init_pose_list[:, person_i] , init_trans_list[:, person_i] = interpolate(init_pose_list.shape[0],interpolate_frame_list, init_pose_list[:, person_i], init_trans_list[:, person_i])
+        # interpolate_frame_list = list(range(211,224))
+        # # import pdb;pdb.set_trace()
+        # for person_i  in range(2):
+        #     init_pose_list[:, person_i] , init_trans_list[:, person_i] = interpolate(init_pose_list.shape[0],interpolate_frame_list, init_pose_list[:, person_i], init_trans_list[:, person_i])
 
 
     for idx, img_path in enumerate(tqdm(img_paths)):

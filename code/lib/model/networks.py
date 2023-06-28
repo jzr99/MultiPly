@@ -25,6 +25,9 @@ class ImplicitNet(nn.Module):
         elif self.cond == 'frame':
             self.cond_layer = [0]
             self.cond_dim = 32
+        elif self.cond == 'smpl_id':
+            self.cond_layer = [0]
+            self.cond_dim = 69 + 64
         self.dim_pose_embed = 0
         if self.dim_pose_embed > 0:
             self.lin_p0 = nn.Linear(self.cond_dim, self.dim_pose_embed)
@@ -141,6 +144,11 @@ class RenderingNet(nn.Module):
             self.dim_cond_embed = 8
             self.cond_dim = 69
             self.lin_pose = torch.nn.Linear(self.cond_dim, self.dim_cond_embed)
+        if self.mode == 'pose_id_no_view':
+            self.dim_cond_embed = 8
+            self.cond_dim = 69
+            self.lin_pose = torch.nn.Linear(self.cond_dim, self.dim_cond_embed)
+            self.lin_id = torch.nn.Linear(64, 8)
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -151,7 +159,7 @@ class RenderingNet(nn.Module):
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         
-    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, frame_latent_code=None):
+    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, frame_latent_code=None, id_latent_code=None):
         if self.embedview_fn is not None:
             if self.mode == 'nerf_frame_encoding':
                 view_dirs = self.embedview_fn(view_dirs)
@@ -170,6 +178,13 @@ class RenderingNet(nn.Module):
             body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
             body_pose = self.lin_pose(body_pose)
             rendering_input = torch.cat([points, normals, body_pose, feature_vectors], dim=-1)
+        elif self.mode == 'pose_id_no_view':
+            num_points = points.shape[0]
+            body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
+            body_pose = self.lin_pose(body_pose)
+            id_latent_code = id_latent_code.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
+            id_latent_code = self.lin_id(id_latent_code)
+            rendering_input = torch.cat([points, normals, body_pose, id_latent_code, feature_vectors], dim=-1)
         elif self.mode == 'nerf':
             rendering_input = torch.cat([view_dirs, feature_vectors], dim=-1)
         else:
