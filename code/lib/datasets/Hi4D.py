@@ -86,6 +86,8 @@ class Hi4DDataset(torch.utils.data.Dataset):
         self.mask_paths_1 = [self.mask_paths_1[i] for i in self.training_indices]
 
         self.shape = np.load(os.path.join(root, "mean_shape.npy"))
+        self.num_person = self.shape.shape[0]
+        print("num_person: ", self.num_person)
         self.poses = np.load(os.path.join(root, 'poses.npy'))[self.training_indices] # [::self.skip_step]
         self.trans = np.load(os.path.join(root, 'normalize_trans.npy'))[self.training_indices] # [::self.skip_step]
         # cameras
@@ -155,7 +157,12 @@ class Hi4DDataset(torch.utils.data.Dataset):
                     smpl_mask_list = sorted(glob.glob(f"stage_instance_mask/*"))
                     smpl_mask_path = os.path.join(smpl_mask_list[-1], "all_person_smpl_mask.npy")
                     smpl_mask = np.load(smpl_mask_path) > 0.8
-                    sam_mask_binary = np.load(mask_path) > 0.0
+                    try:
+                        sam_mask_binary = np.load(mask_path) > 0.0
+                    except:
+                        mask_path = self.pre_mask_path
+                        print("ERROR: cannot load current sam mask, use previous sam mask")
+                        sam_mask_binary = np.load(mask_path) > 0.0
                     self.smpl_sam_iou = np.logical_and(sam_mask_binary, smpl_mask).sum(axis=(2, 3)) / np.logical_or(sam_mask_binary, smpl_mask).sum(axis=(2, 3))
                     self.smpl_sam_iou = self.smpl_sam_iou.mean(axis=-1)
                     # ascending order
@@ -202,7 +209,7 @@ class Hi4DDataset(torch.utils.data.Dataset):
         uv = np.mgrid[:img_size[0], :img_size[1]].astype(np.int32)
         uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
 
-        smpl_params = torch.zeros([2, 86]).float()
+        smpl_params = torch.zeros([self.num_person, 86]).float()
         smpl_params[:, 0] = torch.from_numpy(np.asarray(self.scale)).float()
 
         smpl_params[:, 1:4] = torch.from_numpy(self.trans[idx]).float()

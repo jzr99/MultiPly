@@ -376,7 +376,8 @@ class V2AModel(pl.LightningModule):
             verts_list = []
             faces_list = []
             colors_list = []
-            color_dict = [[255, 0.0, 0.0], [0.0, 255, 0.0]]
+            # color_dict = [[255, 0.0, 0.0], [0.0, 255, 0.0]]
+            color_dict = [[255, 0.0, 0.0] for _ in range(self.num_person)]
             for person_idx, smpl_server in enumerate(self.model.smpl_server_list):
                 smpl_outputs = smpl_server(batch_inputs["smpl_params"][:, person_idx, 0], batch_inputs['smpl_trans'][:, person_idx], batch_inputs['smpl_pose'][:, person_idx], batch_inputs['smpl_shape'][:, person_idx])
                 # smpl_outputs["smpl_verts"] shape (1, 6890, 3)
@@ -418,17 +419,17 @@ class V2AModel(pl.LightningModule):
                 #     os.makedirs(f'stage_joint_opt_smpl_joint/{person_idx}')
                 # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint/{person_idx}', '%04d.png' % idx), output_img[:, :, ::-1])
             renderer_depth_map = renderer.render_multiple_depth_map(verts_list, faces_list, colors_list)
-            renderer_smpl_img = renderer.render_multiple_meshes(verts_list, faces_list, colors_list)
-            renderer_smpl_img = (255 * renderer_smpl_img).data.cpu().numpy().astype(np.uint8)
-            renderer_smpl_img = renderer_smpl_img[0]
+            # renderer_smpl_img = renderer.render_multiple_meshes(verts_list, faces_list, colors_list)
+            # renderer_smpl_img = (255 * renderer_smpl_img).data.cpu().numpy().astype(np.uint8)
+            # renderer_smpl_img = renderer_smpl_img[0]
             img_size = results[0]["img_size"]
             rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
             input_img = rgb_gt.reshape(*img_size, -1).detach().cpu().numpy()
             input_img = (input_img * 255).astype(np.uint8)
-            if input_img.shape[0] < input_img.shape[1]:
-                renderer_smpl_img = renderer_smpl_img[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
-            else:
-                renderer_smpl_img = renderer_smpl_img[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+            # if input_img.shape[0] < input_img.shape[1]:
+            #     renderer_smpl_img = renderer_smpl_img[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
+            # else:
+            #     renderer_smpl_img = renderer_smpl_img[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
             reshape_depth_map_list = []
             for map_id, depth_map_i in enumerate(renderer_depth_map):
                 depth_map_i = depth_map_i[0,:,:,0].data.cpu().numpy()
@@ -487,23 +488,25 @@ class V2AModel(pl.LightningModule):
                 cv2.imwrite(os.path.join(f"stage_depth_map/{self.current_epoch:05d}",
                                          f'{map_id}_smpl_render_%04d.png' % idx), depth_map_processed)
 
-            valid_mask = (renderer_smpl_img[:, :, -1] > 0)[:, :, np.newaxis]
+            # valid_mask = (renderer_smpl_img[:, :, -1] > 0)[:, :, np.newaxis]
+            #
+            # valid_render_image = renderer_smpl_img[:, :, :-1] * valid_mask
+            # person_1_mask = (valid_render_image[:, :, 0] >= 250) & (valid_render_image[:, :, 0] >= valid_render_image[:, :, 1])
+            # person_2_mask = (valid_render_image[:, :, 1] >= 250) & (valid_render_image[:, :, 1] >= valid_render_image[:, :, 0])
+            # all_person_mask = np.stack([person_1_mask, person_2_mask], axis=0)
+            # all_person_smpl_mask_list.append(all_person_mask)
+            # person_1_mask = person_1_mask[:, :, np.newaxis]
+            # person_2_mask = person_2_mask[:, :, np.newaxis]
+            # all_red_image = np.ones_like(valid_render_image) * np.array([255, 0, 0]).reshape(1, 1, 3)
+            # output_img_person_1 = (all_red_image * person_1_mask + input_img * (1 - person_1_mask)).astype(np.uint8)
+            # output_img_person_2 = (all_red_image * person_2_mask + input_img * (1 - person_2_mask)).astype(np.uint8)
+            # # output_img = (renderer_smpl_img[:, :, :-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
+            # # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint', 'smpl_render_%04d.png' % idx), output_img[:,:,::-1])
+            # os.makedirs(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", exist_ok=True)
+            # cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '1_smpl_render_%04d.png' % idx), output_img_person_1[:,:,::-1])
+            # cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '2_smpl_render_%04d.png' % idx), output_img_person_2[:,:,::-1])
 
-            valid_render_image = renderer_smpl_img[:, :, :-1] * valid_mask
-            person_1_mask = (valid_render_image[:, :, 0] >= 250) & (valid_render_image[:, :, 0] >= valid_render_image[:, :, 1])
-            person_2_mask = (valid_render_image[:, :, 1] >= 250) & (valid_render_image[:, :, 1] >= valid_render_image[:, :, 0])
-            all_person_mask = np.stack([person_1_mask, person_2_mask], axis=0)
-            all_person_smpl_mask_list.append(all_person_mask)
-            person_1_mask = person_1_mask[:, :, np.newaxis]
-            person_2_mask = person_2_mask[:, :, np.newaxis]
-            all_red_image = np.ones_like(valid_render_image) * np.array([255, 0, 0]).reshape(1, 1, 3)
-            output_img_person_1 = (all_red_image * person_1_mask + input_img * (1 - person_1_mask)).astype(np.uint8)
-            output_img_person_2 = (all_red_image * person_2_mask + input_img * (1 - person_2_mask)).astype(np.uint8)
-            # output_img = (renderer_smpl_img[:, :, :-1] * valid_mask + input_img * (1 - valid_mask)).astype(np.uint8)
-            # cv2.imwrite(os.path.join(f'stage_joint_opt_smpl_joint', 'smpl_render_%04d.png' % idx), output_img[:,:,::-1])
-            os.makedirs(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", exist_ok=True)
-            cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '1_smpl_render_%04d.png' % idx), output_img_person_1[:,:,::-1])
-            cv2.imwrite(os.path.join(f"stage_joint_opt_smpl_joint/{self.current_epoch:05d}", '2_smpl_render_%04d.png' % idx), output_img_person_2[:,:,::-1])
+            # useless code
             # import pdb; pdb.set_trace()
             # img_size = results[0]["img_size"]
             # rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
@@ -553,8 +556,8 @@ class V2AModel(pl.LightningModule):
             # cv2.imwrite(f"stage_normal/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
             # cv2.imwrite(f"stage_fg_rendering/{self.current_epoch:05d}/all/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
         all_instance_mask_depth_list = np.array(all_instance_mask_depth_list)
-        all_person_smpl_mask_list = np.array(all_person_smpl_mask_list)
-        print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
+        # all_person_smpl_mask_list = np.array(all_person_smpl_mask_list)
+        # print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
         print("all_instance_mask_depth_list.shape ", all_instance_mask_depth_list.shape)
         keypoint_list = np.array(keypoint_list)
         keypoint_list = keypoint_list.transpose(1, 0, 2, 3)
@@ -563,7 +566,7 @@ class V2AModel(pl.LightningModule):
         np.save(f'stage_instance_mask/{self.current_epoch:05d}/all_person_smpl_mask.npy', all_instance_mask_depth_list)
         np.save(f'stage_instance_mask/{self.current_epoch:05d}/2d_keypoint.npy', keypoint_list)
         # shape (160, 2, 960, 540)
-        print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
+        # print("all_person_smpl_mask_list.shape ", all_person_smpl_mask_list.shape)
         # shape (160, 2, 27, 2)
         print("keypoint_list.shape ", keypoint_list.shape)
         self.model.train()

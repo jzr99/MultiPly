@@ -67,11 +67,17 @@ class SAMServer():
             self.predictor.set_image(image)
             # image_mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
             image_mask_all = smpl_mask[i]
-            assert image_mask_all.shape[0] == 2
+            # assert image_mask_all.shape[0] == 2
             output_mask_per_frame = []
             for person_id in range(image_mask_all.shape[0]):
                 image_mask = image_mask_all[person_id]
-                negative_image_mask = image_mask_all[1 - person_id]
+                negative_image_mask_list = []
+                for neg_person_i in range(image_mask_all.shape[0]):
+                    if neg_person_i != person_id:
+                        negative_image_mask_list.append(image_mask_all[neg_person_i])
+                negative_image_mask = np.stack(negative_image_mask_list, axis=0)
+                # fusion the negative mask
+                negative_image_mask = np.max(negative_image_mask, axis=0)
                 # get the xyxy bounding box from the binary mask
                 indices = np.argwhere(image_mask)
 
@@ -103,7 +109,12 @@ class SAMServer():
                 resized_mask = cv2.resize(canvas, (256, 256))
 
                 positive_point_candidate = smpl_joint[i, person_id, :27]
-                negative_point_candidate = smpl_joint[i, 1-person_id, :27]
+                negative_point_candidate_list = []
+                for neg_person_i in range(image_mask_all.shape[0]):
+                    if neg_person_i != person_id:
+                        negative_point_candidate_list.append(smpl_joint[i, neg_person_i, :27])
+                negative_point_candidate = np.concatenate(negative_point_candidate_list, axis=0)
+                # negative_point_candidate = smpl_joint[i, 1-person_id, :27]
                 # positive_point_candidate = all_positive_point_0[i, :27]
                 # negative_point_candidate = all_positive_point_1[i, :27]
                 point_list = []

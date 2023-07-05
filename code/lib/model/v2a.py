@@ -22,6 +22,14 @@ class V2A(nn.Module):
         super().__init__()
 
         betas = np.load(betas_path)
+        # default: use_depth_order_loss = True
+        try:
+            self.use_depth_order_loss = opt.use_depth_order_loss
+            print("self.use_depth_order_loss ", self.use_depth_order_loss)
+        except:
+            self.use_depth_order_loss = True
+            print("self.use_depth_order_loss ", self.use_depth_order_loss)
+        # default: use_person_encoder = False
         try:
             self.use_person_encoder = opt.use_person_encoder
             print("self.use_person_encoder ", self.use_person_encoder)
@@ -198,7 +206,7 @@ class V2A(nn.Module):
             # load into trimesh
             smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(),
                                         faces=self.smpl_server_list[i].faces, process=False)
-            if self.training:
+            if self.training and self.use_depth_order_loss:
                 raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
             # TODO need to comfirm that camera ray is aligned with scaled smpl
 
@@ -279,7 +287,7 @@ class V2A(nn.Module):
             points_flat = points.reshape(-1, 3)
             # import pdb;pdb.set_trace()
             # depth order loss related
-            if self.training:
+            if self.training and self.use_depth_order_loss:
                 face_hitted_list = raymeshintersector_list[person_id].intersects_first(cam_loc.cpu(), ray_dirs.cpu())
                 hitted_face_idx_list.append(face_hitted_list)
                 index_triangle, index_ray, locations = raymeshintersector_list[person_id].intersects_id(cam_loc.cpu(), ray_dirs.cpu(), multiple_hits=False, return_locations=True)
@@ -336,32 +344,34 @@ class V2A(nn.Module):
 
 
 
-                # sample point for interpenetration loss
-                assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
-                assert len(person_list) == 2
-                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
-                sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
-                partner_id = 1-person_id
+                # TODO: implement 3 person interpenetration loss
+                if len(person_list) == 2:
+                    # sample point for interpenetration loss
+                    assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
+                    assert len(person_list) == 2
+                    idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                    sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
+                    partner_id = 1-person_id
 
-                x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
-                                                                          inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
-                output = self.foreground_implicit_network_list[partner_id](x_c, cond)[0]
-                sdf = output[:, 0:1]
-                sdf = sdf.reshape(-1)
-                if (sdf < -0.01).any():
-                    penetrate_point = sample_point[:, sdf < -0.01]
-                    # if there is a possibility that it actually make it penetrate? like smpl is outside but implicit is inside?
-                    # TODO try to penelize implicit function
-                    distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point, smpl_output_list[partner_id]['smpl_verts'], K=1, return_nn=True)
-                    # (N, P1, K, D) for neighbor_points
-                    neighbor_points = neighbor_points.mean(dim=2)
-                    # filter outlier point
-                    stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.5
-                    if stable_point.any():
-                        penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
-                        neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
-                        # TODO make the neightbor_points move torwards its normal by a little margin
-                        interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point, neighbor_points)
+                    x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
+                                                                              inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
+                    output = self.foreground_implicit_network_list[partner_id](x_c, cond)[0]
+                    sdf = output[:, 0:1]
+                    sdf = sdf.reshape(-1)
+                    if (sdf < -0.01).any():
+                        penetrate_point = sample_point[:, sdf < -0.01]
+                        # if there is a possibility that it actually make it penetrate? like smpl is outside but implicit is inside?
+                        # TODO try to penelize implicit function
+                        distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point, smpl_output_list[partner_id]['smpl_verts'], K=1, return_nn=True)
+                        # (N, P1, K, D) for neighbor_points
+                        neighbor_points = neighbor_points.mean(dim=2)
+                        # filter outlier point
+                        stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.5
+                        if stable_point.any():
+                            penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
+                            neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
+                            # TODO make the neightbor_points move torwards its normal by a little margin
+                            interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point, neighbor_points)
 
             else:
                 differentiable_points = canonical_points.reshape(num_pixels, N_samples, 3).reshape(-1, 3)
@@ -394,7 +404,11 @@ class V2A(nn.Module):
             z_vals_list.append(z_vals)
             person_id_list.append(person_label)
 
-        if self.training:
+        fg_rgb_values_each_person_list = []
+        t_list = []
+        mean_hitted_vertex_list = []
+        hitted_mask_idx = []
+        if self.training and self.use_depth_order_loss:
             hitted_face_idx_list = np.stack(hitted_face_idx_list, axis=0)
             hitted_face_mask = hitted_face_idx_list > 0
             # TODO this is wrong, change to sum >= 2 (done)
@@ -404,10 +418,6 @@ class V2A(nn.Module):
             # volume render each person separately
             hitted_mask_idx = np.where(hitted_face_mask)[0]
             hitted_face_idx = hitted_face_idx_list[:, hitted_mask_idx]
-
-            fg_rgb_values_each_person_list = []
-            t_list = []
-            mean_hitted_vertex_list = []
             if len(hitted_mask_idx) > 0:
                 for person_id in person_list:
                     index_triangle_i, index_ray_i, locations_i = index_triangle_list[person_id], index_ray_list[person_id], locations_list[person_id]
