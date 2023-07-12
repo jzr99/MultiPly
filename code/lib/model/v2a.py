@@ -40,6 +40,7 @@ class V2A(nn.Module):
         if self.use_person_encoder:
             assert len(betas.shape) == 2
             self.person_latent_encoder = nn.Embedding(betas.shape[0], 64)
+            # self.triplane_person_encoder = TriPlane(number_person=betas.shape[0], features=64)
 
         self.foreground_implicit_network_list = nn.ModuleList()
         self.foreground_rendering_network_list = nn.ModuleList()
@@ -48,7 +49,7 @@ class V2A(nn.Module):
                 # we use shared network for all people
                 print('use shared network for all people')
                 implicit_model = ImplicitNet(opt.implicit_network)
-                render_model = RenderingNet(opt.rendering_network)
+                render_model = RenderingNet(opt.rendering_network, triplane=implicit_model.triplane)
                 for i in range(betas.shape[0]):
                     self.foreground_implicit_network_list.append(implicit_model)
                     self.foreground_rendering_network_list.append(render_model)
@@ -117,7 +118,7 @@ class V2A(nn.Module):
             else:
                 smpl_model_state = torch.load(hydra.utils.to_absolute_path('./outputs/smpl_init_%s_256.pth' % 'male'))
             for implicit_network in self.foreground_implicit_network_list:
-                implicit_network.load_state_dict(smpl_model_state["model_state_dict"])
+                implicit_network.load_state_dict(smpl_model_state["model_state_dict"], strict=False)
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
@@ -142,7 +143,7 @@ class V2A(nn.Module):
     def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, person_id):
         if hasattr(self, "deformer_list"):
             x_c, outlier_mask = self.deformer_list[person_id].forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
-            output = self.foreground_implicit_network_list[person_id](x_c, cond)[0]
+            output = self.foreground_implicit_network_list[person_id](x_c, cond, person_id=person_id)[0]
             sdf = output[:, 0:1]
             if not self.training:
                 sdf[outlier_mask] = 4. # set a large SDF value for outlier points
@@ -174,7 +175,7 @@ class V2A(nn.Module):
     def query_oc(self, x, cond, person_id):
 
         x = x.reshape(-1, 3)
-        mnfld_pred = self.foreground_implicit_network_list[person_id](x, cond)[:,:,0].reshape(-1,1)
+        mnfld_pred = self.foreground_implicit_network_list[person_id](x, cond, person_id=person_id)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
     def forward(self, input, id=-1):
         # Parse model input
@@ -317,7 +318,7 @@ class V2A(nn.Module):
                 sample = self.sampler.get_points(verts_c, global_ratio=0.)
 
                 sample.requires_grad_()
-                local_pred = self.foreground_implicit_network_list[person_id](sample, cond)[..., 0:1]
+                local_pred = self.foreground_implicit_network_list[person_id](sample, cond, person_id=person_id)[..., 0:1]
                 grad_theta_person = gradient(sample, local_pred)
                 grad_theta_list.append(grad_theta_person)
 
@@ -332,7 +333,7 @@ class V2A(nn.Module):
                                                                            inverse=True,
                                                                            smpl_verts=smpl_output_list[person_id][
                                                                                'smpl_verts'])
-                output = self.foreground_implicit_network_list[person_id](x_c, cond)[0]
+                output = self.foreground_implicit_network_list[person_id](x_c, cond, person_id=person_id)[0]
                 sdf = output[:, 0:1]
                 sdf = sdf.reshape(-1)
                 threshold_smpl_sdf = 0.02
@@ -355,7 +356,7 @@ class V2A(nn.Module):
 
                     x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
                                                                               inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
-                    output = self.foreground_implicit_network_list[partner_id](x_c, cond)[0]
+                    output = self.foreground_implicit_network_list[partner_id](x_c, cond, person_id=partner_id)[0]
                     sdf = output[:, 0:1]
                     sdf = sdf.reshape(-1)
                     if (sdf < -0.01).any():
@@ -593,10 +594,10 @@ class V2A(nn.Module):
         if self.use_person_encoder:
             fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs,
                                                                                     cond['smpl_id'][:, :69],
-                                                                                    feature_vectors, id_latent_code=cond['smpl_id'][:,69:])
+                                                                                    feature_vectors, person_id=person_id, id_latent_code=cond['smpl_id'][:,69:])
         else:
             fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs, cond['smpl'],
-                                                     feature_vectors)
+                                                     feature_vectors, person_id=person_id)
         
         rgb_vals = fg_rendering_output[:, :3]
         others['normals'] = normals
@@ -625,7 +626,7 @@ class V2A(nn.Module):
         grads = torch.stack(grads, dim=-2)
         grads_inv = grads.inverse()
 
-        output = self.foreground_implicit_network_list[person_id](pnts_c, cond)[0]
+        output = self.foreground_implicit_network_list[person_id](pnts_c, cond, person_id=person_id)[0]
         sdf = output[:, :1]
 
         if not self.with_bkgd:

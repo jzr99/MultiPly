@@ -386,10 +386,39 @@ class V2AModel(pl.LightningModule):
                 # print(verts_color.shape)
 
                 # here we invert the scale back!!!!!
-                smpl_mesh = trimesh.Trimesh((1/scale.squeeze().detach().cpu()) * smpl_outputs["smpl_verts"].squeeze().detach().cpu(), smpl_server.smpl.faces, process=False, vertex_colors=verts_color.cpu())
-                verts = torch.tensor(smpl_mesh.vertices).cuda().float()[None]
-                faces = torch.tensor(smpl_mesh.faces).cuda()[None]
-                colors = torch.tensor(smpl_mesh.visual.vertex_colors).float().cuda()[None,..., :3] / 255
+                # SMPL version start
+                if self.current_epoch <= 40:
+                    smpl_mesh = trimesh.Trimesh((1/scale.squeeze().detach().cpu()) * smpl_outputs["smpl_verts"].squeeze().detach().cpu(), smpl_server.smpl.faces, process=False, vertex_colors=verts_color.cpu())
+                    verts = torch.tensor(smpl_mesh.vertices).cuda().float()[None]
+                    faces = torch.tensor(smpl_mesh.faces).cuda()[None]
+                    colors = torch.tensor(smpl_mesh.visual.vertex_colors).float().cuda()[None,..., :3] / 255
+                    # SMPL version end
+                else:
+                    # use deformed mesh as input, instead of SMPL
+                    # smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+                    smpl_tfs = smpl_outputs['smpl_tfs']
+                    # cond = {'smpl': smpl_pose[:, 3:] / np.pi}
+                    cond_pose = batch_inputs["smpl_pose"][:, person_idx, 3:] / np.pi
+                    if self.model.use_person_encoder:
+                        # import pdb;pdb.set_trace()
+                        person_id_tensor = torch.from_numpy(np.array([person_idx])).long().to(batch_inputs["smpl_pose"].device)
+                        person_encoding = self.model.person_latent_encoder(person_id_tensor)
+                        person_encoding = person_encoding.repeat(batch_inputs["smpl_pose"].shape[0], 1)
+                        cond_pose_id = torch.cat([cond_pose, person_encoding], dim=1)
+                        cond = {'smpl_id': cond_pose_id}
+                    else:
+                        cond = {'smpl': cond_pose}
+
+                    mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_idx), smpl_server.verts_c[0],
+                                                   point_batch=10000, res_up=2)
+                    verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(mesh_canonical.vertices, smpl_tfs, person_idx)
+                    verts_deformed = (1/scale.squeeze().detach().cpu()) * verts_deformed
+                    mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
+                    verts = torch.tensor(mesh_deformed.vertices).cuda().float()[None]
+                    faces = torch.tensor(mesh_deformed.faces).cuda()[None]
+                    colors = torch.tensor(mesh_deformed.visual.vertex_colors).float().cuda()[None, ..., :3] / 255
+
+
 
                 verts_list.append(verts)
                 faces_list.append(faces)
@@ -574,7 +603,7 @@ class V2AModel(pl.LightningModule):
     def query_oc(self, x, cond, person_id):
         
         x = x.reshape(-1, 3)
-        mnfld_pred = self.model.foreground_implicit_network_list[person_id](x, cond)[:,:,0].reshape(-1,1)
+        mnfld_pred = self.model.foreground_implicit_network_list[person_id](x, cond, person_id=person_id)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
 
     def query_wc(self, x):
@@ -596,6 +625,12 @@ class V2AModel(pl.LightningModule):
     def get_deformed_mesh_fast_mode(self, verts, smpl_tfs):
         verts = torch.tensor(verts).cuda().float()
         weights = self.model.deformer.query_weights(verts)
+        verts_deformed = skinning(verts.unsqueeze(0),  weights, smpl_tfs).data.cpu().numpy()[0]
+        return verts_deformed
+
+    def get_deformed_mesh_fast_mode_multiple_person(self, verts, smpl_tfs, person_id):
+        verts = torch.tensor(verts).cuda().float()
+        weights = self.model.deformer_list[person_id].query_weights(verts)
         verts_deformed = skinning(verts.unsqueeze(0),  weights, smpl_tfs).data.cpu().numpy()[0]
         return verts_deformed
 

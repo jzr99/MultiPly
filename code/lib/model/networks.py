@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 from .embedders import get_embedder
+from .triplane import TriPlane
 
 class ImplicitNet(nn.Module):
     def __init__(self, opt):
@@ -13,7 +14,7 @@ class ImplicitNet(nn.Module):
         self.skip_in = opt.skip_in
         self.embed_fn = None
         self.opt = opt
-
+        self.triplane = None
         if opt.multires > 0:
             embed_fn, input_ch = get_embedder(opt.multires, input_dims=opt.d_in, mode=opt.embedder_mode)
             self.embed_fn = embed_fn
@@ -28,6 +29,11 @@ class ImplicitNet(nn.Module):
         elif self.cond == 'smpl_id':
             self.cond_layer = [0]
             self.cond_dim = 69 + 64
+        elif self.cond == 'smpl_tri':
+            self.cond_layer = [0]
+            self.cond_dim = 69 + 64
+            # TODO add number_person in opt
+            self.triplane = TriPlane(opt.number_person, features=64)
         self.dim_pose_embed = 0
         if self.dim_pose_embed > 0:
             self.lin_p0 = nn.Linear(self.cond_dim, self.dim_pose_embed)
@@ -74,7 +80,7 @@ class ImplicitNet(nn.Module):
             setattr(self, "lin" + str(l), lin)
         self.softplus = nn.Softplus(beta=100)
 
-    def forward(self, input, cond, current_epoch=None):
+    def forward(self, input, cond, current_epoch=None, person_id=-1):
         if input.ndim == 2: input = input.unsqueeze(0)
 
         num_batch, num_point, num_dim = input.shape
@@ -84,11 +90,24 @@ class ImplicitNet(nn.Module):
         input = input.reshape(num_batch * num_point, num_dim)
 
         if self.cond != 'none':
-            num_batch, num_cond = cond[self.cond].shape
+            if self.cond == 'smpl_tri':
+                # TODO need to normalize the triplane encoding
+                # TODO here I divide input by 2 to prevent the input away from the range of triplane [-1, 1]
+                # import pdb;pdb.set_trace()
+                assert person_id != -1
+                tri_encoding = self.triplane(input/2, person_id)
+                cond_pose = cond['smpl_id'][:, :69]
+                num_batch, num_cond = cond_pose.shape
+                input_cond_pose = cond_pose.unsqueeze(1).expand(num_batch, num_point, num_cond)
+                input_cond_pose = input_cond_pose.reshape(num_batch * num_point, num_cond)
+                input_cond = torch.cat([input_cond_pose, tri_encoding], dim=1)
+                # cond = {'smpl_tri': cond_pose_tri}
+            else:
+                num_batch, num_cond = cond[self.cond].shape
 
-            input_cond = cond[self.cond].unsqueeze(1).expand(num_batch, num_point, num_cond)
+                input_cond = cond[self.cond].unsqueeze(1).expand(num_batch, num_point, num_cond)
 
-            input_cond = input_cond.reshape(num_batch * num_point, num_cond)
+                input_cond = input_cond.reshape(num_batch * num_point, num_cond)
 
             if self.dim_pose_embed:
                 input_cond = self.lin_p0(input_cond)
@@ -126,7 +145,7 @@ class ImplicitNet(nn.Module):
 
 
 class RenderingNet(nn.Module):
-    def __init__(self, opt):
+    def __init__(self, opt, triplane=None):
         super().__init__()
 
         self.mode = opt.mode
@@ -134,6 +153,7 @@ class RenderingNet(nn.Module):
             opt.dims) + [opt.d_out]
 
         self.embedview_fn = None
+        self.triplane = triplane
         if opt.multires_view > 0:
             embedview_fn, input_ch = get_embedder(opt.multires_view)
             self.embedview_fn = embedview_fn
@@ -149,6 +169,11 @@ class RenderingNet(nn.Module):
             self.cond_dim = 69
             self.lin_pose = torch.nn.Linear(self.cond_dim, self.dim_cond_embed)
             self.lin_id = torch.nn.Linear(64, 8)
+        if self.mode == 'pose_tri_no_view':
+            self.dim_cond_embed = 8
+            self.cond_dim = 69
+            self.lin_pose = torch.nn.Linear(self.cond_dim, self.dim_cond_embed)
+            self.lin_id = torch.nn.Linear(64, 8)
         self.num_layers = len(dims)
         for l in range(0, self.num_layers - 1):
             out_dim = dims[l + 1]
@@ -159,7 +184,7 @@ class RenderingNet(nn.Module):
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         
-    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, frame_latent_code=None, id_latent_code=None):
+    def forward(self, points, normals, view_dirs, body_pose, feature_vectors, frame_latent_code=None, id_latent_code=None, person_id=-1):
         if self.embedview_fn is not None:
             if self.mode == 'nerf_frame_encoding':
                 view_dirs = self.embedview_fn(view_dirs)
@@ -183,6 +208,16 @@ class RenderingNet(nn.Module):
             body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
             body_pose = self.lin_pose(body_pose)
             id_latent_code = id_latent_code.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
+            id_latent_code = self.lin_id(id_latent_code)
+            rendering_input = torch.cat([points, normals, body_pose, id_latent_code, feature_vectors], dim=-1)
+        elif self.mode == "pose_tri_no_view":
+            num_points = points.shape[0]
+            body_pose = body_pose.unsqueeze(1).expand(-1, num_points, -1).reshape(num_points, -1)
+            body_pose = self.lin_pose(body_pose)
+            # TODO need to normalize
+            # TODO here I divide input by 2 to prevent the input away from the range of triplane [-1, 1]
+            assert person_id != -1
+            id_latent_code = self.triplane(points/2, person_id)
             id_latent_code = self.lin_id(id_latent_code)
             rendering_input = torch.cat([points, normals, body_pose, id_latent_code, feature_vectors], dim=-1)
         elif self.mode == 'nerf':
