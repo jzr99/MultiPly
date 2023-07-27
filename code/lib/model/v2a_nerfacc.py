@@ -17,11 +17,12 @@ import hydra
 import kaolin
 from kaolin.ops.mesh import index_vertices_by_faces
 from pytorch3d import ops
+from nerfacc import render_weight_from_density, pack_info, accumulate_along_rays
 class V2A(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
-
         betas = np.load(betas_path)
+        self.using_nerfacc = True
         # default: use_depth_order_loss = True
         try:
             self.use_depth_order_loss = opt.use_depth_order_loss
@@ -200,6 +201,8 @@ class V2A(nn.Module):
         smpl_tfs_list = []
         smpl_output_list = []
         raymeshintersector_list = []
+        oriented_box_mesh_list = []
+        ray_box_intersector_list = []
         for i in range(num_person):
             smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
             smpl_output_list.append(smpl_output)
@@ -209,6 +212,11 @@ class V2A(nn.Module):
                                         faces=self.smpl_server_list[i].faces, process=False)
             if self.training and self.use_depth_order_loss:
                 raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
+            oriented_box = smpl_mesh.bounding_box_oriented.copy()
+            # https://github.com/mikedh/trimesh/issues/1865 So in this case mesh.bounding_box_oriented.primitive.extents is the pre-transform extents (which I think you probably want) where mesh.bounding_box_oriented.extents is the AABB of the transformed box.
+            extented_oriented_box = trimesh.primitives.Box(oriented_box.primitive.extents * 1.2, oriented_box.transform)
+            oriented_box_mesh_list.append(extented_oriented_box.to_mesh())
+            ray_box_intersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(extented_oriented_box.to_mesh()))
             # TODO need to comfirm that camera ray is aligned with scaled smpl
 
 
@@ -256,7 +264,23 @@ class V2A(nn.Module):
         index_triangle_list = []
         index_ray_list = []
         locations_list = []
+        index_ray_box_list = []
         for person_id in person_list:
+            if self.using_nerfacc:
+                index_triangle_box, index_ray_box, locations_box = ray_box_intersector_list[person_id].intersects_id(cam_loc.cpu(), ray_dirs.cpu(), multiple_hits=False, return_locations=True)
+                # import pdb; pdb.set_trace()
+                sorted_idx = np.argsort(index_ray_box)
+                index_ray_box = index_ray_box[sorted_idx]
+                index_triangle_box = index_triangle_box[sorted_idx]
+                locations_box = locations_box[sorted_idx]
+                if len(index_ray_box) == 0:
+                    index_ray_box = np.array([0])
+                index_ray_box = torch.from_numpy(index_ray_box).long().to(cam_loc.device)
+                cam_loc_intersect = cam_loc[index_ray_box]
+                ray_dirs_intersect = ray_dirs[index_ray_box]
+                index_ray_box_list.append(index_ray_box)
+
+
             cond_pose = smpl_pose[:, person_id, 3:] / np.pi
             if self.training:
                 if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
@@ -277,15 +301,29 @@ class V2A(nn.Module):
                 cond = {'smpl': cond_pose}
             # if True:
             #     cond = {'smpl': input["smpl_pose_cond_24"][:, person_id, 3:] / np.pi}
-            z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs_list[person_id], eval_mode=True, smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
-
-            z_vals, z_vals_bg = z_vals
-            z_max = z_vals[:,-1]
-            z_vals = z_vals[:,:-1]
-            N_samples = z_vals.shape[1]
-
-            points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
-            points_flat = points.reshape(-1, 3)
+            if self.using_nerfacc:
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs_intersect, cam_loc_intersect, self, cond, smpl_tfs_list[person_id],
+                                                        eval_mode=True,
+                                                        smpl_verts=smpl_output_list[person_id]['smpl_verts'],
+                                                        person_id=person_id)
+                z_vals, z_vals_bg = z_vals
+                z_max = z_vals[:, -1]
+                z_vals = z_vals[:, :-1]
+                N_samples = z_vals.shape[1]
+                # TODO assert N_samples is the same
+                num_pixels = cam_loc_intersect.shape[0]
+                points = cam_loc_intersect.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs_intersect.unsqueeze(1)
+                points_flat = points.reshape(-1, 3)
+                dirs = ray_dirs_intersect.unsqueeze(1).repeat(1, N_samples, 1)
+            else:
+                z_vals, _ = self.ray_sampler.get_z_vals(ray_dirs, cam_loc, self, cond, smpl_tfs_list[person_id], eval_mode=True, smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
+                z_vals, z_vals_bg = z_vals
+                z_max = z_vals[:,-1]
+                z_vals = z_vals[:,:-1]
+                N_samples = z_vals.shape[1]
+                points = cam_loc.unsqueeze(1) + z_vals.unsqueeze(2) * ray_dirs.unsqueeze(1)
+                points_flat = points.reshape(-1, 3)
+                dirs = ray_dirs.unsqueeze(1).repeat(1, N_samples, 1)
             # import pdb;pdb.set_trace()
             # depth order loss related
             if self.training and self.use_depth_order_loss:
@@ -297,7 +335,6 @@ class V2A(nn.Module):
                 locations_list.append(locations)
 
 
-            dirs = ray_dirs.unsqueeze(1).repeat(1,N_samples,1)
             sdf_output, canonical_points, feature_vectors = self.sdf_func_with_smpl_deformer(points_flat, cond, smpl_tfs_list[person_id], smpl_verts=smpl_output_list[person_id]['smpl_verts'], person_id=person_id)
 
             sdf_output = sdf_output.unsqueeze(1)
@@ -312,8 +349,8 @@ class V2A(nn.Module):
 
                 # sample canonical SMPL surface pnts for the eikonal loss
                 smpl_verts_c = self.smpl_server_list[person_id].verts_c.repeat(batch_size, 1,1)
-
-                indices = torch.randperm(smpl_verts_c.shape[1])[:num_pixels].cuda()
+                number_eikonal_points = 512
+                indices = torch.randperm(smpl_verts_c.shape[1])[:number_eikonal_points].cuda()
                 verts_c = torch.index_select(smpl_verts_c, 1, indices)
                 sample = self.sampler.get_points(verts_c, global_ratio=0.)
 
@@ -325,7 +362,8 @@ class V2A(nn.Module):
                 differentiable_points = canonical_points
 
                 # sample point form deformed SMPL
-                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                number_surface_loss_points = num_pixels
+                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_surface_loss_points].cuda()
                 sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'], dim=1, index=idx)
                 x_c, outlier_mask = self.deformer_list[person_id].forward(sample_point.reshape(-1, 3),
                                                                            smpl_tfs_list[person_id],
@@ -350,7 +388,8 @@ class V2A(nn.Module):
                     # sample point for interpenetration loss
                     assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
                     assert len(person_list) == 2
-                    idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                    number_sample_pixel = 512
+                    idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_sample_pixel].cuda()
                     sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
                     partner_id = 1-person_id
 
@@ -453,59 +492,118 @@ class V2A(nn.Module):
                     t = t[:,0]
                     t_list.append(t)
                     # index_triangle_i should be same as hitted_face_idx
-                    # TODO still can reduce some computation power by disable when only one person in the scene
-                    z_vals_i = z_vals_list[person_id]
-                    fg_rgb_i = fg_rgb_list[person_id]
-                    z_max_i = z_max_list[person_id]
-                    sdf_output_i = sdf_output_list[person_id]
-                    # idx = np.where(hitted_face_mask)[0]
-                    z_vals_i = z_vals_i[hitted_mask_idx]
-                    fg_rgb_i = fg_rgb_i[hitted_mask_idx]
-                    z_max_i = z_max_i[hitted_mask_idx]
-                    sdf_output_i = sdf_output_i[hitted_mask_idx]
-                    # TODO here I didn't consider the sum off the weight
-                    weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
-                    fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
-                    fg_rgb_values_each_person_list.append(fg_rgb_values_i)
+                    # # TODO still can reduce some computation power by disable when only one person in the scene
+                    # z_vals_i = z_vals_list[person_id]
+                    # fg_rgb_i = fg_rgb_list[person_id]
+                    # z_max_i = z_max_list[person_id]
+                    # sdf_output_i = sdf_output_list[person_id]
+                    # z_vals_i = z_vals_i[hitted_mask_idx]
+                    # fg_rgb_i = fg_rgb_i[hitted_mask_idx]
+                    # z_max_i = z_max_i[hitted_mask_idx]
+                    # sdf_output_i = sdf_output_i[hitted_mask_idx]
+                    # # TODO here I didn't consider the sum off the weight
+                    # weights_i, bg_transmittance_i = self.volume_rendering(z_vals_i, z_max_i, sdf_output_i)
+                    # fg_rgb_values_i = torch.sum(weights_i.unsqueeze(-1) * fg_rgb_i, 1)
+                    # fg_rgb_values_each_person_list.append(fg_rgb_values_i)
                 mean_hitted_vertex_list = torch.stack(mean_hitted_vertex_list, dim=0)
                 # (2, 7)
-                fg_rgb_values_each_person_list = torch.stack(fg_rgb_values_each_person_list, dim=0)
+                # fg_rgb_values_each_person_list = torch.stack(fg_rgb_values_each_person_list, dim=0)
+                if self.using_nerfacc:
+                    fg_rgb_values_each_person_list = None
                 # (2,7,3)
                 t_list = np.stack(t_list, axis=0)
                 # import pdb; pdb.set_trace()
         # DEBUG z_vals_bg use only last persons
         # DEBUG z_max is the same
-        person_id_cat = torch.cat(person_id_list, dim=1)
-        z_vals = torch.cat(z_vals_list, dim=1)
-        sdf_output = torch.cat(sdf_output_list, dim=1)
-        fg_rgb = torch.cat(fg_rgb_list, dim=1)
-        normal_values = torch.cat(normal_values_list, dim=1)
-        z_vals, sorted_index = torch.sort(z_vals,descending=False,dim=1)
+        if self.using_nerfacc:
+            index_ray_box_repeat = [index_ray_box_i.unsqueeze(1).repeat(1, N_samples).flatten() for index_ray_box_i in index_ray_box_list]
+            index_ray_box_repeat_flatten = torch.cat(index_ray_box_repeat, dim=0).unsqueeze(-1)
+            z_vals_max = [torch.cat([z_vals_i, z_max_i.unsqueeze(-1)], dim=1) for z_vals_i, z_max_i in zip(z_vals_list, z_max_list)]
+            z_vals_start = [z_vals_i[:, :-1].flatten() for z_vals_i in z_vals_max]
+            z_vals_end = [z_vals_i[:, 1:].flatten() for z_vals_i in z_vals_max]
+            z_vals_start_flatten = torch.cat(z_vals_start, dim=0).unsqueeze(-1)
+            z_vals_end_flatten = torch.cat(z_vals_end, dim=0).unsqueeze(-1)
+            # z_vals_flatten = [z_vals_i.flatten() for z_vals_i in z_vals_list]
+            # z_vals_flatten = torch.cat(z_vals_flatten, dim=0).unsqueeze(-1)
+            sdf_output_flatten = [sdf_output_i.flatten() for sdf_output_i in sdf_output_list]
+            sdf_output_flatten = torch.cat(sdf_output_flatten, dim=0).unsqueeze(-1)
+            fg_rgb_flatten = [fg_rgb_i.reshape(-1, 3) for fg_rgb_i in fg_rgb_list]
+            fg_rgb_flatten = torch.cat(fg_rgb_flatten, dim=0)
+            normal_values_flatten = [normal_values_i.reshape(-1, 3) for normal_values_i in normal_values_list]
+            normal_values_flatten = torch.cat(normal_values_flatten, dim=0)
+            person_id_flatten = [person_id_i.flatten() for person_id_i in person_id_list]
+            person_id_flatten = torch.cat(person_id_flatten, dim=0).unsqueeze(-1)
+            ray_zs_ze_sdf_rgb_normal_id = torch.cat([index_ray_box_repeat_flatten, z_vals_start_flatten, z_vals_end_flatten, sdf_output_flatten, fg_rgb_flatten, normal_values_flatten, person_id_flatten], dim=1)
+            z_vals_sorted, sorted_index = torch.sort(ray_zs_ze_sdf_rgb_normal_id[:, 2], descending=False, dim=0)
+            ray_zs_ze_sdf_rgb_normal_id = ray_zs_ze_sdf_rgb_normal_id[sorted_index]
+            index_ray_sorted, ray_sorted_index = torch.sort(ray_zs_ze_sdf_rgb_normal_id[:, 0], descending=False, dim=0, stable=True)
+            ray_zs_ze_sdf_rgb_normal_id = ray_zs_ze_sdf_rgb_normal_id[ray_sorted_index]
+            ray_indices = ray_zs_ze_sdf_rgb_normal_id[:, 0].long()
+            t_starts = ray_zs_ze_sdf_rgb_normal_id[:, 1]
+            t_ends = ray_zs_ze_sdf_rgb_normal_id[:, 2]
+            sigmas = self.density(ray_zs_ze_sdf_rgb_normal_id[:, 3])
+            fg_rgb_flatten_sorted = ray_zs_ze_sdf_rgb_normal_id[:, 4:7]
+            normal_values_flatten_sorted = ray_zs_ze_sdf_rgb_normal_id[:, 7:10]
+            person_id_flatten_sorted = ray_zs_ze_sdf_rgb_normal_id[:, 10]
+            n_rays = cam_loc.shape[0]
+            weights, transmittance, alphas = render_weight_from_density(t_starts, t_ends, sigmas, ray_indices=ray_indices, n_rays=n_rays)
+            packed_info = pack_info(ray_indices, n_rays=n_rays)
+            packed_info_valid = packed_info[packed_info[:, 1] != 0]
+            # TODO: this is the second last transmittance, the correct last transmittance need to be calculated
+            last_transmittance_index = packed_info_valid[1:, 0].long() - 1
+            last_transmittance_index = torch.cat([last_transmittance_index,torch.tensor([weights.shape[0]-1],device=weights.device)], dim=0)
+            bg_transmittance_valid = transmittance[last_transmittance_index]
+            bg_transmittance_indices = ray_indices[last_transmittance_index]
+            bg_transmittance = torch.ones((n_rays)).to(weights.device)
+            bg_transmittance[bg_transmittance_indices] = bg_transmittance_valid
+            acc_fg_rgb = accumulate_along_rays(weights, fg_rgb_flatten_sorted, ray_indices, n_rays=n_rays)
+            fg_rgb_values = acc_fg_rgb
+            acc_normal = accumulate_along_rays(weights, normal_values_flatten_sorted, ray_indices, n_rays=n_rays)
+            normal_values = acc_normal
+            acc_weight = accumulate_along_rays(weights, ray_indices=ray_indices, n_rays=n_rays).reshape(-1)
+            acc_person_list = []
+            for person_idx in person_list:
+                person_mask = (person_id_flatten_sorted == person_idx)
+                weight_person = weights[person_mask]
+                ray_indices_person = ray_indices[person_mask]
+                # (number_ray, 1)
+                acc_weight_person = accumulate_along_rays(weight_person, ray_indices=ray_indices_person, n_rays=n_rays)
+                acc_person_list.append(acc_weight_person.reshape(-1))
+            acc_person = torch.stack(acc_person_list, dim=1)
 
-        d1, d2 = sorted_index.shape
-        d1_index = torch.arange(d1).unsqueeze(1).repeat((1, d2))
-        sdf_output = sdf_output[d1_index, sorted_index]
-        fg_rgb = fg_rgb[d1_index, sorted_index]
-        normal_values = normal_values[d1_index, sorted_index]
-        person_id_cat = person_id_cat[d1_index, sorted_index]
-        # sdf_output = sdf_output[sorted_index].reshape(-1,1)
-        # fg_rgb = fg_rgb[sorted_index]
-        # normal_values = normal_values[sorted_index]
-        # import pdb; pdb.set_trace()
-        weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
-        # import pdb; pdb.set_trace()
-        fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
-        acc_person_list = []
-        for person_id in person_list:
-            number_pixel = weights.shape[0]
-            weight_idx = (person_id_cat==person_id).reshape(-1)
-            weight_person_i = weights.reshape(-1)[weight_idx]
-            weight_person_i = weight_person_i.reshape(number_pixel, -1)
-            # weight_person_i = weights[person_id_cat==person_id]
-            acc_person_i = torch.sum(weight_person_i, dim=-1)
-            acc_person_list.append(acc_person_i)
-        # import ipdb;ipdb.set_trace()
-        acc_person = torch.stack(acc_person_list, dim=1)
+            z_vals_inverse_sphere = self.ray_sampler.inverse_sphere_sampler.get_z_vals(ray_dirs, cam_loc, self)
+            z_vals_inverse_sphere = z_vals_inverse_sphere * (1. / self.ray_sampler.scene_bounding_sphere)
+            z_vals_bg = z_vals_inverse_sphere
+            # import pdb;pdb.set_trace()
+        else:
+            person_id_cat = torch.cat(person_id_list, dim=1)
+            z_vals = torch.cat(z_vals_list, dim=1)
+            sdf_output = torch.cat(sdf_output_list, dim=1)
+            fg_rgb = torch.cat(fg_rgb_list, dim=1)
+            normal_values = torch.cat(normal_values_list, dim=1)
+            z_vals, sorted_index = torch.sort(z_vals,descending=False,dim=1)
+
+            d1, d2 = sorted_index.shape
+            d1_index = torch.arange(d1).unsqueeze(1).repeat((1, d2))
+            sdf_output = sdf_output[d1_index, sorted_index]
+            fg_rgb = fg_rgb[d1_index, sorted_index]
+            normal_values = normal_values[d1_index, sorted_index]
+            person_id_cat = person_id_cat[d1_index, sorted_index]
+            weights, bg_transmittance = self.volume_rendering(z_vals, z_max, sdf_output)
+            fg_rgb_values = torch.sum(weights.unsqueeze(-1) * fg_rgb, 1)
+            acc_person_list = []
+            for person_id in person_list:
+                number_pixel = weights.shape[0]
+                weight_idx = (person_id_cat==person_id).reshape(-1)
+                weight_person_i = weights.reshape(-1)[weight_idx]
+                weight_person_i = weight_person_i.reshape(number_pixel, -1)
+                # weight_person_i = weights[person_id_cat==person_id]
+                acc_person_i = torch.sum(weight_person_i, dim=-1)
+                acc_person_list.append(acc_person_i)
+            # import ipdb;ipdb.set_trace()
+            acc_person = torch.stack(acc_person_list, dim=1)
+            acc_weight = torch.sum(weights, -1)
+            normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
         # Background rendering
         if input['idx'] is not None:
             N_bg_samples = z_vals_bg.shape[1]
@@ -540,11 +638,20 @@ class V2A(nn.Module):
         bg_rgb_values = bg_transmittance.unsqueeze(-1) * bg_rgb_values
         rgb_values = fg_rgb_values + bg_rgb_values
 
-        normal_values = torch.sum(weights.unsqueeze(-1) * normal_values, 1)
 
         if self.training:
-            index_off_surface = torch.all(torch.stack(index_off_surface_list, dim=0), dim=0)
-            index_in_surface = torch.any(torch.stack(index_in_surface_list, dim=0), dim=0)
+            if self.using_nerfacc:
+                index_off_surface = torch.tensor(np.ones((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
+                index_in_surface = torch.tensor(np.zeros((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
+                for p, (ray_index, index_off, index_in) in enumerate(zip(index_ray_box_list, index_off_surface_list, index_in_surface_list)):
+                    index_off_surface[ray_index, p] = index_off
+                    index_in_surface[ray_index, p] = index_in
+                index_off_surface = torch.all(index_off_surface, dim=1)
+                index_in_surface = torch.any(index_in_surface, dim=1)
+            else:
+                index_off_surface = torch.all(torch.stack(index_off_surface_list, dim=0), dim=0)
+                index_in_surface = torch.any(torch.stack(index_in_surface_list, dim=0), dim=0)
+            # import pdb; pdb.set_trace()
             grad_theta = torch.cat(grad_theta_list, dim=1)
             output = {
                 # 'sam_mask': sam_mask,
@@ -561,8 +668,8 @@ class V2A(nn.Module):
                 'index_outside': input['index_outside'],
                 'index_off_surface': index_off_surface,
                 'index_in_surface': index_in_surface,
-                'acc_map': torch.sum(weights, -1),
-                'sdf_output': sdf_output,
+                'acc_map': acc_weight,
+                # 'sdf_output': sdf_output,
                 'grad_theta': grad_theta,
                 'interpenetration_loss': interpenetration_loss,
                 'temporal_loss': temporal_loss,
@@ -576,12 +683,12 @@ class V2A(nn.Module):
         else:
             fg_output_rgb = fg_rgb_values + bg_transmittance.unsqueeze(-1) * torch.ones_like(fg_rgb_values, device=fg_rgb_values.device)
             output = {
-                'acc_map': torch.sum(weights, -1),
+                'acc_map': acc_weight,
                 'acc_person_list': acc_person,
                 'rgb_values': rgb_values,
                 'fg_rgb_values': fg_output_rgb,
                 'normal_values': normal_values,
-                'sdf_output': sdf_output,
+                # 'sdf_output': sdf_output,
             }
         return output
 

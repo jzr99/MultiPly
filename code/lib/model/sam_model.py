@@ -120,8 +120,11 @@ class SAMServer():
                 point_list = []
                 for j in range(positive_point_candidate.shape[0]):
                     p = positive_point_candidate[j]
-                    if image_mask[p[1], p[0]] > 0.7:
-                        point_list.append(p)
+                    try:
+                        if image_mask[p[1], p[0]] > 0.7:
+                            point_list.append(p)
+                    except:
+                        print('positive point out of image')
                 point_list = np.array(point_list)
 
                 positive_points = point_list
@@ -137,6 +140,16 @@ class SAMServer():
                 # # print(np.nonzero(binary_mask))
                 # # print(positive_points)
                 # positive_points = positive_points[:,[1, 0]]
+                # if there is no positive joint in the mask
+                if len(positive_points) == 0:
+                    positive_point_list = []
+                    while len(positive_points) < 1:
+                        print("all keypoints are out of the mask, sample one point randomly")
+                        x = np.random.randint(0, mask.shape[1])
+                        y = np.random.randint(0, mask.shape[0])
+                        if image_mask[y, x] > 0.7:
+                            positive_point_list.append([x, y])
+                            positive_points = np.array(positive_point_list)
                 num_positive_points = len(positive_points)
                 positive_labels = np.ones(num_positive_points)
 
@@ -158,8 +171,11 @@ class SAMServer():
 
                 for j in range(negative_point_candidate.shape[0]):
                     p = negative_point_candidate[j]
-                    if image_mask[p[1], p[0]] < 0.7 and negative_image_mask[p[1], p[0]] > 0.7:
-                        negative_points.append([p[0], p[1]])
+                    try:
+                        if image_mask[p[1], p[0]] < 0.7 and negative_image_mask[p[1], p[0]] > 0.7:
+                            negative_points.append([p[0], p[1]])
+                    except:
+                        print('negative point outside image')
                 # point_list = np.array(point_list)
 
                 negative_labels = np.zeros(len(negative_points))

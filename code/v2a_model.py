@@ -1,6 +1,7 @@
 import pytorch_lightning as pl
 import torch.optim as optim
-from lib.model.v2a import V2A
+# from lib.model.v2a import V2A
+from lib.model.v2a_nerfacc import V2A
 from lib.model.body_model_params import BodyModelParams
 import cv2
 import torch
@@ -387,7 +388,7 @@ class V2AModel(pl.LightningModule):
 
                 # here we invert the scale back!!!!!
                 # SMPL version start
-                if self.current_epoch <= 40:
+                if self.current_epoch <= 490:
                     smpl_mesh = trimesh.Trimesh((1/scale.squeeze().detach().cpu()) * smpl_outputs["smpl_verts"].squeeze().detach().cpu(), smpl_server.smpl.faces, process=False, vertex_colors=verts_color.cpu())
                     verts = torch.tensor(smpl_mesh.vertices).cuda().float()[None]
                     faces = torch.tensor(smpl_mesh.faces).cuda()[None]

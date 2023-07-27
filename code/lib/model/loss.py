@@ -11,6 +11,10 @@ class Loss(nn.Module):
         self.opacity_sparse_weight = opt.opacity_sparse_weight
         self.in_shape_weight = opt.in_shape_weight
         self.sam_mask_weight = opt.sam_mask_weight
+        try:
+            self.smpl_surface_weight = opt.smpl_surface_weight
+        except:
+            self.smpl_surface_weight = 0
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
@@ -85,27 +89,33 @@ class Loss(nn.Module):
         if isinstance(model_outputs['fg_rgb_values_each_person_list'], list):
             depth_order_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
         else:
-            fg_rgb_values_each_person_list = model_outputs['fg_rgb_values_each_person_list']
-            fg_rgb_values_each_person_nan_filter = ~torch.any(torch.any(fg_rgb_values_each_person_list.isnan(), dim=-1), dim=0)
-            fg_rgb_values_each_person_list_nan_filter = fg_rgb_values_each_person_list[:, fg_rgb_values_each_person_nan_filter, :]
-            gt_rgb_each_person = ground_truth['rgb'][0].cuda()
-            gt_rgb_each_person = gt_rgb_each_person[model_outputs["hitted_mask_idx"]]
-            rgb_gt_nan_filter_hitted = gt_rgb_each_person[fg_rgb_values_each_person_nan_filter]
-            cam_loc = model_outputs['cam_loc'][model_outputs["hitted_mask_idx"]]
-            cam_loc = cam_loc[fg_rgb_values_each_person_nan_filter]
-            # import pdb;pdb.set_trace()
-
-            # reorder GT sam mask
             if 'sam_mask' in model_outputs.keys() and True:
                 sam_mask = model_outputs['sam_mask']
                 sam_mask_reorder = sam_mask[model_outputs["hitted_mask_idx"]]
-                sam_mask_reorder_filter = sam_mask_reorder[fg_rgb_values_each_person_nan_filter]
+                sam_mask_reorder_filter = sam_mask_reorder
                 depth_order_loss = self.get_depth_order_loss_samGT(model_outputs['t_list'],
                                                              model_outputs['mean_hitted_vertex_list'],
-                                                             sam_mask_reorder_filter, cam_loc)
-            else:
-                print('using rgb evidence depth order loss')
-                depth_order_loss = self.get_depth_order_loss(model_outputs['t_list'], fg_rgb_values_each_person_list_nan_filter, model_outputs['mean_hitted_vertex_list'], rgb_gt_nan_filter_hitted, cam_loc)
+                                                             sam_mask_reorder_filter, model_outputs['cam_loc'][model_outputs["hitted_mask_idx"]])
+            # fg_rgb_values_each_person_list = model_outputs['fg_rgb_values_each_person_list']
+            # fg_rgb_values_each_person_nan_filter = ~torch.any(torch.any(fg_rgb_values_each_person_list.isnan(), dim=-1), dim=0)
+            # fg_rgb_values_each_person_list_nan_filter = fg_rgb_values_each_person_list[:, fg_rgb_values_each_person_nan_filter, :]
+            # gt_rgb_each_person = ground_truth['rgb'][0].cuda()
+            # gt_rgb_each_person = gt_rgb_each_person[model_outputs["hitted_mask_idx"]]
+            # rgb_gt_nan_filter_hitted = gt_rgb_each_person[fg_rgb_values_each_person_nan_filter]
+            # cam_loc = model_outputs['cam_loc'][model_outputs["hitted_mask_idx"]]
+            # cam_loc = cam_loc[fg_rgb_values_each_person_nan_filter]
+            #
+            # # reorder GT sam mask
+            # if 'sam_mask' in model_outputs.keys() and True:
+            #     sam_mask = model_outputs['sam_mask']
+            #     sam_mask_reorder = sam_mask[model_outputs["hitted_mask_idx"]]
+            #     sam_mask_reorder_filter = sam_mask_reorder[fg_rgb_values_each_person_nan_filter]
+            #     depth_order_loss = self.get_depth_order_loss_samGT(model_outputs['t_list'],
+            #                                                  model_outputs['mean_hitted_vertex_list'],
+            #                                                  sam_mask_reorder_filter, cam_loc)
+            # else:
+            #     print('using rgb evidence depth order loss')
+            #     depth_order_loss = self.get_depth_order_loss(model_outputs['t_list'], fg_rgb_values_each_person_list_nan_filter, model_outputs['mean_hitted_vertex_list'], rgb_gt_nan_filter_hitted, cam_loc)
 
         nan_filter = ~torch.any(model_outputs['rgb_values'].isnan(), dim=1)
         rgb_gt = ground_truth['rgb'][0].cuda()
@@ -117,8 +127,8 @@ class Loss(nn.Module):
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
         temporal_loss = model_outputs['temporal_loss']
-        # smpl_surface_loss = model_outputs['smpl_surface_loss']
-        smpl_surface_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
+        smpl_surface_loss = model_outputs['smpl_surface_loss'] * self.smpl_surface_weight
+        # smpl_surface_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
         if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > 200:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
