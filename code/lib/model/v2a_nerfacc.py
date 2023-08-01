@@ -18,11 +18,13 @@ import kaolin
 from kaolin.ops.mesh import index_vertices_by_faces
 from pytorch3d import ops
 from nerfacc import render_weight_from_density, pack_info, accumulate_along_rays
+from .deformer import skinning
 class V2A(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
         betas = np.load(betas_path)
         self.using_nerfacc = True
+        self.use_mesh_depth_order = True
         # default: use_depth_order_loss = True
         try:
             self.use_depth_order_loss = opt.use_depth_order_loss
@@ -141,6 +143,15 @@ class V2A(nn.Module):
         #     self.sam_1_mask = np.load(
         #         '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop/V2A_mask/1_sam_opt.npy')
 
+
+    def get_deformed_mesh_fast_mode_multiple_person(self, verts, smpl_tfs, person_id):
+        # verts = torch.tensor(verts).cuda().float()
+        weights = self.deformer_list[person_id].query_weights(verts[0])
+        verts_deformed = skinning(verts, weights, smpl_tfs)
+        # verts_deformed = skinning(verts.unsqueeze(0),  weights, smpl_tfs).data.cpu().numpy()[0]
+        return verts_deformed
+
+
     def sdf_func_with_smpl_deformer(self, x, cond, smpl_tfs, smpl_verts, person_id):
         if hasattr(self, "deformer_list"):
             x_c, outlier_mask = self.deformer_list[person_id].forward(x, smpl_tfs, return_weights=False, inverse=True, smpl_verts=smpl_verts)
@@ -203,6 +214,7 @@ class V2A(nn.Module):
         raymeshintersector_list = []
         oriented_box_mesh_list = []
         ray_box_intersector_list = []
+        verts_deformed_list = []
         for i in range(num_person):
             smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
             smpl_output_list.append(smpl_output)
@@ -210,8 +222,17 @@ class V2A(nn.Module):
             # load into trimesh
             smpl_mesh = trimesh.Trimesh(vertices=smpl_output['smpl_verts'][0].detach().cpu().numpy(),
                                         faces=self.smpl_server_list[i].faces, process=False)
-            if self.training and self.use_depth_order_loss:
+            if self.training and self.use_depth_order_loss and not self.use_mesh_depth_order:
                 raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(smpl_mesh))
+            if self.training and self.use_depth_order_loss and self.use_mesh_depth_order:
+                # import pdb;pdb.set_trace()
+                verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(self.mesh_v_cano_list[i], smpl_output['smpl_tfs'], i)
+                verts_deformed_list.append(verts_deformed[0])
+                deformed_mesh = trimesh.Trimesh(vertices=verts_deformed[0].detach().cpu().numpy(), faces=self.mesh_f_cano_list[i].detach().cpu().numpy(), process=False)
+                # TODO we need to check whether this mesh is align well with the image/camera ray
+                raymeshintersector_list.append(trimesh.ray.ray_triangle.RayMeshIntersector(deformed_mesh))
+
+            # TODO also can be changed to deformed mesh
             oriented_box = smpl_mesh.bounding_box_oriented.copy()
             # https://github.com/mikedh/trimesh/issues/1865 So in this case mesh.bounding_box_oriented.primitive.extents is the pre-transform extents (which I think you probably want) where mesh.bounding_box_oriented.extents is the AABB of the transformed box.
             extented_oriented_box = trimesh.primitives.Box(oriented_box.primitive.extents * 1.2, oriented_box.transform)
@@ -477,11 +498,20 @@ class V2A(nn.Module):
                     # TODO this may be wrong for person > 2, need an additional mask to indicate which person is hitted
                     assert (index_triangle_i != -1).all()
                     # (number_hitted_faces, 3)
-                    vertex_index_i = self.smpl_server_list[person_id].faces[index_triangle_i]
+                    if self.use_mesh_depth_order:
+                        vertex_index_i = self.mesh_f_cano_list[person_id][index_triangle_i]
+                        vertex_index_i = vertex_index_i.reshape(-1)
+                    else:
+                        vertex_index_i = self.smpl_server_list[person_id].faces[index_triangle_i]
+                        vertex_index_i = vertex_index_i.reshape(-1)
+                        vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
                     # import pdb;pdb.set_trace()
-                    vertex_index_i = vertex_index_i.reshape(-1)
-                    vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
-                    vertex_position = smpl_output_list[person_id]['smpl_verts'][0][vertex_index_i]
+                    # vertex_index_i = vertex_index_i.reshape(-1)
+                    # vertex_index_i = torch.from_numpy(vertex_index_i.astype('int64')).cuda()
+                    if self.use_mesh_depth_order:
+                        vertex_position = verts_deformed_list[person_id][vertex_index_i]
+                    else:
+                        vertex_position = smpl_output_list[person_id]['smpl_verts'][0][vertex_index_i]
                     vertex_position = vertex_position.reshape(-1, 3, 3)
                     mean_hitted_vertex_list.append(vertex_position.mean(dim=1))
                     # TODO check if it is not away from location_i (done error around 5mm)
