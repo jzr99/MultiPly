@@ -15,6 +15,11 @@ class Loss(nn.Module):
             self.smpl_surface_weight = opt.smpl_surface_weight
         except:
             self.smpl_surface_weight = 0
+
+        try:
+            self.sam_start_epoch = opt.sam_start_epoch
+        except:
+            self.sam_start_epoch = 200
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
@@ -51,7 +56,7 @@ class Loss(nn.Module):
 
     def get_sam_mask_loss(self, sam_mask, acc_person):
         sam_mask = self.sigmoid(sam_mask)
-        valid_mask = sam_mask.sum(dim=1) <= (1 + 100 * self.eps)
+        valid_mask = sam_mask.sum(dim=1) <= (1 + 1e-2)
         loss = self.l1_loss(acc_person[valid_mask], sam_mask[valid_mask])
         # import pdb;pdb.set_trace()
         return loss
@@ -122,19 +127,21 @@ class Loss(nn.Module):
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         bce_loss = self.get_bce_los(model_outputs['acc_map'])
-        opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
+        # opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
+        opacity_sparse_loss = torch.zeros((1),device=bce_loss.device)
         in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
         temporal_loss = model_outputs['temporal_loss']
         smpl_surface_loss = model_outputs['smpl_surface_loss'] * self.smpl_surface_weight
         # smpl_surface_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
-        if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > 200:
+        # import pdb; pdb.set_trace()
+        if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > self.sam_start_epoch:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
             sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)
         # if model_outputs['epoch'] > 300:
-        if model_outputs['epoch'] > 200:
+        if model_outputs['epoch'] > self.sam_start_epoch:
             depth_order_loss = 1.0 * depth_order_loss * (1 - min(self.depth_loss_milestone, model_outputs['epoch']) / self.depth_loss_milestone)
         else:
             depth_order_loss = torch.zeros((1), device=model_outputs['acc_map'].device)
