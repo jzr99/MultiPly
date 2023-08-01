@@ -143,13 +143,21 @@ class SAMServer():
                 # if there is no positive joint in the mask
                 if len(positive_points) == 0:
                     positive_point_list = []
-                    while len(positive_points) < 1:
-                        print("all keypoints are out of the mask, sample one point randomly")
+                    print("all keypoints are out of the mask, sample one point randomly")
+                    max_try_time = 10000000
+                    try_time = 0
+                    while len(positive_points) < 1 and try_time < max_try_time:
                         x = np.random.randint(0, mask.shape[1])
                         y = np.random.randint(0, mask.shape[0])
+                        try_time += 1
                         if image_mask[y, x] > 0.7:
                             positive_point_list.append([x, y])
                             positive_points = np.array(positive_point_list)
+                            break
+                    if len(positive_points) == 0:
+                        print("ERROR: sample point failed, use random keypoint")
+                        positive_point_list.append(positive_point_candidate[-1])
+                        positive_points = np.array(positive_point_list)
                 num_positive_points = len(positive_points)
                 positive_labels = np.ones(num_positive_points)
 

@@ -269,10 +269,13 @@ class V2AModel(pl.LightningModule):
                     cond = {'smpl_id': cond_pose_id}
                 else:
                     cond = {'smpl': cond_pose}
-                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=2)
-                self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.mesh_v_cano_list[person_id].device).float()
-                self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_id].device)
-                self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
+                try:
+                    mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0], point_batch=10000, res_up=2)
+                    self.model.mesh_v_cano_list[person_id] = torch.tensor(mesh_canonical.vertices[None], device = self.model.mesh_v_cano_list[person_id].device).float()
+                    self.model.mesh_f_cano_list[person_id] = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_id].device)
+                    self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
+                except:
+                    print("Canonical mesh generation failed, do not update it. mainly because the mesh (Surface level must be within volume data range).")
         if self.current_epoch % 50 == 0:
             self.get_instance_mask()
             self.get_sam_mask()
@@ -702,10 +705,15 @@ class V2AModel(pl.LightningModule):
                     cond = {'smpl': cond_pose}
 
                 # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0], point_batch=10000, res_up=3)
-                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
-                                               smpl_server.verts_c[0], point_batch=10000, res_up=3)
-                mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
-                mesh_canonical_list.append(mesh_canonical)
+                try:
+                    mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
+                                                   smpl_server.verts_c[0], point_batch=10000, res_up=3)
+                    mesh_canonical = trimesh.Trimesh(mesh_canonical.vertices, mesh_canonical.faces)
+                    mesh_canonical_list.append(mesh_canonical)
+                except:
+                    print("mesh generation failed, mainly due to error: Surface level must be within volume data range")
+                    mesh_canonical = trimesh.Trimesh()
+                    mesh_canonical_list.append(mesh_canonical)
 
         output.update({
             'canonical_weighted': mesh_canonical_list
