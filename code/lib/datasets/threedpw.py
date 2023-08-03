@@ -112,6 +112,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         self.num_sample = opt.num_sample
         self.sampling_strategy = "weighted"
 
+
     def __len__(self):
         return self.n_images # len(self.images)
 
@@ -119,6 +120,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
         body_model_params = {}
         return body_model_params
     def __getitem__(self, idx):
+
         # normalize RGB
         img = cv2.imread(self.img_paths[idx])
         # preprocess: BGR -> RGB -> Normalize
@@ -147,7 +149,6 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "uv": uv,
                 "object_mask": mask,
             }
-
             samples, index_outside = weighted_sampling(data, img_size, self.num_sample)
             inputs = {
                 "uv": samples["uv"].astype(np.float32),
@@ -157,7 +158,7 @@ class ThreeDPWDataset(torch.utils.data.Dataset):
                 "pose": self.pose_all[idx],
                 "smpl_params": smpl_params,
                 'index_outside': index_outside,
-                "idx": idx
+                "idx": idx,
             }
             images = {"rgb": samples["rgb"].astype(np.float32)}
             return inputs, images

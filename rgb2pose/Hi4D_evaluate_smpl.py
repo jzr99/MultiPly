@@ -170,13 +170,19 @@ inverse = True
 DATA_DIR = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data"
 DIR = '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D'
 # seq = 'courtyard_shakeHands_00_no_pose_condition_interpenetration_loss'
-seq = 'Hi4D_pair19_piggyback19_loop_temporal_SAM_auto_raw_openpose'
+# seq = 'Hi4D_pair19_piggyback19_loop_temporal_SAM_auto_raw_openpose'
+# seq = 'Hi4D_pair19_piggyback19_loop_depth_samGT_personid_triplane'
+# seq = 'Hi4D_pair19_piggyback19_loop_depth_samGT_personid_triplane_meshprompt_nerfacc_meshdepth'
+seq = 'Hi4D_pair19_piggyback19_loop_depth_samGT_personid_triplane_meshprompt_nerfacc_pyrenderdepth'
 # seq = 'courtyard_shakeHands_00_loop'
 # seq = 'courtyard_shakeHands_00'
-data_seq = 'Hi4D_pair19_piggyback19_cam4_raw_openpose'
+data_seq = 'Hi4D_pair19_piggyback19_cam4_raw_openpose' # for this data person_id 0 means person 2, and prson_id 1 means persons 1
 # data_seq = 'courtyard_shakeHands_00'
 # checkpoint_version = 'epoch=0499-loss=0.03910435736179352.ckpt'
-checkpoint_version = 'last.ckpt'
+# checkpoint_version = 'last.ckpt'
+# checkpoint_version = 'epoch=1249-loss=0.009884528815746307.ckpt'
+# checkpoint_version = 'epoch=1699-loss=0.011777706444263458.ckpt'
+checkpoint_version = 'epoch=0849-loss=0.11149047315120697.ckpt'
 # checkpoint_version = 'epoch=0049-loss=0.04067659005522728.ckpt'
 person_id = 1
 # gender = 'male'

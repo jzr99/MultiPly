@@ -21,11 +21,14 @@ device = torch.device("cuda:0")
 DATA_DIR = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data"
 DIR = '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D'
 # seq = 'courtyard_shakeHands_00_no_pose_condition_interpenetration_loss'
-seq = 'courtyard_shakeHands_00_loop'
+# seq = 'courtyard_shakeHands_00_loop'
 # seq = 'courtyard_shakeHands_00'
-data_seq = 'courtyard_shakeHands_00'
+# seq = 'cycle_dance_SAM_ratio75_smpl_depth_map_10_samGT_personid'
+seq = 'cycle_dance_sam'
+data_seq = 'cycle_dance'
+# data_seq = 'courtyard_shakeHands_00'
 # checkpoint_version = 'epoch=0499-loss=0.03910435736179352.ckpt'
-checkpoint_version = 'last-v1.ckpt'
+checkpoint_version = 'last.ckpt'
 person_id = 1
 # gender = 'male'
 if not os.path.exists(f'{DIR}/{seq}/joint_opt_smpl'):

@@ -1,8 +1,8 @@
 import numpy as np
 import glob
 import cv2
-
-EXP_NAME = "Hi4D_pair19_piggyback19_loop_temporal_SAM_auto_raw_openpose"
+EXP_NAME = "Hi4D_pair19_piggyback19_loop_depth_samGT_personid_triplane_meshprompt"
+# EXP_NAME = "Hi4D_pair19_piggyback19_loop_temporal_SAM_auto_raw_openpose"
 # EXP_NAME = "Hi4D_pair19_piggyback19_temporal"
 # EXP_NAME = "Hi4D_pair19_piggyback19_loop_temporal_SAM_auto"
 GT_NAME = "pair19/piggyback19"

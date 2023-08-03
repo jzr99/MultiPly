@@ -1,5 +1,7 @@
-Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00/joint_opt_smpl"
-Root_dir_gender = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/courtyard_shakeHands_00"
+# Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/cycle_dance_sam/joint_opt_smpl"
+# Root_dir_gender = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/cycle_dance"
+Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/Hi4D_pair19_piggyback19_loop_surface2_depth_samGT_personid/joint_opt_smpl"
+Root_dir_gender = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/Hi4D_pair19_piggyback19_cam4_raw_openpose"
 # Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/data/courtyard_shakeHands_00"
 # Root_dir = "/Users/jiangzeren/PycharmProjects/V2A/RGB-PINA/code/outputs/Hi4D/downtown_warmWelcome_00/joint_opt_smpl"
 import skvideo
