@@ -239,7 +239,10 @@ class Hi4DDataset(torch.utils.data.Dataset):
             }
             if self.using_SAM and sam_mask is not None:
                 inputs.update({"sam_mask": samples['sam_mask']})
+                inputs.update({"org_sam_mask": sam_mask})
             images = {"rgb": samples["rgb"].astype(np.float32)}
+            inputs.update({"org_img": img.astype(np.float32)})
+            inputs.update({"img_size": self.img_size})
             return inputs, images
         else:
             inputs = {

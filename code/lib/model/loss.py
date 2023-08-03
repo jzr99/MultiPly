@@ -127,6 +127,10 @@ class Loss(nn.Module):
         rgb_loss = self.get_rgb_loss(model_outputs['rgb_values'][nan_filter], rgb_gt[nan_filter])
         eikonal_loss = self.get_eikonal_loss(model_outputs['grad_theta'])
         bce_loss = self.get_bce_los(model_outputs['acc_map'])
+        if bce_loss.isnan():
+            print("Nan: bce_loss")
+            print(model_outputs['acc_map'])
+            bce_loss = torch.zeros((1),device=bce_loss.device)
         # opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
         opacity_sparse_loss = torch.zeros((1),device=bce_loss.device)
         in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
@@ -136,12 +140,12 @@ class Loss(nn.Module):
         smpl_surface_loss = model_outputs['smpl_surface_loss'] * self.smpl_surface_weight
         # smpl_surface_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
         # import pdb; pdb.set_trace()
-        if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] > self.sam_start_epoch:
+        if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] >= self.sam_start_epoch:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
             sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)
         # if model_outputs['epoch'] > 300:
-        if model_outputs['epoch'] > self.sam_start_epoch:
+        if model_outputs['epoch'] >= self.sam_start_epoch:
             depth_order_loss = 1.0 * depth_order_loss * (1 - min(self.depth_loss_milestone, model_outputs['epoch']) / self.depth_loss_milestone)
         else:
             depth_order_loss = torch.zeros((1), device=model_outputs['acc_map'].device)

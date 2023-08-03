@@ -5,6 +5,9 @@ from pytorch3d.renderer import (
     MeshRasterizer,
     SoftPhongShader,
     PointLights,
+    BlendParams,
+    SoftSilhouetteShader,
+    AmbientLights,
 )
 from pytorch3d.structures import Meshes
 import numpy as np
@@ -52,12 +55,34 @@ class Renderer():
                                   diffuse_color=((0, 0, 0),), specular_color=((0, 0, 0),))
         # self.lights = PointLights(device=self.device, location=[[0.0, 0.0, 2.0]])
         self.raster_settings = RasterizationSettings(image_size=self.render_img_size, faces_per_pixel=10, blur_radius=0,
-                                                     max_faces_per_bin=30000)
+                                                     max_faces_per_bin=90000)
         self.rasterizer = MeshRasterizer(cameras=self.cameras, raster_settings=self.raster_settings)
 
         self.shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
 
         self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)
+
+        # self.blend_params = BlendParams(sigma=1e-4, gamma=1e-4)
+        # self.soft_raster_settings = RasterizationSettings(
+        #     image_size=self.render_img_size,
+        #     blur_radius=np.log(1. / 1e-4 - 1.) * self.blend_params.sigma,
+        #     faces_per_pixel=50,
+        # )
+        # self.soft_shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights, blend_params=self.blend_params)
+        # self.soft_renderer = MeshRenderer(
+        #     rasterizer=MeshRasterizer(
+        #         cameras=self.cameras,
+        #         raster_settings=self.soft_raster_settings
+        #     ),
+        #     shader=self.soft_shader
+        # )
+        # self.silhouette_renderer = MeshRenderer(
+        #     rasterizer=MeshRasterizer(
+        #         cameras=self.cameras,
+        #         raster_settings=self.soft_raster_settings
+        #     ),
+        #     shader=SoftSilhouetteShader(device=self.device, blend_params=self.blend_params)
+        # )
 
     def set_camera(self, R, T):
         cam_R = R.clone()
@@ -70,7 +95,32 @@ class Renderer():
         self.rasterizer = MeshRasterizer(cameras=self.cameras, raster_settings=self.raster_settings)
         self.shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
         self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)
+        # TODO update renderer here
+        self.blend_params = BlendParams(sigma=5e-5, gamma=1e-4)
+        self.soft_raster_settings = RasterizationSettings(
+            image_size=self.render_img_size,
+            blur_radius=np.log(1. / 1e-4 - 1.) * self.blend_params.sigma,
+            faces_per_pixel=100,
+            max_faces_per_bin=90000,
+        )
+        # self.soft_shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights, blend_params=self.blend_params)
+        self.ambient_light = AmbientLights(device=self.device, ambient_color=((1, 1, 1)))
+        self.soft_shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.ambient_light)
+        self.soft_renderer = MeshRenderer(
+            rasterizer=MeshRasterizer(
+                cameras=self.cameras,
+                raster_settings=self.soft_raster_settings
+            ),
+            shader=self.soft_shader
+        )
 
+        # self.silhouette_renderer = MeshRenderer(
+        #     rasterizer=MeshRasterizer(
+        #         cameras=self.cameras,
+        #         raster_settings=self.soft_raster_settings
+        #     ),
+        #     shader=SoftSilhouetteShader(device=self.device, blend_params=self.blend_params)
+        # )
 
     def render_multiple_meshes(self, verts_list, faces_list, verts_colors_list):
         '''
@@ -78,15 +128,29 @@ class Renderer():
         faces_list: list of faces
         verts_colors_list: list of verts_colors
         '''
-        with torch.no_grad():
-            mesh_list = []
-            for v,f,c in zip(verts_list, faces_list, verts_colors_list):
-                mesh_list.append(Meshes(v, f, textures=Textures(verts_rgb=c)))
-            scene = join_meshes_as_scene(mesh_list)
-            image = self.renderer(scene)
-            return image
+        # with torch.no_grad():
+        mesh_list = []
+        for v,f,c in zip(verts_list, faces_list, verts_colors_list):
+            mesh_list.append(Meshes(v, f, textures=Textures(verts_rgb=c)))
+        scene = join_meshes_as_scene(mesh_list)
+        image = self.renderer(scene)
+        return image
 
-    def render_multiple_depth_map(self, verts_list, faces_list, verts_colors_list):
+    def softrender_multiple_meshes(self, verts_list, faces_list, verts_colors_list):
+        '''
+        verts_list: list of verts
+        faces_list: list of faces
+        verts_colors_list: list of verts_colors
+        '''
+        # with torch.no_grad():
+        mesh_list = []
+        for v,f,c in zip(verts_list, faces_list, verts_colors_list):
+            mesh_list.append(Meshes(v, f, textures=Textures(verts_rgb=c)))
+        scene = join_meshes_as_scene(mesh_list)
+        image = self.soft_renderer(scene)
+        return image
+
+    def render_multiple_depth_map(self, verts_list, faces_list, verts_colors_list=None):
         '''
         verts_list: list of verts
         faces_list: list of faces
@@ -95,8 +159,13 @@ class Renderer():
         # with torch.no_grad():
         mesh_list = []
         depth_map_list = []
+        if verts_colors_list is None:
+            verts_colors_list = [None] * len(verts_list)
         for v,f,c in zip(verts_list, faces_list, verts_colors_list):
-            m = Meshes(v, f, textures=Textures(verts_rgb=c))
+            if c is None:
+                m = Meshes(v, f)
+            else:
+                m = Meshes(v, f, textures=Textures(verts_rgb=c))
             mesh_list.append(m)
             fragment = self.rasterizer(m)
             # import pdb;pdb.set_trace()
