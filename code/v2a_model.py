@@ -145,12 +145,16 @@ class V2AModel(pl.LightningModule):
         model_outputs = self.model(inputs)
 
         loss_output = self.loss(model_outputs, targets)
-        if 'sam_mask' in inputs.keys() and self.current_epoch >= 200:
+        # TODO update the condition in config
+        if 'sam_mask' in inputs.keys() and self.current_epoch >= 50 and self.current_epoch % 10 == 0 and self.current_epoch < 1000:
             depth_order_loss_pyrender, loss_instance_silhouette = self.get_depth_order_loss(inputs)
             loss_output.update({'depth_order_loss_pyrender': depth_order_loss_pyrender})
             loss_output.update({'loss_instance_silhouette': loss_instance_silhouette})
             loss_output["loss"] += depth_order_loss_pyrender
             loss_output["loss"] += loss_instance_silhouette
+        else:
+            loss_output.update({'depth_order_loss_pyrender': torch.zeros((1), device=device)})
+            loss_output.update({'loss_instance_silhouette': torch.zeros((1), device=device)})
         for k, v in loss_output.items():
             if k in ["loss"]:
                 self.log(k, v.item(), prog_bar=True, on_step=True)
