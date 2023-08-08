@@ -94,8 +94,8 @@ def main(args):
     img_dir = f'{DIR}/{seq}/frames'   
     # romp_file_dir = f'{DIR}/{seq}/ROMP'
     trace_file_dir = f'{DIR}/{seq}/trace'
-    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
-    # img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+    # img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     # romp_file_paths = sorted(glob.glob(f"{romp_file_dir}/*.npz"))
     # format: [person_id, frame_id, ...]
     trace_file_path = f"{trace_file_dir}/{seq}.npz"
@@ -228,7 +228,10 @@ def main(args):
         init_pose_list = np.array(init_pose_list)
         init_shape_list = np.array(init_shape_list)
         init_trans_list = np.array(init_trans_list)
-        interpolate_frame_list = [25, 30, 31, 32, 33, 36, 37,38,39,40,41,42,43,44,58,65,86,116,117,131,142,202,225,235]
+        # interpolate_frame_list = [25, 30, 31, 32, 33, 36, 37,38,39,40,41,42,43,44,58,65,86,116,117,131,142,202,225,235]
+        # interpolate_frame_list = [17, 18, 19, 21, 32, 33, 35, 46, 47, 49, 50, 51, 71, 73, 74]
+        # interpolate_frame_list = [141, 142,143, 144,145,146,147,148]
+        interpolate_frame_list = []
         # interpolate_frame_list = list(range(211,224))
         # # import pdb;pdb.set_trace()
         # for person_i  in range(2):
@@ -548,7 +551,7 @@ def main(args):
                         if idx in interpolate_frame_list:
                             weight = 0
                             loss['J2D_Loss'] = joints_2d_loss(smpl_joints_2d, smpl_joints_2d, openpose_conf) * weight
-                            loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose) * weight
+                            loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose)
                         else:
                             weight = 1
                             loss['J2D_Loss'] = joints_2d_loss(openpose_j2d, smpl_joints_2d, openpose_conf) * weight
@@ -712,6 +715,7 @@ def main(args):
         np.save(os.path.join(save_dir, 'mean_shape.npy'), smpl_shape)
         np.save(os.path.join(save_dir, 'normalize_trans.npy'), np.array(output_trans))
         np.savez(os.path.join(save_dir, "cameras.npz"), **output_P)
+        np.save(os.path.join(save_dir, "max_human_sphere.npy"), np.array(max_human_sphere_all))
         print("max_human_sphere_all: ", max_human_sphere_all)
         print('output_pose', np.array(output_pose).shape)
         print('mean_shape', smpl_shape.shape)

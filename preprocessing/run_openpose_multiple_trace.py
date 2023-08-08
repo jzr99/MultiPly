@@ -43,6 +43,8 @@ def main(args):
         params['model_folder'] = args.openpose_dir + '/models/'
         params['scale_number'] = 1
         params['scale_gap'] = 0.25
+        # params['number_people_max'] = 2
+        params['net_resolution'] = '-1x320'
         # params['net_resolution'] = '720x480'
         # params['net_resolution'] = '360x240'
 
@@ -56,7 +58,7 @@ def main(args):
         # Read frames on directory
         img_dir = f'{DIR}/{args.seq}/frames'
         # this line below will lead to a segfault
-        imagePaths = sorted(glob.glob(f'{img_dir}/*.jpg'))
+        imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
         # imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
         # imagePaths = op.get_images_on_directory(img_dir)
         maskPath_list = sorted(glob.glob(f'{img_dir}/../init_mask/*'))
@@ -65,7 +67,7 @@ def main(args):
         # maskPaths_0 = sorted(glob.glob(f'{img_dir}/../init_mask/0/*.png'))
         # maskPaths_1 = sorted(glob.glob(f'{img_dir}/../init_mask/1/*.png'))
         start = time.time()
-
+        # import pdb; pdb.set_trace()
         if not os.path.exists(f'{img_dir}/../openpose'):
             os.makedirs(f'{img_dir}/../openpose')
 
@@ -105,9 +107,11 @@ def main(args):
                     cost_matrix[person_i, i] = np.linalg.norm(center_2D[i] - mask_center_np[person_i]) # 3D
             # Hungarian algorithm
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            # print(cost_matrix)
             output_2d = np.zeros((number_person, poseKeypoints.shape[1], 3))
             for person_i, keypoint_i in zip(row_ind, col_ind):
-                output_2d[person_i] = poseKeypoints[keypoint_i]
+                if cost_matrix[person_i, keypoint_i] < 200:
+                    output_2d[person_i] = poseKeypoints[keypoint_i]
             # for person_i in range(number_person):
             #     # tracking in case of two persons or wrong ROMP detection
             #     if len(seq_file['smpl_thetas']) >= number_person:
@@ -172,10 +176,11 @@ def main(args):
             # np.save(f'{img_dir}/../openpose/%04d.npy' % idx, np.stack([poseKeypoints_0, poseKeypoints_1], axis=0))
             np.save(f'{img_dir}/../openpose/%04d.npy' % idx, output_2d)
             output_img = datum.cvOutputData
-            color = [(0, 0, 255), (255, 0, 0), (0, 255, 0)]
+            color = [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255,255,0), (255,0,255), (0,255,255), (255,255,255), (0,0,0), (128,128,128), (128,0,0), (0,128,0), (0,0,128), (128,128,0), (128,0,128), (0,128,128)]
             for color_i, (person_i, keypoint_i) in enumerate(zip(row_ind, col_ind)):
-                color_jit = color[color_i]
-                poseKeypoints_0 = poseKeypoints[keypoint_i]
+                color_jit = color[person_i]
+                # poseKeypoints_0 = poseKeypoints[keypoint_i]
+                poseKeypoints_0 = output_2d[person_i]
                 for point in poseKeypoints_0:
                     cv2.circle(output_img, (int(point[0]), int(point[1])), 5, color_jit, -1)
                 cv2.circle(output_img, (int(center_2D[keypoint_i][0]),int(center_2D[keypoint_i][1])), 10, color_jit, -1)
