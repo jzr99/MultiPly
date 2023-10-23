@@ -15,6 +15,7 @@ def grid_sample_3d(input, grid, padding_mode='zeros', align_corners=True):
 
 
 _use_pytorch_1_11_api = parse_version(torch.__version__) >= parse_version('1.11.0a')
+_use_pytorch_1_12_api = parse_version(torch.__version__) >= parse_version('1.12.0a') # Allow prerelease builds of 1.12
 
 
 class _GridSample2dForward(torch.autograd.Function):
@@ -42,6 +43,8 @@ class _GridSample2dBackward(torch.autograd.Function):
     @staticmethod
     def forward(ctx, grad_output, input, grid, padding_mode=0, align_corners=True):
         op = torch._C._jit_get_operation('aten::grid_sampler_2d_backward')
+        if _use_pytorch_1_12_api:
+            op = op[0]
         if _use_pytorch_1_11_api:
             output_mask = (ctx.needs_input_grad[1], ctx.needs_input_grad[2])
             grad_input, grad_grid = op(grad_output, input, grid, 0, padding_mode, align_corners, output_mask)
@@ -57,6 +60,7 @@ class _GridSample2dBackward(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad2_grad_input, grad2_grad_grid):
         grad_output, input, grid = ctx.saved_tensors
+
         assert grad_output.is_cuda and input.is_cuda and grid.is_cuda and grad2_grad_input.is_cuda and grad2_grad_grid.is_cuda
         out = gridsample_grad2.grad2_2d(grad2_grad_input, grad2_grad_grid, grad_output,
                                         input, grid, ctx.padding_mode, ctx.align_corners)
@@ -95,6 +99,8 @@ class _GridSample3dBackward(torch.autograd.Function):
     @staticmethod
     def forward(ctx, grad_output, input, grid, padding_mode=0, align_corners=True):
         op = torch._C._jit_get_operation('aten::grid_sampler_3d_backward')
+        if _use_pytorch_1_12_api:
+            op = op[0]
         if _use_pytorch_1_11_api:
             output_mask = (ctx.needs_input_grad[1], ctx.needs_input_grad[2])
             grad_input, grad_grid = op(grad_output, input, grid, 0, padding_mode, align_corners, output_mask)

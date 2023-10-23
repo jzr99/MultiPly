@@ -106,20 +106,32 @@ class SMPL_Evaluator():
     def compute_metrics_mono(self, i, gt3d_verts, pred_verts, gt3d_joints, pred_joints, pred_trans, miss_flag):
 
         errors_joints, errors_verts, errors_procrustes, errors_procrustes_verts = compute_errors_joints_verts(gt3d_verts, pred_verts, gt3d_joints, pred_joints, miss_flag)
+        joint_correct_depth = 0
+        joint_depth_num = 0
         # 3D Relation
         if not (1 in miss_flag):
             depth_num = 1
             gt_depth_dist = (gt3d_joints[0][0,2]-gt3d_joints[1][0,2])
-            gt_depth_order = depth_relation(gt_depth_dist, 0.05)
+            gt_depth_order = depth_relation(gt_depth_dist, 0.15)
 
             pred_depth_dist = (pred_joints[0][0,2]+pred_trans[0][2])-(pred_joints[1][0,2]+pred_trans[1][2])
             # pred_depth_dist = (pred_joints[0][0,2] - pred_joints[1][0,2])
-            pred_depth_order = depth_relation(pred_depth_dist, 0.05)
+            pred_depth_order = depth_relation(pred_depth_dist, 0.15)
 
             if gt_depth_order == pred_depth_order:
                 correct_depth = 1
             else:
                 correct_depth = 0
+
+            for keypoint_id in range(len(gt3d_joints[0])):
+                joint_depth_num = joint_depth_num + 1
+                gt_depth_dist = (gt3d_joints[0][keypoint_id, 2] - gt3d_joints[1][keypoint_id, 2])
+                gt_joint_depth_order = depth_relation(gt_depth_dist, 0.1)
+                pred_depth_dist = (pred_joints[0][keypoint_id, 2] + pred_trans[0][2]) - (pred_joints[1][keypoint_id, 2] + pred_trans[1][2])
+                # pred_joint_depth_dist = (pred_joints[0][0,2] - pred_joints[1][0,2])
+                pred_joint_depth_order = depth_relation(pred_depth_dist, 0.15)
+                if gt_joint_depth_order == pred_joint_depth_order:
+                    joint_correct_depth = joint_correct_depth + 1
 
             # Contact distance
             contact_error = 0
@@ -136,7 +148,7 @@ class SMPL_Evaluator():
             contact_error = 0
             
 
-        return errors_joints, errors_verts, errors_procrustes, errors_procrustes_verts, correct_depth, depth_num, contact_error
+        return errors_joints, errors_verts, errors_procrustes, errors_procrustes_verts, correct_depth, depth_num, contact_error, joint_correct_depth, joint_depth_num
     
     def load_data_mv(self, i, pred_root, exp_name=None):
         # load ground truth and prediction data 

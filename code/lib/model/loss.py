@@ -17,9 +17,20 @@ class Loss(nn.Module):
             self.smpl_surface_weight = 0
 
         try:
+            self.zero_pose_weight = opt.zero_pose_weight
+        except:
+            self.zero_pose_weight = 0
+
+        try:
             self.sam_start_epoch = opt.sam_start_epoch
         except:
             self.sam_start_epoch = 200
+        try:
+            self.increase_sam = opt.increase_sam
+            print('increase_sam', self.increase_sam)
+        except:
+            self.increase_sam = False
+            print('increase_sam', self.increase_sam)
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
@@ -133,7 +144,15 @@ class Loss(nn.Module):
             bce_loss = torch.zeros((1),device=bce_loss.device)
         # opacity_sparse_loss = self.get_opacity_sparse(model_outputs['acc_map'], model_outputs['index_off_surface'])
         opacity_sparse_loss = torch.zeros((1),device=bce_loss.device)
-        in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
+        if model_outputs['index_in_surface'] is not None:
+            in_shape_loss = self.get_in_shape_loss(model_outputs['acc_map'], model_outputs['index_in_surface'])
+        else:
+            in_shape_loss = torch.zeros((1),device=bce_loss.device)
+        if in_shape_loss.isnan():
+            print("Nan: in_shape_loss")
+            print(model_outputs['acc_map'])
+            print(model_outputs['index_in_surface'])
+            in_shape_loss = torch.zeros((1),device=bce_loss.device)
         curr_epoch_for_loss = min(self.milestone, model_outputs['epoch']) # will not increase after the milestone
         interpenetration_loss = model_outputs['interpenetration_loss']
         temporal_loss = model_outputs['temporal_loss']
@@ -143,21 +162,26 @@ class Loss(nn.Module):
         if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] >= self.sam_start_epoch:
             sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
-            sam_mask_loss = torch.zeros((1),device=in_shape_loss.device)
+            sam_mask_loss = torch.zeros((1),device=temporal_loss.device)
         # if model_outputs['epoch'] > 300:
         if model_outputs['epoch'] >= self.sam_start_epoch:
             depth_order_loss = 1.0 * depth_order_loss * (1 - min(self.depth_loss_milestone, model_outputs['epoch']) / self.depth_loss_milestone)
         else:
             depth_order_loss = torch.zeros((1), device=model_outputs['acc_map'].device)
+        zero_pose_loss = model_outputs['zero_pose_loss'] * self.zero_pose_weight * (1 - min(1000, model_outputs['epoch']) / 1000)
+        if self.increase_sam:
+            increase_weight = min(1.0, model_outputs['epoch'] / 100)
+        else:
+            increase_weight = 1.0
         loss = rgb_loss + \
                self.eikonal_weight * eikonal_loss + \
                self.bce_weight * bce_loss + \
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
-               interpenetration_loss + temporal_loss + \
-               self.sam_mask_weight * sam_mask_loss + \
+               temporal_loss + \
+               self.sam_mask_weight * sam_mask_loss * increase_weight + \
                smpl_surface_loss * (1 - min(self.smpl_surface_milestone, model_outputs['epoch']) / self.smpl_surface_milestone) + \
-               depth_order_loss
+               depth_order_loss + zero_pose_loss
                # self.sam_mask_weight * (1 - min(self.sam_milestone, model_outputs['epoch']) / self.sam_milestone) * sam_mask_loss
         return {
             'loss': loss,
@@ -167,8 +191,9 @@ class Loss(nn.Module):
             'bce_loss': bce_loss,
             'opacity_sparse_loss': opacity_sparse_loss,
             'in_shape_loss': in_shape_loss,
-            'interpenetration_loss': interpenetration_loss,
+            # 'interpenetration_loss': interpenetration_loss,
             'temporal_loss': temporal_loss,
             'sam_mask_loss': sam_mask_loss,
             'smpl_surface_loss': smpl_surface_loss,
+            'zero_pose_loss': model_outputs['zero_pose_loss'],
         }

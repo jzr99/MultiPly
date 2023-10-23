@@ -36,7 +36,7 @@ def main(opt):
     # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     testset = create_dataset(opt.dataset.test)
 
-    trainer.test(model, testset, ckpt_path="checkpoints/last.ckpt")
+    trainer.test(model, testset, ckpt_path="checkpoints/epoch=1299-loss=0.013678018935024738.ckpt")
 
 if __name__ == '__main__':
     main()

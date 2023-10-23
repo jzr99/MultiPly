@@ -24,6 +24,37 @@ def get_index_outside_of_bbox(samples_uniform, bbox_min, bbox_max):
     index_outside = np.where((samples_uniform_row < bbox_min[0]) | (samples_uniform_row > bbox_max[0]) | (samples_uniform_col < bbox_min[1]) | (samples_uniform_col > bbox_max[1]))[0]
     return index_outside
 
+def edge_sampling(data, num_sample, ratio_mask=0.5, ratio_edge=0.4,):
+    assert ratio_mask >= 0.0
+    assert ratio_edge >= 0.0
+    assert ratio_edge + ratio_mask <= 1.0
+
+    num_mask = int(num_sample * ratio_mask)
+    num_edge = int(num_sample * ratio_edge)
+    num_rand = num_sample - num_mask - num_edge
+    mask = data["person_mask"].reshape(-1)
+    mask_e = data["edge_mask"].reshape(-1)
+
+    mask_loc, *_ = np.where(mask)
+    edge_loc, *_ = np.where(mask_e)
+
+    mask_idx = np.random.randint(0, len(mask_loc), num_mask)
+    edge_idx = np.random.randint(0, len(edge_loc), num_edge)
+    rand_idx = np.random.randint(0, len(mask), num_rand)
+
+    mask_idx = mask_loc[mask_idx]
+    edge_idx = edge_loc[edge_idx]
+
+    indices = np.concatenate([mask_idx, edge_idx, rand_idx], axis=0)
+    output = {}
+    for key, val in data.items():
+        val = val.reshape(len(mask), -1)
+        output[key] = val[indices]
+    return output
+
+
+
+
 def weighted_sampling(data, img_size, num_sample):
     # calculate bounding box
     mask = data["object_mask"]
@@ -80,10 +111,17 @@ class Hi4DDataset(torch.utils.data.Dataset):
 
         # masks
         mask_dir = os.path.join(root, "mask")
-        self.mask_paths_0 = sorted(glob.glob(f"{mask_dir}/0/*.png"))
-        self.mask_paths_1 = sorted(glob.glob(f"{mask_dir}/1/*.png"))
-        self.mask_paths_0 = [self.mask_paths_0[i] for i in self.training_indices]
-        self.mask_paths_1 = [self.mask_paths_1[i] for i in self.training_indices]
+        self.mask_folder_list = sorted(glob.glob(f"{mask_dir}/*"))
+        self.mask_path_list = []
+        for mask_folder in self.mask_folder_list:
+            mask_path = sorted(glob.glob(f"{mask_folder}/*.png"))
+            mask_path = [mask_path[i] for i in self.training_indices]
+            self.mask_path_list.append(mask_path)
+        print("num_mask_person: ", len(self.mask_path_list))
+        # self.mask_paths_0 = sorted(glob.glob(f"{mask_dir}/0/*.png"))
+        # self.mask_paths_1 = sorted(glob.glob(f"{mask_dir}/1/*.png"))
+        # self.mask_paths_0 = [self.mask_paths_0[i] for i in self.training_indices]
+        # self.mask_paths_1 = [self.mask_paths_1[i] for i in self.training_indices]
 
         self.shape = np.load(os.path.join(root, "mean_shape.npy"))
         self.num_person = self.shape.shape[0]
@@ -99,10 +137,14 @@ class Hi4DDataset(torch.utils.data.Dataset):
 
         self.scale = 1 / scale_mats[0][0, 0]
 
+        self.scale_mat_all = []
+        self.world_mat_all = []
         self.intrinsics_all = []
         self.pose_all = []
         for scale_mat, world_mat in zip(scale_mats, world_mats):
             P = world_mat @ scale_mat
+            self.scale_mat_all.append(scale_mat)
+            self.world_mat_all.append(world_mat)
             self.P.append(P)
             C = -np.linalg.solve(P[:3, :3], P[:3, 3])
             self.C.append(C)
@@ -128,6 +170,19 @@ class Hi4DDataset(torch.utils.data.Dataset):
             print("ratio_uncertain: ", self.ratio_uncertain)
         except:
             self.ratio_uncertain = 0.5
+
+        try:
+            self.edge_sampling = opt.edge_sampling
+            print("edge_sampling: ", self.edge_sampling)
+        except:
+            self.edge_sampling = False
+            print("edge_sampling: ", self.edge_sampling)
+        if self.edge_sampling:
+            # edge mask
+            edge_dir = os.path.join(root, "edge")
+            self.edge_paths = sorted(glob.glob(f"{edge_dir}/*.png"))
+        else:
+            self.edge_paths = None
 
         # if self.using_SAM:
             # self.sam_0_mask = np.load(
@@ -196,13 +251,28 @@ class Hi4DDataset(torch.utils.data.Dataset):
 
         img = img[:, :, ::-1] / 255
 
-        mask_0 = cv2.imread(self.mask_paths_0[idx])
-        # preprocess: BGR -> Gray -> Mask -> Tensor
-        mask_0 = cv2.cvtColor(mask_0, cv2.COLOR_BGR2GRAY) > 0
-        mask_1 = cv2.imread(self.mask_paths_1[idx])
-        # preprocess: BGR -> Gray -> Mask -> Tensor
-        mask_1 = cv2.cvtColor(mask_1, cv2.COLOR_BGR2GRAY) > 0
-        mask = mask_0 + mask_1
+        mask_array = []
+        for mask_paths in self.mask_path_list:
+            mask = cv2.imread(mask_paths[idx])
+            # preprocess: BGR -> Gray -> Mask -> Tensor
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY) > 0
+            mask_array.append(mask)
+        mask = np.stack(mask_array, axis=-1)
+        mask = np.sum(mask, axis=-1)
+
+        if self.edge_sampling:
+            edge = cv2.imread(self.edge_paths[idx])
+            # preprocess: BGR -> Gray -> Mask -> Tensor
+            edge = cv2.cvtColor(edge, cv2.COLOR_BGR2GRAY) > 0
+            edge_mask = np.logical_and(mask, edge)
+
+        # mask_0 = cv2.imread(self.mask_paths_0[idx])
+        # # preprocess: BGR -> Gray -> Mask -> Tensor
+        # mask_0 = cv2.cvtColor(mask_0, cv2.COLOR_BGR2GRAY) > 0
+        # mask_1 = cv2.imread(self.mask_paths_1[idx])
+        # # preprocess: BGR -> Gray -> Mask -> Tensor
+        # mask_1 = cv2.cvtColor(mask_1, cv2.COLOR_BGR2GRAY) > 0
+        # mask = mask_0 + mask_1
 
         img_size = self.img_size # [idx]
 
@@ -243,6 +313,21 @@ class Hi4DDataset(torch.utils.data.Dataset):
             images = {"rgb": samples["rgb"].astype(np.float32)}
             inputs.update({"org_img": img.astype(np.float32)})
             inputs.update({"img_size": self.img_size})
+            if self.edge_sampling:
+                data = {
+                    "rgb": img,
+                    "uv": uv,
+                    "person_mask": mask,
+                    "edge_mask": edge_mask,
+                }
+                if self.using_SAM and sam_mask is not None:
+                    data.update({"sam_mask": sam_mask})
+                edge_samples = edge_sampling(data, self.num_sample)
+                inputs.update({"edge_uv": edge_samples["uv"].astype(np.float32)})
+                images.update({"edge_rgb": edge_samples["rgb"].astype(np.float32)})
+                if self.using_SAM and sam_mask is not None:
+                    inputs.update({"edge_sam_mask": edge_samples['sam_mask']})
+
             return inputs, images
         else:
             inputs = {
@@ -252,8 +337,17 @@ class Hi4DDataset(torch.utils.data.Dataset):
                 "intrinsics": self.intrinsics_all[idx],
                 "pose": self.pose_all[idx],
                 "smpl_params": smpl_params,
-                "idx": idx
+                "idx": idx,
+                "org_uv": uv,
+                "org_img": img,
+                "org_object_mask": mask,
             }
+            # print("uv.shape", uv.shape)
+            # print("org_img.shape", img.shape)
+            # print("org_object_mask.shape", mask.shape)
+            inputs.update({"img_size": self.img_size})
+            if self.using_SAM and sam_mask is not None:
+                inputs.update({"org_sam_mask": sam_mask})
             images = {
                 "rgb": img.reshape(-1, 3).astype(np.float32),
                 "img_size": self.img_size
@@ -302,25 +396,127 @@ class Hi4DTestDataset(torch.utils.data.Dataset):
 
         self.total_pixels = np.prod(self.img_size)
         self.pixel_per_batch = opt.pixel_per_batch
+        try:
+            self.novel_view = opt.novel_view
+            self.current_view = opt.current_view
+            self.pair = opt.pair
+            self.action = opt.action
+            GT_DIR = '/cluster/project/infk/hilliges/jiangze/ROMP/global_scratch/ROMP/ROMP/dataset/Hi4D/Hi4D_all/Hi4D'
+            GT_folder = os.path.join(GT_DIR, self.pair, self.action)
+            GT_camera_path = os.path.join(GT_folder, 'cameras', 'rgb_cameras.npz')
+            print("novel_view: ", self.novel_view)
+            print("current_view: ", self.current_view)
+            print("Attention, we assume intrinsics is the same between gt and the intrinsics used during training.")
+        except:
+            self.novel_view = None
+            self.current_view = None
+            print("No novel view synthesis")
+
+        if self.novel_view is not None and self.current_view is not None:
+            cameras = dict(np.load(GT_camera_path))
+            c_cur = int(np.where(cameras['ids'] == self.current_view)[0])
+            self.gt_cam_intrinsics_cur = cameras['intrinsics'][c_cur]
+            self.gt_cam_extrinsics_cur = cameras['extrinsics'][c_cur]
+            c_tgt = int(np.where(cameras['ids'] == self.novel_view)[0])
+            self.gt_cam_intrinsics_tgt = cameras['intrinsics'][c_tgt]
+            self.gt_cam_extrinsics_tgt = cameras['extrinsics'][c_tgt]
+
+            self.new_P = []
+            self.new_C = []
+            self.new_intrinsics_all = []
+            self.new_pose_all = []
+            for scale_mat, world_mat in zip(self.dataset.scale_mat_all, self.dataset.world_mat_all):
+                intrinsics_training_cur, pose_training_cur = rend_util.load_K_Rt_from_P(None, world_mat[:3, :4])
+                scale_factor = self.gt_cam_intrinsics_cur[0, 0] / intrinsics_training_cur[0, 0]
+                # print("scale_factor: ", scale_factor)
+                # print("intrinsics_training_cur: ", intrinsics_training_cur * scale_factor)
+                # print('target intrinsics', self.gt_cam_intrinsics_cur)
+                R_cur = pose_training_cur[:3, :3].transpose()
+                t_cur = -R_cur @ pose_training_cur[:3, 3]
+                # print('recalculate P', intrinsics_training_cur[:3, :3] @ np.concatenate((R_cur, t_cur.reshape(3,1)), axis=1))
+                # print('target P', world_mat)
+                R3 = R_cur
+                t3 = t_cur
+                R1 = self.gt_cam_extrinsics_cur[:3, :3]
+                t1 = self.gt_cam_extrinsics_cur[:3, 3]
+                Rab = R3.transpose() @ R1
+                tab = R3.transpose() @ (t1 - t3)
+                R2 = self.gt_cam_extrinsics_tgt[:3, :3]
+                t2 = self.gt_cam_extrinsics_tgt[:3, 3]
+                R4 = R2 @ Rab.transpose()
+                t4 = t2 - R4 @ tab
+                novel_world_mat = np.eye(4)
+
+                scaled_gt_cam_intrinsics_tgt = self.gt_cam_intrinsics_tgt[:3, :3].copy()
+                scaled_gt_cam_intrinsics_tgt[0, 0] = scaled_gt_cam_intrinsics_tgt[0, 0] / scale_factor
+                scaled_gt_cam_intrinsics_tgt[1, 1] = scaled_gt_cam_intrinsics_tgt[1, 1] / scale_factor
+                scaled_gt_cam_intrinsics_tgt[0, 2] = scaled_gt_cam_intrinsics_tgt[0, 2] / scale_factor
+                scaled_gt_cam_intrinsics_tgt[1, 2] = scaled_gt_cam_intrinsics_tgt[1, 2] / scale_factor
+
+                novel_world_mat[:3, :4] = scaled_gt_cam_intrinsics_tgt @ np.concatenate((R4, t4.reshape(3,1)), axis=1)
+                P = novel_world_mat @ scale_mat
+                self.new_P.append(P)
+                C = -np.linalg.solve(P[:3, :3], P[:3, 3])
+                self.new_C.append(C)
+                P = P[:3, :4]
+                intrinsics, pose = rend_util.load_K_Rt_from_P(None, P)
+                self.new_intrinsics_all.append(torch.from_numpy(intrinsics).float())
+                self.new_pose_all.append(torch.from_numpy(pose).float())
+
+
+
+
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        data = self.dataset[idx]
+        if self.novel_view is not None and self.current_view is not None:
+            data = self.dataset[idx]
+            inputs, images = data
+            inputs = {
+                "uv": inputs["uv"],
+                "P": self.new_P[idx],
+                "C": self.new_C[idx],
+                "intrinsics": self.new_intrinsics_all[idx],
+                "pose": self.new_pose_all[idx],
+                "smpl_params": inputs["smpl_params"],
+                "idx": inputs['idx'],
+                "novel_view": self.novel_view,
+            }
+            images = {
+                "rgb": images["rgb"],
+                # "normal": images["normal"],
+                "img_size": images["img_size"]
+            }
+            return inputs, images, self.pixel_per_batch, self.total_pixels, idx
 
-        inputs, images = data
-        inputs = {
-            "uv": inputs["uv"],
-            "P": inputs["P"],
-            "C": inputs["C"],
-            "intrinsics": inputs['intrinsics'],
-            "pose": inputs['pose'],
-            "smpl_params": inputs["smpl_params"],
-            "idx": inputs['idx']
-        }
-        images = {
-            "rgb": images["rgb"],
-            # "normal": images["normal"],
-            "img_size": images["img_size"]
-        }
-        return inputs, images, self.pixel_per_batch, self.total_pixels, idx
+
+
+        else:
+            data = self.dataset[idx]
+            inputs, images = data
+            inputs_new = {
+                "uv": inputs["uv"],
+                "P": inputs["P"],
+                "C": inputs["C"],
+                "intrinsics": inputs['intrinsics'],
+                "pose": inputs['pose'],
+                "smpl_params": inputs["smpl_params"],
+                "idx": inputs['idx'],
+                # "org_img": inputs["org_img"],
+                "img_size": torch.from_numpy(np.array(inputs["img_size"])),
+            }
+            if "org_sam_mask" in inputs.keys():
+                inputs_new.update({"org_sam_mask": inputs["org_sam_mask"]})
+
+            images = {
+                "rgb": images["rgb"],
+                # "normal": images["normal"],
+                "img_size": images["img_size"],
+                "org_uv": inputs["org_uv"],
+                "org_img": inputs["org_img"],
+                "org_object_mask": inputs["org_object_mask"],
+            }
+            if "org_sam_mask" in inputs.keys():
+                images.update({"org_sam_mask": inputs["org_sam_mask"]})
+            return inputs_new, images, self.pixel_per_batch, self.total_pixels, idx

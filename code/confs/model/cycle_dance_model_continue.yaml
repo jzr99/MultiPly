@@ -11,6 +11,7 @@ use_bbox_sampler: False
 num_training_frames: 180 # 150 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
 dim_frame_encoding: 32
 pose_correction_epoch: 500
+
 implicit_network:
     feature_vector_size: 256
     d_in: 3

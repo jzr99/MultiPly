@@ -93,8 +93,8 @@ def main(args):
     DIR = './raw_data'
     img_dir = f'{DIR}/{seq}/frames'   
     romp_file_dir = f'{DIR}/{seq}/ROMP'
-    # img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
-    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+    img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    # img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
     romp_file_paths = sorted(glob.glob(f"{romp_file_dir}/*.npz"))
     number_person = 2
 
@@ -223,6 +223,7 @@ def main(args):
         init_pose_list = np.array(init_pose_list)
         init_shape_list = np.array(init_shape_list)
         init_trans_list = np.array(init_trans_list)
+        interpolate_frame_list = []
         # interpolate_frame_list = list(range(211,224))
         # # import pdb;pdb.set_trace()
         # for person_i  in range(2):

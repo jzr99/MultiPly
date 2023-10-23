@@ -13,6 +13,7 @@ dim_frame_encoding: 32
 pose_correction_epoch: 500
 use_person_encoder: True
 use_depth_order_loss: False
+use_nerfacc: True
 implicit_network:
     feature_vector_size: 256
     d_in: 3

@@ -2,24 +2,54 @@ import cv2
 import glob
 import numpy as np
 import os
-Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/party_dance_depth_samGT_personid_triplane_surface/test_rendering"
+Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_dancing_00_sam_delay_depth_loop/test_rendering"
 # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/cycle_dance_sam/test_rendering"
 # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/Hi4D_pair19_piggyback19_loop_temporal_SAM_auto/test_normal"
 # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop_temporal_SAM/test_rendering"
 image_path_all = sorted(glob.glob(f"{Root}/-1/*.png"))
 image_path_0 = sorted(glob.glob(f"{Root}/0/*.png"))
 image_path_1 = sorted(glob.glob(f"{Root}/1/*.png"))
+# image_path_2 = sorted(glob.glob(f"{Root}/2/*.png"))
 
 os.makedirs(f"{Root}/all", exist_ok=True)
 for idx,(all, i, j) in enumerate(zip(image_path_all, image_path_0, image_path_1)):
     all_image=cv2.imread(all)
     i_image = cv2.imread(i)
     j_image = cv2.imread(j)
+    # k_image = cv2.imread(k)
+
     w=i_image.shape[0]
     i_j_image = np.concatenate([i_image[w//2:],j_image[w//2:]],axis=0)
     result = np.concatenate([all_image, i_j_image],axis=1)
     # result = np.concatenate([all_image, i_image, j_image], axis=1)
     cv2.imwrite(f"{Root}/all/{int(idx):04d}.png", result)
+
+# 3 person
+# Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/Dragon_sam_delay_depth_loop/test_rendering"
+# # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/cycle_dance_sam/test_rendering"
+# # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/Hi4D_pair19_piggyback19_loop_temporal_SAM_auto/test_normal"
+# # Root = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/courtyard_shakeHands_00_loop_temporal_SAM/test_rendering"
+# image_path_all = sorted(glob.glob(f"{Root}/-1/*.png"))
+# image_path_0 = sorted(glob.glob(f"{Root}/0/*.png"))
+# image_path_1 = sorted(glob.glob(f"{Root}/1/*.png"))
+# image_path_2 = sorted(glob.glob(f"{Root}/2/*.png"))
+#
+# os.makedirs(f"{Root}/all", exist_ok=True)
+# for idx,(all, i, j, k) in enumerate(zip(image_path_all, image_path_0, image_path_1, image_path_2)):
+#     all_image=cv2.imread(all)
+#     i_image = cv2.imread(i)
+#     j_image = cv2.imread(j)
+#     k_image = cv2.imread(k)
+#
+#     w=i_image.shape[0]
+#     i_j_image = np.concatenate([i_image[w//2:],j_image[w//2:]],axis=0)
+#     k_f_image = np.concatenate([k_image[w//2:], np.zeros_like(k_image[w//2:])],axis=0)
+#     result = np.concatenate([all_image, i_j_image, k_f_image],axis=1)
+#     # result = np.concatenate([all_image, i_image, j_image, k_image], axis=1)
+#     cv2.imwrite(f"{Root}/all/{int(idx):04d}.png", result)
+#
+
+
 
 
 # mask

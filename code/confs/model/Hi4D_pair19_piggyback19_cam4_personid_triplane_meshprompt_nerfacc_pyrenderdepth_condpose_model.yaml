@@ -2,7 +2,7 @@ learning_rate : 5.0e-4
 sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: True
-is_continue: False
+is_continue: True
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
@@ -13,6 +13,7 @@ dim_frame_encoding: 32
 pose_correction_epoch: 500
 use_person_encoder: True
 use_depth_order_loss: False
+use_nerfacc: False
 implicit_network:
     feature_vector_size: 256
     d_in: 3
@@ -81,3 +82,5 @@ loss:
     sam_mask_weight: 3.0e-2
     smpl_surface_milestone: 800
     sam_start_epoch: 50
+    depth_order_weight: 0.005
+    silhouette_weight: 0.000
