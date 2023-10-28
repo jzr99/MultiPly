@@ -31,6 +31,12 @@ class Loss(nn.Module):
         except:
             self.increase_sam = False
             print('increase_sam', self.increase_sam)
+        try:
+            self.temporal_loss_weight = opt.temporal_loss_weight
+            print('temporal_loss_weight', self.temporal_loss_weight)
+        except:
+            self.temporal_loss_weight = 1.0
+            print('temporal_loss_weight', self.temporal_loss_weight)
         self.eps = 1e-6
         self.milestone = 200
         self.sam_milestone = 1000
@@ -178,7 +184,7 @@ class Loss(nn.Module):
                self.bce_weight * bce_loss + \
                self.opacity_sparse_weight * (1 + curr_epoch_for_loss ** 2 / 40) * opacity_sparse_loss + \
                self.in_shape_weight * (1 - curr_epoch_for_loss / self.milestone) * in_shape_loss + \
-               temporal_loss + \
+               temporal_loss * self.temporal_loss_weight + \
                self.sam_mask_weight * sam_mask_loss * increase_weight + \
                smpl_surface_loss * (1 - min(self.smpl_surface_milestone, model_outputs['epoch']) / self.smpl_surface_milestone) + \
                depth_order_loss + zero_pose_loss
