@@ -2,7 +2,7 @@ learning_rate : 5.0e-4
 sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: True
-is_continue: False
+is_continue: True
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
@@ -85,7 +85,7 @@ loss:
     sam_mask_weight: 1.0e-1
     smpl_surface_milestone: 800
     sam_start_epoch: 50
-    depth_order_weight: 0.3
+    depth_order_weight: 0.5
     silhouette_weight: 0.000
     interpenetration_loss_weight: 0.005
     zero_pose_weight: 0.2

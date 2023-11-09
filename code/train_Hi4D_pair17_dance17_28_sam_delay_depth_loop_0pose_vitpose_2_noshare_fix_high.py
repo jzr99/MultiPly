@@ -1,4 +1,4 @@
-from v2a_model import V2AModel
+from v2a_model_loop import V2AModel
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="Hi4D_pair19_piggyback19_4_sam_delay_depth_2_noshare_sam_base")
+@hydra.main(config_path="confs", config_name="Hi4D_pair17_dance17_28_sam_delay_depth_loop_0pose_vitpose_2_noshare_fix_high_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
@@ -15,13 +15,14 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=10,
-        save_top_k=-1)
+        every_n_epochs=50,
+        save_top_k=-1,
+        save_last=True)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
     trainer = pl.Trainer(
-        devices=1,
         # gpus=1,
+        devices=1,
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
@@ -33,11 +34,16 @@ def main(opt):
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = V2AModel(opt, betas_path)
-    # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
-    testset = create_dataset(opt.dataset.test)
-    trainer.test(model, testset, ckpt_path="checkpoints/epoch=2949-loss=0.009678047150373459.ckpt")
-    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=1299-loss=0.012445889413356781.ckpt")
-    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=1299-loss=0.009938636794686317.ckpt")
+    trainset = create_dataset(opt.dataset.train)
+    validset = create_dataset(opt.dataset.valid)
+
+    if opt.model.is_continue == True:
+        # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+        checkpoint = sorted(glob.glob("checkpoints/epoch=*.ckpt"))[-1]
+        trainer.fit(model, trainset, validset, ckpt_path=checkpoint)
+    else: 
+        trainer.fit(model, trainset, validset)
+
 
 if __name__ == '__main__':
     main()

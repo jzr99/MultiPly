@@ -2,21 +2,23 @@ learning_rate : 5.0e-4
 sched_milestones : [400,800]
 sched_factor : 0.5
 smpl_init: True
-is_continue: True
+is_continue: False
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 175 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
+num_training_frames: 80 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
 dim_frame_encoding: 32
-pose_correction_epoch: 200
+pose_correction_epoch: 250
 use_person_encoder: False
 use_depth_order_loss: False
 use_nerfacc: True
 pose_opt_interval: 50
-pose_opt_epoch: 30
+pose_opt_epoch: 5
 use_loop: True
+#depth_only_trans: False
+#depth_end: True
 implicit_network:
     feature_vector_size: 256
     d_in: 3
@@ -85,7 +87,8 @@ loss:
     sam_mask_weight: 1.0e-1
     smpl_surface_milestone: 800
     sam_start_epoch: 50
-    depth_order_weight: 0.800
+    depth_order_weight: 0.005
     silhouette_weight: 0.000
     interpenetration_loss_weight: 0.005
     zero_pose_weight: 0.0
+    smpl_surface_weight: 0.5

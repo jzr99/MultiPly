@@ -163,7 +163,7 @@ class V2AModel(pl.LightningModule):
         sch_joint, sch_pose = self.lr_schedulers()
 
         pose_epoch = self.current_epoch % self.pose_opt_interval
-        is_pose_opt = 'sam_mask' in inputs.keys() and self.current_epoch >= 50 and pose_epoch < self.pose_opt_epoch and self.current_epoch < 1000 and not self.depth_end
+        is_pose_opt = 'sam_mask' in inputs.keys() and self.current_epoch >= 200 and pose_epoch < self.pose_opt_epoch and self.current_epoch < 1000 and not self.depth_end
         # import ipdb;ipdb.set_trace()
         is_delayed_opt = False
         cur_opt = None

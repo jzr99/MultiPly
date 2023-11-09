@@ -16,6 +16,7 @@ from torch.autograd import grad
 import hydra
 import kaolin
 from kaolin.ops.mesh import index_vertices_by_faces
+import json
 from pytorch3d import ops
 class V2A(nn.Module):
     def __init__(self, opt, betas_path):
@@ -140,6 +141,9 @@ class V2A(nn.Module):
                 implicit_network.load_state_dict(smpl_model_state["model_state_dict"], strict=False)
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
+
+        if self.smpl_surface_weight > 0:
+            self.smpl_vertex_part = json.load(open(hydra.utils.to_absolute_path('./outputs/smpl_vert_segmentation.json')))
 
         # self.smpl_v_cano = self.smpl_server.verts_c
         # self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
@@ -347,7 +351,13 @@ class V2A(nn.Module):
 
                 # sample point form deformed SMPL
                 if self.smpl_surface_weight > 0:
-                    idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
+                    assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
+                    idx_weight = torch.ones(6890)
+                    exclude_idx = self.smpl_vertex_part['head'] + self.smpl_vertex_part['rightHand'] + self.smpl_vertex_part['leftHand'] + self.smpl_vertex_part['rightFoot'] + self.smpl_vertex_part['leftFoot'] + self.smpl_vertex_part['leftHandIndex1'] + self.smpl_vertex_part['rightHandIndex1']
+                    idx_weight[exclude_idx] = 0
+                    idx_weight = idx_weight.cuda()
+                    idx = idx_weight.multinomial(num_samples=num_pixels, replacement=True)
+                    # idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:num_pixels].cuda()
                     sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'], dim=1, index=idx)
                     x_c, outlier_mask = self.deformer_list[person_id].forward(sample_point.reshape(-1, 3),
                                                                                smpl_tfs_list[person_id],

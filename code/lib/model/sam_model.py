@@ -39,6 +39,9 @@ class SAMServer():
         img_dir = os.path.join(root, "image")
         self.img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 
+        self.training_indices = list(range(opt.start_frame, opt.end_frame, 1))
+        self.img_paths = [self.img_paths[i] for i in self.training_indices]
+
         sam_checkpoint = "sam_vit_h_4b8939.pth"
         model_type = "vit_h"
         device = "cuda"
