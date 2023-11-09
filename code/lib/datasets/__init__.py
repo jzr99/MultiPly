@@ -26,5 +26,6 @@ def create_dataset(opt):
         drop_last=opt.drop_last,
         shuffle=opt.shuffle,
         num_workers=opt.worker,
-        pin_memory=True
+        pin_memory=True,
+        persistent_workers=True,
     )
