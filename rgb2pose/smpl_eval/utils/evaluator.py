@@ -126,7 +126,7 @@ class SMPL_Evaluator():
             for keypoint_id in range(len(gt3d_joints[0])):
                 joint_depth_num = joint_depth_num + 1
                 gt_depth_dist = (gt3d_joints[0][keypoint_id, 2] - gt3d_joints[1][keypoint_id, 2])
-                gt_joint_depth_order = depth_relation(gt_depth_dist, 0.1)
+                gt_joint_depth_order = depth_relation(gt_depth_dist, 0.15)
                 pred_depth_dist = (pred_joints[0][keypoint_id, 2] + pred_trans[0][2]) - (pred_joints[1][keypoint_id, 2] + pred_trans[1][2])
                 # pred_joint_depth_dist = (pred_joints[0][0,2] - pred_joints[1][0,2])
                 pred_joint_depth_order = depth_relation(pred_depth_dist, 0.15)

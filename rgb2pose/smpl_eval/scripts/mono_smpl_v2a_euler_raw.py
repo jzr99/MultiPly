@@ -139,12 +139,12 @@ EXP_path_list = [
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_loop_align_vitpose",
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_loop_align_vitpose",
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_delay_depth_loop_align_vitpose_end_2",
-EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_delay_depth_loop_align_vitpose_end_2_drender",
+# EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_delay_depth_loop_align_vitpose_end_2_drender",
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_loop_align_vitpose_noshare",
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_loop_align_vitpose_noshare",
 # EXP_ROOT_path + "Hi4D_pair16_jump16_4_sam_delay_depth_loop_align_vitpose_end_2_edge_noshare",
 
-# RAW_ROOT_path + "pair17_dance17_vitpose_28",
+RAW_ROOT_path + "pair17_dance17_vitpose_28",
 # EXP_ROOT_path + "Hi4D_pair17_dance17_28_loop_0pose_vitpose_2",
 # EXP_ROOT_path + "Hi4D_pair17_dance17_28_sam_loop_0pose_vitpose_2",
 # EXP_ROOT_path + "Hi4D_pair17_dance17_28_sam_delay_depth_loop_0pose_vitpose_2",
@@ -245,16 +245,16 @@ if __name__ == '__main__':
     # parser.add_argument('--exp_name', type=str, default='v2a')
     # parser.add_argument('--pairs',nargs='+' , type=str, default=["pair19"])
     # parser.add_argument('--actions', nargs='+', type=str, default=["piggyback19"])
-    parser.add_argument('--pairs',nargs='+' , type=str, default=["pair16"])
-    parser.add_argument('--actions', nargs='+', type=str, default=["jump16"])
+    # parser.add_argument('--pairs',nargs='+' , type=str, default=["pair16"])
+    # parser.add_argument('--actions', nargs='+', type=str, default=["jump16"])
     # parser.add_argument('--pairs',nargs='+' , type=str, default=["pair15"])
     # parser.add_argument('--actions', nargs='+', type=str, default=["fight15"])
     # parser.add_argument('--cams', nargs='+', type=int, default= [4])
-    # parser.add_argument('--pairs',nargs='+' , type=str, default=["pair17"])
-    # parser.add_argument('--actions', nargs='+', type=str, default=["dance17"])
-    # parser.add_argument('--cams', nargs='+', type=int, default= [28])
+    parser.add_argument('--pairs',nargs='+' , type=str, default=["pair17"])
+    parser.add_argument('--actions', nargs='+', type=str, default=["dance17"])
+    parser.add_argument('--cams', nargs='+', type=int, default= [28])
     # parser.add_argument('--pairs',nargs='+' , type=str, default=["pair18"])
     # parser.add_argument('--actions', nargs='+', type=str, default=["basketball18"])
-    parser.add_argument('--cams', nargs='+', type=int, default= [4])
+    # parser.add_argument('--cams', nargs='+', type=int, default= [4])
     parser.add_argument('--exp_name', type=str, default='v2a')
     main(parser.parse_args())

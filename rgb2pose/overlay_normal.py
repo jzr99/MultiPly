@@ -2,12 +2,13 @@ import cv2
 import numpy as np
 import glob
 import os
+from tqdm import tqdm
 
 # subject = 'ma_wechat1'
 # seq = f'{subject}'
 # result_dir = f'/home/chen/release_tmp/RGB-PINA/outputs/Video/{seq}'
-result_dir = '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/Dragon_sam_delay_depth_loop'
-data_dir = f'/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data/Dragon'
+result_dir = '/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/dance5_sam_delay_depth_loop_noshare'
+data_dir = f'/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data/dance5'
 
 
 image_paths = sorted(glob.glob(os.path.join(data_dir, 'image/*.png')))
@@ -16,13 +17,14 @@ normal_paths = sorted(glob.glob(os.path.join(result_dir, 'test_normal/-1/*.png')
 
 start_frame = 0
 end_frame = len(image_paths)
+# end_frame = 85
 
-save_dir = os.path.join(result_dir, 'test_overlay_normal')
+save_dir = os.path.join(result_dir, 'test_overlay_normal_100')
 
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
-for idx, image_path in enumerate(image_paths[start_frame:end_frame]):
+for idx, image_path in enumerate(tqdm(image_paths[start_frame:end_frame])):
     mask_path = mask_paths[idx]
     normal_path = normal_paths[idx]
 
