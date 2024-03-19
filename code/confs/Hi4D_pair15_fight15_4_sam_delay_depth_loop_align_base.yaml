@@ -1,0 +1,13 @@
+hydra:
+    run:
+        dir: "outputs/${exp}/${run}"
+
+defaults:
+  - model: Hi4D_pair15_fight15_4_sam_delay_depth_loop_align_model
+  - dataset: Hi4D_pair15_fight15_4_sam_delay_depth_loop_align # hi4d # video # 3DPW
+  - _self_
+
+seed: 42
+project_name: "VOLSDF_cam_norm"
+exp: ${dataset.train.dataset}
+run: ${dataset.train.subject}

@@ -39,6 +39,9 @@ class SAMServer():
         img_dir = os.path.join(root, "image")
         self.img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
 
+        self.training_indices = list(range(opt.start_frame, opt.end_frame, 1))
+        self.img_paths = [self.img_paths[i] for i in self.training_indices]
+
         sam_checkpoint = "sam_vit_h_4b8939.pth"
         model_type = "vit_h"
         device = "cuda"
@@ -86,6 +89,12 @@ class SAMServer():
                 y_min = np.min(indices[:, 0])
                 x_max = np.max(indices[:, 1])
                 y_max = np.max(indices[:, 0])
+
+                # expand the bounding box by 6%
+                x_min = max(0, x_min - int(0.03 * (x_max - x_min)))
+                y_min = max(0, y_min - int(0.03 * (y_max - y_min)))
+                x_max = min(image_mask.shape[1], x_max + int(0.03 * (x_max - x_min)))
+                y_max = min(image_mask.shape[0], y_max + int(0.03 * (y_max - y_min)))
 
                 # Convert the coordinates to xyxy format
                 bounding_box = np.array([x_min, y_min, x_max, y_max])
@@ -247,8 +256,8 @@ class SAMServer():
                 if not os.path.exists(f'stage_sam_mask/{current_epoch:05d}/{person_id}'):
                     os.makedirs(f'stage_sam_mask/{current_epoch:05d}/{person_id}')
 
-                plt.savefig(os.path.join(f'stage_sam_mask/{current_epoch:05d}/{person_id}', '%04d.png' % i),
-                            bbox_inches='tight', pad_inches=0.0)
+                if current_epoch % 200 == 0:
+                    plt.savefig(os.path.join(f'stage_sam_mask/{current_epoch:05d}/{person_id}', '%04d.png' % i), bbox_inches='tight', pad_inches=0.0)
                 plt.close()
                 # plt.show()
 

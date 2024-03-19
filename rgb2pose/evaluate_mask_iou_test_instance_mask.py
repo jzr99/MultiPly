@@ -10,6 +10,7 @@ EXP_NAME_test = "Hi4D_pair19_piggyback19_loop_temporal_SAM_auto_raw_openpose_nai
 GT_NAME = "pair19/piggyback19"
 CAM_NAME = "4"
 inverse = True
+
 EXP_DIR = f"/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/{EXP_NAME}/stage_sam_mask/*"
 EXP_TEST_DIR = f"/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/outputs/Hi4D/{EXP_NAME_test}/test_instance_mask"
 GT_DIR = f"/cluster/project/infk/hilliges/jiangze/ROMP/global_scratch/romp_data/ROMP_datasets/Hi4D/Hi4D_all/Hi4D/{GT_NAME}/seg/img_seg_mask/{CAM_NAME}"

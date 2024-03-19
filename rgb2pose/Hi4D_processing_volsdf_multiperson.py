@@ -45,10 +45,11 @@ transpose = True
 # gender = 'm'
 DIR = ''
 resize_factor = 2
-
+static_cam = True # important for easymocap
 
 if dataset == 'Hi4D':
     # DIR = "/Users/jiangzeren/Downloads/eval/data/pair01/hug01"
+    # DIR = "/cluster/project/infk/hilliges/jiangze/ROMP/global_scratch/ROMP/ROMP/dataset/Hi4D/Hi4D_all/Hi4D/pair19/piggyback19"
     DIR = "/cluster/project/infk/hilliges/jiangze/ROMP/global_scratch/ROMP/ROMP/dataset/Hi4D/Hi4D_all/Hi4D/pair19/piggyback19"
     # camera_view = dict(np.load(os.path.join(DIR, "meta.npz")))["mono_cam"]
     # print("camera_view", camera_view)
@@ -62,7 +63,8 @@ if dataset == 'Hi4D':
 
     # import pdb;pdb.set_trace()
     # save_dir = '/Users/jiangzeren/Downloads/eval/V2A_multiperson'
-    save_dir = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data/Hi4D_pair19_piggyback19"
+    save_dir = "/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/data/Hi4D_pair19_piggyback19_static"
+    os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir, "gender.npy"), gender_list)
 
 if not os.path.exists(os.path.join(save_dir, 'image')):
@@ -96,8 +98,8 @@ smpl_model_0 = SMPL('/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/li
 smpl_model_1 = SMPL('/cluster/project/infk/hilliges/jiangze/V2A/RGB-PINA/code/lib/smpl/smpl_model', gender=gender_list[1])
 # we use the betas from naked body not "clothed"
 if dataset == "Hi4D":
-    smpl_shape_0 = np.load(f"{DIR}/smpl/000006.npz", allow_pickle=True)['betas'][0]
-    smpl_shape_1 = np.load(f"{DIR}/smpl/000006.npz", allow_pickle=True)['betas'][1]
+    smpl_shape_0 = np.load(f"{DIR}/smpl/000020.npz", allow_pickle=True)['betas'][0]
+    smpl_shape_1 = np.load(f"{DIR}/smpl/000020.npz", allow_pickle=True)['betas'][1]
     T_hip_0 = smpl_model_0.get_T_hip(betas=torch.tensor(smpl_shape_0)[None].float()).squeeze().cpu().numpy()
     T_hip_1 = smpl_model_1.get_T_hip(betas=torch.tensor(smpl_shape_1)[None].float()).squeeze().cpu().numpy()
 
@@ -170,6 +172,7 @@ output_trans = []
 output_pose = []
 output_P = {}
 max_human_sphere_all = 0
+normalize_shift_first_frame = None
 for idx, img_path in enumerate(tqdm(img_paths)):
     # resize image for speed-up
     img = cv2.imread(img_path)
@@ -230,7 +233,15 @@ for idx, img_path in enumerate(tqdm(img_paths)):
     # we need to normalize the trans for every frame due to the large global movement
     v_max = smpl_verts_all.max(axis=0)
     v_min = smpl_verts_all.min(axis=0)
-    normalize_shift = -(v_max + v_min) / 2.
+    # normalize_shift = -(v_max + v_min) / 2.
+    if static_cam:
+        if idx == 0:
+            normalize_shift = -(v_max + v_min) / 2.
+            normalize_shift_first_frame = normalize_shift
+        else:
+            normalize_shift = normalize_shift_first_frame
+    else:
+        normalize_shift = -(v_max + v_min) / 2.
 
     # check whether humans are within the sphere
     smpl_verts_all = smpl_verts_all + normalize_shift.reshape(1, 3)

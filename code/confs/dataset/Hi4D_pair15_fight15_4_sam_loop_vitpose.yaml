@@ -1,0 +1,50 @@
+train:
+    dataset: Hi4D
+#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
+    subject: "Hi4D_pair15_fight15_4_sam_loop_vitpose"
+    start_frame: 0
+    end_frame: 150
+    batch_size: 1
+    drop_last: False
+    shuffle: True
+    worker: 8
+    num_person: 2
+    data_dir : pair15_fight15_vitpose_4/
+    num_sample : 512
+    using_SAM: True
+
+valid:
+    dataset: "Hi4DVal"
+#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
+    subject: "Hi4D_pair15_fight15_4_sam_loop_vitpose"
+    start_frame: 0
+    end_frame: 150
+    image_id: 0
+
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 8
+
+    data_dir : pair15_fight15_vitpose_4/
+    num_sample : -1
+    pixel_per_batch: 1024
+    using_SAM: True
+
+test:
+    dataset: "Hi4DTest"
+#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
+    subject: "Hi4D_pair15_fight15_4_sam_loop_vitpose"
+    start_frame: 0
+    end_frame: 150
+    image_id: 0
+
+    batch_size: 1
+    drop_last: False
+    shuffle: False
+    worker: 0
+
+    data_dir : pair15_fight15_vitpose_4/
+    num_sample : 0
+    pixel_per_batch: 1024
+    using_SAM: True

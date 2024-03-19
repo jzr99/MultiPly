@@ -145,3 +145,20 @@ def get_sphere_intersections(cam_loc, ray_directions, r = 1.0):
     sphere_intersections = sphere_intersections.clamp_min(0.0)
 
     return sphere_intersections
+
+def get_new_cam_pose_fvr(pose, rotation_angle_y):
+    rot = scipy_R.from_euler('y', rotation_angle_y, degrees=True).as_matrix() # start+i*(2)
+    R, C = pose[:3, :3], pose[:3, 3]
+    # here R should inverse, but it's correct because R is 1,-1,-1
+    T = -R@C
+    temp_P = np.eye(4, dtype=np.float32)
+    temp_P[:3,:3] = R
+    temp_P[:3, 3] = T
+    transform = np.eye(4)
+    transform[:3,:3] = rot
+    final_P = temp_P @ transform
+
+    new_pose = np.eye(4, dtype=np.float32)
+    new_pose[:3, :3] = final_P[:3, :3]
+    new_pose[:3, 3] = -np.linalg.inv(final_P[:3, :3]) @ final_P[:3, 3]
+    return new_pose

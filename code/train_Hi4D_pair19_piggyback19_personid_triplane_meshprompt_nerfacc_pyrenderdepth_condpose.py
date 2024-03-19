@@ -38,7 +38,8 @@ def main(opt):
     validset = create_dataset(opt.dataset.valid)
 
     if opt.model.is_continue == True:
-        checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+        # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+        checkpoint = sorted(glob.glob("checkpoints/epoch=*.ckpt"))[-1]
         trainer.fit(model, trainset, validset, ckpt_path=checkpoint)
     else: 
         trainer.fit(model, trainset, validset)

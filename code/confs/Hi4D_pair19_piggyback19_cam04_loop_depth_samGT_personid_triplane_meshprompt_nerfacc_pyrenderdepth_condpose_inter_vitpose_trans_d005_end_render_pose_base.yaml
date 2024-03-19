@@ -1,0 +1,13 @@
+hydra:
+    run:
+        dir: "outputs/${exp}/${run}"
+
+defaults:
+  - model: Hi4D_pair19_piggyback19_cam4_personid_triplane_meshprompt_nerfacc_pyrenderdepth_condpose_inter_vitpose_trans_d005_end_render_pose_model
+  - dataset: Hi4D_pair19_piggyback19_cam4_raw_openpose_depth_samGT_personid_triplane_meshprompt_nerfacc_pyrenderdepth_condpose_inter_vitpose_trans_d005_end_render_pose # hi4d # video # 3DPW
+  - _self_
+
+seed: 42
+project_name: "VOLSDF_cam_norm"
+exp: ${dataset.train.dataset}
+run: ${dataset.train.subject}

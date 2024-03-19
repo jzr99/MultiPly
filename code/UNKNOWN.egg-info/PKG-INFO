@@ -1,6 +1,7 @@
 Metadata-Version: 2.1
 Name: UNKNOWN
 Version: 0.0.0
+<<<<<<< HEAD
 Summary: UNKNOWN
 Home-page: UNKNOWN
 License: UNKNOWN
@@ -8,3 +9,5 @@ Platform: UNKNOWN
 
 UNKNOWN
 
+=======
+>>>>>>> 173d19f975de299ddb9f88e13c604384ad925e47

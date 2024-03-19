@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch.optim as optim
-# from lib.model.v2a import V2A
-from lib.model.v2a_nerfacc import V2A
+from lib.model.v2a import V2A as V2A_old
+from lib.model.v2a_nerfacc import V2A as V2A_nerfacc
 from lib.model.body_model_params import BodyModelParams
 import cv2
 import torch
@@ -22,10 +22,21 @@ from pytorch_lightning.core.optimizer import LightningOptimizer
 from torch.optim.optimizer import Optimizer
 from lib.model.sam_model import SAMServer
 from torch import nn
+import kaolin
+from pytorch3d import ops
+from lib.datasets.Hi4D import weighted_sampling
 class V2AModel(pl.LightningModule):
     def __init__(self, opt, betas_path) -> None:
         super().__init__()
-        self.model = V2A(opt.model, betas_path)
+        try:
+            self.nerfacc = opt.model.use_nerfacc
+        except:
+            self.nerfacc = False
+        print(f"nerfacc {self.nerfacc}")
+        if self.nerfacc:
+            self.model = V2A_nerfacc(opt.model, betas_path)
+        else:
+            self.model = V2A_old(opt.model, betas_path)
         self.opt = opt
         self.num_training_frames = opt.model.num_training_frames
         self.start_frame = opt.dataset.train.start_frame
@@ -50,8 +61,71 @@ class V2AModel(pl.LightningModule):
         self.sam_server = SAMServer(opt.dataset.train)
         self.using_sam = opt.dataset.train.using_SAM
         self.pose_correction_epoch = opt.model.pose_correction_epoch
+        try:
+            self.pose_correction_epoch_start = opt.model.pose_correction_epoch_start
+            print(f"pose_correction_epoch_start {self.pose_correction_epoch_start}")
+        except:
+            self.pose_correction_epoch_start = 0
+            print("pose_correction_epoch_start not specified, set to 0")
+        try:
+            self.depth_with_delay = opt.model.depth_with_delay
+            print(f"depth_with_delay {self.depth_with_delay}")
+        except:
+            self.depth_with_delay = False
+            print("depth_with_delay not specified, set to False")
+
+        try:
+            self.depth_only_trans = opt.model.depth_only_trans
+            print(f"depth_only_trans {self.depth_only_trans}")
+        except:
+            self.depth_only_trans = False
+            print("depth_only_trans not specified, set to False")
         self.sigmoid = nn.Sigmoid()
         self.l2_loss = nn.MSELoss(reduction='mean')
+
+        try:
+            self.depth_end = opt.model.depth_end
+            print(f"depth_end {self.depth_end}")
+        except:
+            self.depth_end = False
+            print("depth_end not specified, set to False")
+        try:
+            self.depth_pose = opt.model.depth_pose
+            print(f"depth_pose {self.depth_pose}")
+        except:
+            self.depth_pose = False
+            print("depth_pose not specified, set to False")
+
+        try:
+            self.depth_cond_zero = opt.model.depth_cond_zero
+            print(f"depth_cond_zero {self.depth_cond_zero}")
+        except:
+            self.depth_cond_zero = False
+            print("depth_cond_zero not specified, set to False")
+
+        try:
+            self.all_edge = opt.model.all_edge
+            print(f"all_edge {self.all_edge}")
+        except:
+            self.all_edge = False
+            print("all_edge not specified, set to False")
+        if self.all_edge:
+            assert opt.dataset.train.edge_sampling == self.all_edge
+        try:
+            self.fix_sam = opt.model.fix_sam
+            print(f"fix_sam {self.fix_sam}")
+        except:
+            self.fix_sam = False
+            print("fix_sam not specified, set to False")
+
+        # prepare opt for depth
+        # transl_list = torch.nn.ModuleList()
+        # for body_model_i in self.body_model_list:
+        #     transl_list.append(body_model_i.transl.weight)
+        # params_transl = [{'params': transl_list.parameters(), 'lr': self.opt.model.learning_rate * 0.1}]
+        # self.optimizer_transl = optim.Adam(params_transl, lr=self.opt.model.learning_rate, eps=1e-8)
+        # self.scheduler_transl = optim.lr_scheduler.MultiStepLR(
+        #     self.optimizer_transl, milestones=self.opt.model.sched_milestones, gamma=self.opt.model.sched_factor)
 
 
         
@@ -85,11 +159,19 @@ class V2AModel(pl.LightningModule):
         inputs, targets = batch
 
         batch_idx = inputs["idx"]
+        depth_opt = 'sam_mask' in inputs.keys() and self.current_epoch >= 200 and self.current_epoch % 10 == 0 and self.current_epoch < 1000 and not self.depth_end
         # import ipdb;ipdb.set_trace()
+        is_only_pose = False
         if self.using_sam:
             is_certain = inputs["is_certain"].squeeze()
+            delay_opt = self.current_epoch > self.pose_correction_epoch_start and self.current_epoch < self.pose_correction_epoch and not is_certain
             # if self.current_epoch < 500 and batch_idx > 85 and batch_idx < 125: # this is for warmwelcome
-            if self.current_epoch < self.pose_correction_epoch and not is_certain:
+            if self.depth_with_delay:
+                is_only_pose = depth_opt or delay_opt
+            else:
+                is_only_pose = delay_opt
+            if is_only_pose:
+            # if self.current_epoch > self.pose_correction_epoch_start and self.current_epoch < self.pose_correction_epoch and not is_certain:
             # if self.current_epoch < 500 and batch_idx > 38 and batch_idx < 106: # this is for piggyback
                 for param in self.model.foreground_implicit_network_list.parameters():
                     param.requires_grad = False
@@ -108,7 +190,37 @@ class V2AModel(pl.LightningModule):
                     param.requires_grad = True
                 for param in self.model.bg_rendering_network.parameters():
                     param.requires_grad = True
-        
+                if self.model.foreground_implicit_network_list[0].offset_head:
+                    if self.current_epoch < 100:
+                        for implicit_network in self.model.foreground_implicit_network_list:
+                            for param in implicit_network.head_layer_list.parameters():
+                                param.requires_grad = False
+                            for param in implicit_network.last_layer_list.parameters():
+                                param.requires_grad = False
+                    else:
+                        for implicit_network in self.model.foreground_implicit_network_list:
+                            for param in implicit_network.head_layer_list.parameters():
+                                param.requires_grad = True
+                            for param in implicit_network.last_layer_list.parameters():
+                                param.requires_grad = True
+
+            if depth_opt and self.depth_only_trans:
+                for body_model_i in self.body_model_list:
+                    body_model_i.set_requires_grad('global_orient', False)
+                    body_model_i.set_requires_grad('body_pose', False)
+            else:
+                for body_model_i in self.body_model_list:
+                    body_model_i.set_requires_grad('global_orient', True)
+                    body_model_i.set_requires_grad('body_pose', True)
+
+
+        # edge based sampling
+        if (is_only_pose or self.all_edge) and 'edge_uv' in inputs.keys():
+            inputs['uv'] = inputs['edge_uv']
+            targets['rgb'] = targets['edge_rgb']
+            if 'edge_sam_mask' in inputs.keys():
+                inputs['sam_mask'] = inputs['edge_sam_mask']
+
         device = inputs["smpl_params"].device
 
         if self.opt_smpl:
@@ -146,15 +258,19 @@ class V2AModel(pl.LightningModule):
 
         loss_output = self.loss(model_outputs, targets)
         # TODO update the condition in config
-        if 'sam_mask' in inputs.keys() and self.current_epoch >= 50 and self.current_epoch % 10 == 0 and self.current_epoch < 1000:
-            depth_order_loss_pyrender, loss_instance_silhouette = self.get_depth_order_loss(inputs)
+        if 'sam_mask' in inputs.keys() and self.current_epoch >= 200 and self.current_epoch % 10 == 0 and self.current_epoch < 1000 and not self.depth_end:
+        # if 'sam_mask' in inputs.keys() and self.current_epoch >= 0:
+            depth_order_loss_pyrender, loss_instance_silhouette, loss_interpenetration = self.get_depth_order_loss(inputs)
+            loss_output.update({'loss_interpenetration': loss_interpenetration})
             loss_output.update({'depth_order_loss_pyrender': depth_order_loss_pyrender})
             loss_output.update({'loss_instance_silhouette': loss_instance_silhouette})
+            loss_output["loss"] += loss_interpenetration
             loss_output["loss"] += depth_order_loss_pyrender
             loss_output["loss"] += loss_instance_silhouette
         else:
             loss_output.update({'depth_order_loss_pyrender': torch.zeros((1), device=device)})
             loss_output.update({'loss_instance_silhouette': torch.zeros((1), device=device)})
+            loss_output.update({'loss_interpenetration': torch.zeros((1), device=device)})
         for k, v in loss_output.items():
             if k in ["loss"]:
                 self.log(k, v.item(), prog_bar=True, on_step=True)
@@ -162,7 +278,7 @@ class V2AModel(pl.LightningModule):
                 self.log(k, v.item(), prog_bar=True, on_step=True)
         if loss_output["loss"].isnan():
             print("Nan: overall loss")
-            loss_output["loss"] = torch.zeros((1),device=loss_output["loss"].device)
+            loss_output["loss"] = torch.zeros((1),device=loss_output["loss"].device, requires_grad=True)
         return loss_output["loss"]
 
     # def backward(
@@ -270,6 +386,353 @@ class V2AModel(pl.LightningModule):
     #     import ipdb; ipdb.set_trace()
     #     optimizer.step(closure=optimizer_closure)
 
+    def opt_depth(self):
+        # do not change the test setting to novel pose setting.
+        testset = create_dataset(self.opt.dataset.test)
+        for batch_ndx, batch in enumerate(tqdm(testset)):
+            # generate instance mask for all test images
+            inputs, targets, pixel_per_batch, total_pixels, idx = batch
+            print("idx: ", inputs["idx"])
+            inputs = {key: value.cuda() for key, value in inputs.items()}
+            # targets = {key: value.cuda() for key, value in targets.items()}
+            results = []
+            batch_inputs = {"uv": inputs["uv"],
+                            "P": inputs["P"],
+                            "C": inputs["C"],
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:, :, 4:76],
+                            "smpl_shape": inputs["smpl_params"][:, :, 76:],
+                            "smpl_trans": inputs["smpl_params"][:, :, 1:4],
+                            "img_size": targets["img_size"],
+                            "org_sam_mask": inputs["org_sam_mask"],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+
+            if self.depth_pose:
+                opt_params = [{'params': self.body_model_list.parameters(), 'lr': self.opt.model.learning_rate}]
+                optimizer_transl = optim.Adam(opt_params, lr=self.opt.model.learning_rate, eps=1e-8)
+            else:
+                opt_params = []
+                for body_model_i in self.body_model_list:
+                    opt_params.append({'params': body_model_i.transl.weight, 'lr': self.opt.model.learning_rate}) # here do not multiple 0.1
+                optimizer_transl = optim.Adam(opt_params, lr=self.opt.model.learning_rate, eps=1e-8)
+
+
+            body_params_list = [self.body_model_list[i](inputs['idx']) for i in range(self.num_person)]
+            batch_inputs['smpl_trans'] = torch.stack(
+                [body_model_params['transl'] for body_model_params in body_params_list],
+                dim=1)
+            batch_inputs['smpl_shape'] = torch.stack(
+                [body_model_params['betas'] for body_model_params in body_params_list],
+                dim=1)
+            global_orient = torch.stack(
+                [body_model_params['global_orient'] for body_model_params in body_params_list],
+                dim=1)
+            body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list],
+                                    dim=1)
+            batch_inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+
+            inputs = batch_inputs
+            renderer = self.get_renderer(inputs)
+            idx = inputs["idx"].item()
+            # img_size = inputs["img_size"]
+            # input_img = inputs["org_img"][0]
+            smpl_params = inputs['smpl_params']
+            smpl_pose = inputs["smpl_pose"]
+            scale = smpl_params[:, :, 0]
+            smpl_shape = inputs["smpl_shape"]
+            smpl_trans = inputs["smpl_trans"]
+            zbuf_list = []
+            deformed_faces_list = []
+            deformed_verts_color_list = []
+            # number_persons = len(self.model.smpl_server_list)
+            # color_dict = [[255, 0.0, 0.0] for _ in range(number_persons)]
+            color_dict = [[255, 0.0, 0.0], [0.0, 255, 0.0], [0.0, 0.0, 255], [125, 125, 0.0], [0.0, 125, 125],
+                          [125, 0.0, 125], [64, 0.0, 0.0], [0.0, 64, 0.0], [0.0, 0.0, 64], [32, 32, 0.0],
+                          [0.0, 32, 32], [32, 0.0, 32]]
+            vertex_color_list = []
+            used_color_list = []
+            canonical_vertex_list = []
+            for person_idx, smpl_server in enumerate(self.model.smpl_server_list):
+                smpl_output = smpl_server(scale[:, person_idx], smpl_trans[:, person_idx], smpl_pose[:, person_idx],
+                                          smpl_shape[:, person_idx])
+                # use deformed mesh as input, instead of SMPL
+                # smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+                smpl_tfs = smpl_output['smpl_tfs']
+                # cond = {'smpl': smpl_pose[:, 3:] / np.pi}
+                cond_pose = smpl_pose[:, person_idx, 3:] / np.pi
+                if self.depth_cond_zero:
+                    cond_pose = smpl_pose[:, person_idx, 3:] * 0.
+                if self.model.use_person_encoder:
+                    # import pdb;pdb.set_trace()
+                    person_id_tensor = torch.from_numpy(np.array([person_idx])).long().to(smpl_pose.device)
+                    person_encoding = self.model.person_latent_encoder(person_id_tensor)
+                    person_encoding = person_encoding.repeat(smpl_pose.shape[0], 1)
+                    cond_pose_id = torch.cat([cond_pose, person_encoding], dim=1)
+                    cond = {'smpl_id': cond_pose_id}
+                else:
+                    cond = {'smpl': cond_pose}
+
+                mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_idx),
+                                               smpl_server.verts_c[0], point_batch=10000, res_up=2)
+                canonical_vertex = torch.tensor(mesh_canonical.vertices[None],
+                                                device=self.model.mesh_v_cano_list[person_idx].device).float()
+                canonical_vertex_list.append(canonical_vertex)
+                canonical_face = torch.tensor(mesh_canonical.faces.astype(np.int64),
+                                              device=self.model.mesh_v_cano_list[person_idx].device)
+                deformed_verts = self.get_deformed_mesh_fast_mode_multiple_person_torch(canonical_vertex,
+                                                                                        smpl_output['smpl_tfs'],
+                                                                                        person_idx)
+                deformed_verts = (1 / scale[:, person_idx].squeeze()) * deformed_verts
+                # deformed_verts_list.append(deformed_verts)
+                deformed_faces_list.append(canonical_face.unsqueeze(0))
+
+                verts_color = torch.tensor(color_dict[person_idx], device=deformed_verts.device).repeat(
+                    deformed_verts.shape[1], 1).unsqueeze(0)
+                verts_color = verts_color[..., :3] / 255.0
+                vertex_color_list.append(verts_color)
+                used_color_list.append(color_dict[person_idx])
+
+            it_per_loop = 100
+            loop = tqdm(range(it_per_loop))
+            for it in loop:
+                # start sampling point
+                data = { "rgb": targets["org_img"].squeeze(0), "uv": targets["org_uv"].squeeze(0), "object_mask": targets["org_object_mask"].squeeze(0), "sam_mask": targets["org_sam_mask"].squeeze(0),}
+                # import pdb;pdb.set_trace()
+                number_sample = 512
+                img_size = [int(targets["img_size"][0].cpu().numpy()), int(targets["img_size"][1].cpu().numpy())]
+                samples, index_outside = weighted_sampling(data, img_size, number_sample)
+
+
+                # inputs = {
+                #     "uv": samples["uv"].astype(np.float32),
+                #     "P": self.P[idx],
+                #     "C": self.C[idx],
+                #     "intrinsics": self.intrinsics_all[idx],
+                #     "pose": self.pose_all[idx],
+                #     "smpl_params": smpl_params,
+                #     'index_outside': index_outside,
+                #     "idx": idx,
+                #     "smpl_sam_iou": self.smpl_sam_iou,
+                #     "is_certain": is_certain,
+                # }
+                # if self.using_SAM and sam_mask is not None:
+                #     inputs.update({"sam_mask": samples['sam_mask']})
+                #     inputs.update({"org_sam_mask": sam_mask})
+                # images = {"rgb": samples["rgb"].astype(np.float32)}
+                # inputs.update({"org_img": img.astype(np.float32)})
+                # inputs.update({"img_size": self.img_size})
+
+
+                # TODO it is OK to put it here?
+                optimizer_transl.zero_grad()
+
+                body_params_list = [self.body_model_list[i](inputs['idx']) for i in range(self.num_person)]
+                smpl_trans = torch.stack(
+                    [body_model_params['transl'] for body_model_params in body_params_list],
+                    dim=1)
+                smpl_shape = torch.stack(
+                    [body_model_params['betas'] for body_model_params in body_params_list],
+                    dim=1)
+                global_orient = torch.stack(
+                    [body_model_params['global_orient'] for body_model_params in body_params_list],
+                    dim=1)
+                body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list],
+                                        dim=1)
+                smpl_pose = torch.cat((global_orient, body_pose), dim=2)
+
+                idx = inputs["idx"].item()
+                smpl_params = inputs['smpl_params']
+                scale = smpl_params[:, :, 0]
+
+                model_input = {
+                    'smpl_trans': smpl_trans,
+                    'smpl_shape': smpl_shape,
+                    'smpl_pose': smpl_pose,
+                    'smpl_pose_last': smpl_pose, # here I disable the temporal loss
+                    "uv": torch.from_numpy(samples["uv"].astype(np.float32)[None]),
+                    "idx": inputs['idx'],
+                    'index_outside': torch.from_numpy(index_outside[None]),
+                    "sam_mask": torch.from_numpy(samples['sam_mask'][None]),
+                    "P": inputs["P"],
+                    "C": inputs["C"],
+                    "intrinsics": inputs['intrinsics'],
+                    "pose": inputs['pose'],
+                    "smpl_params": inputs['smpl_params'],
+                    # "img_size": torch.from_numpy(np.array(inputs["img_size"])),
+
+                }
+                model_targets = {"rgb": torch.from_numpy(samples["rgb"].astype(np.float32)[None])}
+
+                model_input = {key: value.cuda() for key, value in model_input.items()}
+                model_targets = {key: value.cuda() for key, value in model_targets.items()}
+                model_input['current_epoch'] = self.current_epoch
+
+                if self.depth_cond_zero:
+                    model_outputs = self.model(model_input, cond_zero_shit=True)
+                else:
+                    model_outputs = self.model(model_input)
+                loss_output = self.loss(model_outputs, model_targets)
+
+                deformed_verts_list = []
+                for person_idx, smpl_server in enumerate(self.model.smpl_server_list):
+                    smpl_output = smpl_server(scale[:, person_idx], smpl_trans[:, person_idx], smpl_pose[:, person_idx],
+                                              smpl_shape[:, person_idx])
+                    deformed_verts = self.get_deformed_mesh_fast_mode_multiple_person_torch(canonical_vertex_list[person_idx].detach().clone(),
+                                                                                            smpl_output['smpl_tfs'],
+                                                                                            person_idx)
+                    deformed_verts = (1 / scale[:, person_idx].squeeze()) * deformed_verts
+                    deformed_verts_list.append(deformed_verts)
+
+
+
+                # # add background color
+                # used_color_list.append([0.0, 0.0, 0.0])
+                # # (P+1, 3)
+                # used_color_list = torch.tensor(used_color_list, device=deformed_verts.device)
+
+                # import pdb;pdb.set_trace()
+                renderer_depth_map = renderer.render_multiple_depth_map(deformed_verts_list, deformed_faces_list)
+                interpenetration_loss = self.get_interpenetration_loss(deformed_verts_list, deformed_faces_list)
+                # renderer_instance_map = renderer.softrender_multiple_meshes(deformed_verts_list, deformed_faces_list,
+                #                                                             vertex_color_list)
+                # renderer_instance_map = (255 * renderer_instance_map)
+                # renderer_instance_map = renderer_instance_map[0]
+
+                reshape_depth_map_list = []
+                for map_id, depth_map_i in enumerate(renderer_depth_map):
+                    depth_map_i = depth_map_i[0, :, :, 0]
+                    reshape_depth_map_list.append(depth_map_i)
+                # get front depth map
+                max_depth_map_list = []
+                max_depth = 999
+                for map_id, depth_map_i in enumerate(reshape_depth_map_list):
+                    # depth_map_processed = np.copy(depth_map_i)
+                    depth_map_processed = depth_map_i.clone()
+                    no_interaction = depth_map_processed < 0
+                    depth_map_processed[no_interaction] = max_depth
+                    max_depth_map_list.append(depth_map_processed)
+                max_depth_map = torch.stack(max_depth_map_list, dim=-1)
+                front_depth_map, _ = torch.min(max_depth_map, dim=-1)
+                valid_mask = front_depth_map < max_depth
+                sam_mask = inputs["org_sam_mask"]
+
+                sam_mask = self.sigmoid(sam_mask)
+                sam_mask = sam_mask.squeeze(0)
+
+                # # determine background probability
+                # sam_background_mask = (1 - sam_mask.sum(dim=-1, keepdims=True))
+                # sam_foreground_background = torch.cat([sam_mask, sam_background_mask], dim=-1)
+                # sam_foreground_background_idx = torch.argmax(sam_foreground_background, dim=-1)
+                # H = sam_foreground_background_idx.shape[0]
+                # W = sam_foreground_background_idx.shape[1]
+                # sam_foreground_background_idx = sam_foreground_background_idx.reshape(-1)
+                # gt_instance_map = used_color_list[sam_foreground_background_idx].reshape(H, W, 3)
+                # # visualize renderer_instance_map and gt_instance_map
+                # renderer_instance_map_RGB = renderer_instance_map[..., :3] * (renderer_instance_map[..., [3]] / 255.0)
+                # if self.current_epoch % 50 == 0:
+                #     # renderer_instance_numpy = renderer_instance_map.detach().cpu().numpy().astype(np.uint8)
+                #     renderer_instance_numpy = renderer_instance_map_RGB.detach().cpu().numpy().astype(np.uint8)
+                #     gt_instance_numpy = gt_instance_map.detach().cpu().numpy().astype(np.uint8)
+                #     os.makedirs(f"stage_instance_mask_pyrender/{self.current_epoch:05d}/project", exist_ok=True)
+                #     os.makedirs(f"stage_instance_mask_pyrender/{self.current_epoch:05d}/gt", exist_ok=True)
+                #     cv2.imwrite(os.path.join(f"stage_instance_mask_pyrender/{self.current_epoch:05d}/project",
+                #                              f'%04d.png' % idx), renderer_instance_numpy[..., :3])
+                #     # cv2.imwrite(os.path.join(f"stage_instance_mask_pyrender/{self.current_epoch:05d}/project",
+                #     #                          f'opacity_%04d.png' % idx), renderer_instance_numpy)
+                #     cv2.imwrite(os.path.join(f"stage_instance_mask_pyrender/{self.current_epoch:05d}/gt",
+                #                              f'%04d.png' % idx), gt_instance_numpy[..., :3])
+                # (H, W)
+                # should not have more than one label in one pixel
+                valid_mask = torch.logical_and(valid_mask, sam_mask.sum(dim=-1) <= (1 + 1e-2))
+                valid_mask = torch.logical_and(valid_mask, sam_mask.sum(dim=-1) >= (0.7))
+                # (H, W, P) -> (H, W, 1)
+                sam_mask_idx = torch.argmax(sam_mask, dim=-1)
+                # sam_mask_idx = sam_mask_idx[valid_mask]
+                # (H, W) -> (H, W, 1)
+                sam_mask_idx = sam_mask_idx.unsqueeze(-1)
+                # import pdb; pdb.set_trace()
+                gt_depth_map = torch.gather(max_depth_map, dim=-1, index=sam_mask_idx)
+                # TODO SAM will classify more point than smpl shape contains, filter it out
+                gt_depth_map = gt_depth_map.squeeze(-1)
+                valid_mask = torch.logical_and(valid_mask, gt_depth_map < max_depth)
+                if it == 0 or it == it_per_loop - 1:
+                    front_numpy = front_depth_map.detach().cpu().numpy()
+                    gt_numpy = gt_depth_map.detach().cpu().numpy()
+                    vis_min_depth = 2.5
+                    vis_max_depth = 5
+                    front_numpy = np.clip(front_numpy, vis_min_depth, vis_max_depth)
+                    gt_numpy = np.clip(gt_numpy, vis_min_depth, vis_max_depth)
+                    # do the min max normalization manually
+                    front_numpy = (front_numpy - vis_min_depth) / (vis_max_depth - vis_min_depth)
+                    gt_numpy = (gt_numpy - vis_min_depth) / (vis_max_depth - vis_min_depth)
+                    front_numpy = (front_numpy * 255).astype(np.uint8)
+                    gt_numpy = (gt_numpy * 255).astype(np.uint8)
+
+                    # Normalize the depth map to 0-255 for visual effect as image (assuming 8 bit depth)
+                    # depth_map_processed = cv2.normalize(depth_map_processed, None, 255, 0, norm_type=cv2.NORM_MINMAX,
+                    #                                     dtype=cv2.CV_8U)
+
+                    # Apply the reversed 'JET' colormap
+                    front_numpy = cv2.applyColorMap(255 - front_numpy, cv2.COLORMAP_JET)
+                    gt_numpy = cv2.applyColorMap(255 - gt_numpy, cv2.COLORMAP_JET)
+                    os.makedirs(f"stage_depth_map_pyrender/{self.current_epoch:05d}/{it:05d}/front", exist_ok=True)
+                    os.makedirs(f"stage_depth_map_pyrender/{self.current_epoch:05d}/{it:05d}/gt", exist_ok=True)
+                    cv2.imwrite(os.path.join(f"stage_depth_map_pyrender/{self.current_epoch:05d}/{it:05d}/front",
+                                             f'front_%04d.png' % idx), front_numpy)
+                    cv2.imwrite(os.path.join(f"stage_depth_map_pyrender/{self.current_epoch:05d}/{it:05d}/gt",
+                                             f'gt_%04d.png' % idx), gt_numpy)
+                valid_mask = valid_mask.flatten()
+                gt_depth_map = gt_depth_map.flatten()[valid_mask]
+                front_depth_map = front_depth_map.flatten()[valid_mask]
+                exclude_mask = ~(gt_depth_map == front_depth_map)
+                depth_loss_milestone = 1000
+                # try:
+                #     silhouette_weight = self.opt.model.loss.silhouette_weight
+                # except:
+                #     silhouette_weight = 0.000
+                # loss_instance_silhouette = silhouette_weight * self.l2_loss(gt_instance_map,
+                #                                                             renderer_instance_map_RGB) * (1 - (
+                #             min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone))
+                try:
+                    interpenetration_loss_weight = self.opt.model.loss.interpenetration_loss_weight
+                except:
+                    interpenetration_loss_weight = 0.000
+                interpenetration_loss = interpenetration_loss_weight * (1 - (min(depth_loss_milestone,
+                                                                                 self.current_epoch) / depth_loss_milestone)) * interpenetration_loss
+                loss_dict = dict()
+                if exclude_mask.sum() == 0:
+                    total_loss = interpenetration_loss + loss_output["loss"]
+                    loss_dict['interpenetration_loss'] = interpenetration_loss
+                    loss_dict['depth_order_loss'] = torch.zeros(1, device=interpenetration_loss.device, requires_grad=True)
+                    loss_dict["render_loss"] = loss_output["loss"]
+                else:
+                    # import pdb; pdb.set_trace()
+                    loss = torch.log(1 + torch.exp(gt_depth_map[exclude_mask] - front_depth_map[exclude_mask])).sum()
+                    try:
+                        depth_order_weight = self.opt.model.loss.depth_order_weight
+                    except:
+                        depth_order_weight = 0.005
+                    loss = depth_order_weight * (
+                                1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone)) * loss
+                    total_loss = interpenetration_loss + loss + loss_output["loss"]
+                    loss_dict['interpenetration_loss'] = interpenetration_loss
+                    loss_dict['depth_order_loss'] = loss
+                    loss_dict["render_loss"] = loss_output["loss"]
+
+                total_loss.backward()
+                optimizer_transl.step()
+
+                l_str = 'Iter: %d' % it
+                for k in loss_dict:
+                    l_str += ', %s: %0.4f' % (k, loss_dict[k].mean().item())
+                    loop.set_description(l_str)
+
+
+
+
+
     def training_epoch_end(self, outputs) -> None:
         # Canonical mesh update every 20 epochs
         if self.current_epoch != 0 and self.current_epoch % 20 == 0:
@@ -292,10 +755,47 @@ class V2AModel(pl.LightningModule):
                     self.model.mesh_face_vertices_list[person_id] = index_vertices_by_faces(self.model.mesh_v_cano_list[person_id], self.model.mesh_f_cano_list[person_id])
                 except:
                     print("Canonical mesh generation failed, do not update it. mainly because the mesh (Surface level must be within volume data range).")
-        if self.current_epoch % 50 == 0:
+        if self.current_epoch % 50 == 0 and ((not self.fix_sam) or self.current_epoch == 0):
             self.get_instance_mask()
             self.get_sam_mask()
+        # if self.current_epoch == 0 and self.depth_end:
+        # if (self.current_epoch == 100 or self.current_epoch == 50 or self.current_epoch == 150 or self.current_epoch == 200) and self.depth_end:
+        if (self.current_epoch == 200 or self.current_epoch == 1000) and self.depth_end:
+            self.opt_depth()
         return super().training_epoch_end(outputs)
+
+    def get_interpenetration_loss(self, vertex_list, face_list):
+        num_pixels = 5120
+        interpenetration_loss = torch.zeros(1, device=vertex_list[0].device, requires_grad=True)
+        # vertex_list shape (number point, 3)
+        for person_id, vertex in enumerate(vertex_list):
+            idx = torch.randperm(vertex.shape[1])[:num_pixels].cuda()
+            sample_point = torch.index_select(vertex, dim=1, index=idx)
+            # import pdb;pdb.set_trace()
+            for partner_id, partner_vertex in enumerate(vertex_list):
+                if partner_id == person_id:
+                    continue
+                sign = kaolin.ops.mesh.check_sign(vertex_list[partner_id], face_list[partner_id].squeeze(0),
+                                                  sample_point).float()
+                sign = sign.squeeze(0)
+                # sign == -1 inside, sign > 1 outside
+                sign = 1 - 2 * sign
+                if (sign < 0).any():
+                    penetrate_point = sample_point[:, sign < 0]
+                    distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point,
+                                                                                  vertex_list[partner_id], K=1,
+                                                                                  return_nn=True)
+                    # (N, P1, K, D) for neighbor_points
+                    neighbor_points = neighbor_points.mean(dim=2)
+                    # filter outlier point
+                    stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.1
+                    if stable_point.any():
+                        penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
+                        neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
+                        # TODO make the neightbor_points move torwards its normal by a little margin
+                        interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point,
+                                                                                                     neighbor_points, reduction='sum')
+        return interpenetration_loss
 
     def get_renderer(self, inputs):
         img_size = inputs["img_size"]
@@ -329,8 +829,8 @@ class V2AModel(pl.LightningModule):
         # print("start get depth order loss")
         renderer = self.get_renderer(inputs)
         idx = inputs["idx"].item()
-        img_size = inputs["img_size"]
-        input_img = inputs["org_img"][0]
+        # img_size = inputs["img_size"]
+        # input_img = inputs["org_img"][0]
         smpl_params = inputs['smpl_params']
         smpl_pose = inputs["smpl_pose"]
         scale = smpl_params[:, :, 0]
@@ -364,6 +864,7 @@ class V2AModel(pl.LightningModule):
 
             mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_idx), smpl_server.verts_c[0], point_batch=10000, res_up=2)
             canonical_vertex = torch.tensor(mesh_canonical.vertices[None], device=self.model.mesh_v_cano_list[person_idx].device).float()
+            canonical_face = torch.tensor(mesh_canonical.faces.astype(np.int64), device=self.model.mesh_v_cano_list[person_idx].device)
             # import pdb;pdb.set_trace()
             deformed_verts = self.get_deformed_mesh_fast_mode_multiple_person_torch(canonical_vertex, smpl_output['smpl_tfs'], person_idx)
             # deformed_verts = self.get_deformed_mesh_fast_mode_multiple_person_torch(self.model.mesh_v_cano_list[person_idx], smpl_output['smpl_tfs'], person_idx)
@@ -371,12 +872,14 @@ class V2AModel(pl.LightningModule):
             # rescale it to the original scale
             deformed_verts = (1 / scale[:, person_idx].squeeze()) * deformed_verts
             deformed_verts_list.append(deformed_verts)
-            deformed_faces_list.append(self.model.mesh_f_cano_list[person_idx].unsqueeze(0))
+            # deformed_faces_list.append(self.model.mesh_f_cano_list[person_idx].unsqueeze(0))
+            deformed_faces_list.append(canonical_face.unsqueeze(0))
 
             verts_color = torch.tensor(color_dict[person_idx], device=deformed_verts.device).repeat(deformed_verts.shape[1], 1).unsqueeze(0)
             verts_color = verts_color[..., :3] / 255.0
             vertex_color_list.append(verts_color)
             used_color_list.append(color_dict[person_idx])
+
 
         # add background color
         used_color_list.append([0.0,0.0,0.0])
@@ -385,25 +888,26 @@ class V2AModel(pl.LightningModule):
 
         # import pdb;pdb.set_trace()
         renderer_depth_map = renderer.render_multiple_depth_map(deformed_verts_list, deformed_faces_list)
+        interpenetration_loss = self.get_interpenetration_loss(deformed_verts_list, deformed_faces_list)
         renderer_instance_map = renderer.softrender_multiple_meshes(deformed_verts_list, deformed_faces_list, vertex_color_list)
         renderer_instance_map = (255 * renderer_instance_map)
         renderer_instance_map = renderer_instance_map[0]
-        if input_img.shape[0] < input_img.shape[1]:
-            renderer_instance_map = renderer_instance_map[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
-        else:
-            renderer_instance_map = renderer_instance_map[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+        # if input_img.shape[0] < input_img.shape[1]:
+        #     renderer_instance_map = renderer_instance_map[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
+        # else:
+        #     renderer_instance_map = renderer_instance_map[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
 
         reshape_depth_map_list = []
         for map_id, depth_map_i in enumerate(renderer_depth_map):
             depth_map_i = depth_map_i[0, :, :, 0]
-            if input_img.shape[0] < input_img.shape[1]:
-                depth_map_i = depth_map_i[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] +
-                                                                                             input_img.shape[1]) // 2,
-                              ...]
-            else:
-                depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] +
-                                                                                                input_img.shape[
-                                                                                                    1]) // 2]
+            # if input_img.shape[0] < input_img.shape[1]:
+            #     depth_map_i = depth_map_i[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] +
+            #                                                                                  input_img.shape[1]) // 2,
+            #                   ...]
+            # else:
+            #     depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] +
+            #                                                                                     input_img.shape[
+            #                                                                                         1]) // 2]
             reshape_depth_map_list.append(depth_map_i)
         # get front depth map
         max_depth_map_list = []
@@ -431,10 +935,8 @@ class V2AModel(pl.LightningModule):
         sam_foreground_background_idx = sam_foreground_background_idx.reshape(-1)
         gt_instance_map = used_color_list[sam_foreground_background_idx].reshape(H, W, 3)
         # visualize renderer_instance_map and gt_instance_map
-        # if self.current_epoch % 50 == 0:
         renderer_instance_map_RGB = renderer_instance_map[..., :3] * (renderer_instance_map[..., [3]] / 255.0)
         if self.current_epoch % 50 == 0:
-            # import pdb;pdb.set_trace()
             # renderer_instance_numpy = renderer_instance_map.detach().cpu().numpy().astype(np.uint8)
             renderer_instance_numpy = renderer_instance_map_RGB.detach().cpu().numpy().astype(np.uint8)
             gt_instance_numpy = gt_instance_map.detach().cpu().numpy().astype(np.uint8)
@@ -490,15 +992,27 @@ class V2AModel(pl.LightningModule):
         gt_depth_map = gt_depth_map.flatten()[valid_mask]
         front_depth_map = front_depth_map.flatten()[valid_mask]
         exclude_mask = ~(gt_depth_map == front_depth_map)
-        # loss_instance_silhouette = 0.01 * self.l2_loss(gt_instance_map, renderer_instance_map[..., :3])
         depth_loss_milestone = 1000
-        loss_instance_silhouette = 0.000 * self.l2_loss(gt_instance_map, renderer_instance_map_RGB) * (1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone))
+        try:
+            silhouette_weight = self.opt.model.loss.silhouette_weight
+        except:
+            silhouette_weight = 0.000
+        loss_instance_silhouette = silhouette_weight * self.l2_loss(gt_instance_map, renderer_instance_map_RGB) * (1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone))
+        try:
+            interpenetration_loss_weight = self.opt.model.loss.interpenetration_loss_weight
+        except:
+            interpenetration_loss_weight = 0.000
+        interpenetration_loss = interpenetration_loss_weight * (1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone)) * interpenetration_loss
         if exclude_mask.sum() == 0:
-            return torch.tensor(0.0).cuda(), loss_instance_silhouette
+            return torch.tensor(0.0).cuda(), loss_instance_silhouette, interpenetration_loss
         # import pdb; pdb.set_trace()
         loss = torch.log(1 + torch.exp(gt_depth_map[exclude_mask] - front_depth_map[exclude_mask])).sum()
-        loss = 0.01 * (1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone)) * loss
-        return loss, loss_instance_silhouette
+        try:
+            depth_order_weight = self.opt.model.loss.depth_order_weight
+        except:
+            depth_order_weight = 0.005
+        loss = depth_order_weight * (1 - (min(depth_loss_milestone, self.current_epoch) / depth_loss_milestone)) * loss
+        return loss, loss_instance_silhouette, interpenetration_loss
         # gt_depth_map = max_depth_map[sam_mask_idx]
     def get_sam_mask(self):
         print("start get refined SAM mask")
@@ -685,10 +1199,10 @@ class V2AModel(pl.LightningModule):
             reshape_depth_map_list = []
             for map_id, depth_map_i in enumerate(renderer_depth_map):
                 depth_map_i = depth_map_i[0,:,:,0].data.cpu().numpy()
-                if input_img.shape[0] < input_img.shape[1]:
-                    depth_map_i = depth_map_i[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
-                else:
-                    depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
+                # if input_img.shape[0] < input_img.shape[1]:
+                #     depth_map_i = depth_map_i[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2, ...]
+                # else:
+                #     depth_map_i = depth_map_i[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[0] + input_img.shape[1]) // 2]
                 reshape_depth_map_list.append(depth_map_i)
             # get front depth map
             max_depth_map_list = []
@@ -1082,8 +1596,10 @@ class V2AModel(pl.LightningModule):
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
                                                smpl_server.verts_c[0],
                                                point_batch=10000, res_up=3)
+                self.model.deformer_list[person_id].K = 7
                 verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(mesh_canonical.vertices, smpl_tfs,
                                                                                   person_id)
+                self.model.deformer_list[person_id].K = 1
                 mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
                 os.makedirs(f"test_mesh/{person_id}", exist_ok=True)
                 mesh_canonical.export(f"test_mesh/{person_id}/{int(idx.cpu().numpy()):04d}_canonical.ply")
@@ -1137,9 +1653,11 @@ class V2AModel(pl.LightningModule):
                 else:
                     cond = {'smpl': cond_pose}
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0],
-                                               point_batch=10000, res_up=4)
+                                               point_batch=10000, res_up=3)
+                self.model.deformer_list[person_id].K = 7
                 verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(mesh_canonical.vertices, smpl_tfs,
                                                                                   person_id)
+                self.model.deformer_list[person_id].K = 1
                 mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
                 os.makedirs(f"test_mesh/{person_id}", exist_ok=True)
                 mesh_canonical.export(f"test_mesh/{person_id}/{int(idx.cpu().numpy()):04d}_canonical.ply")
@@ -1268,11 +1786,136 @@ class V2AModel(pl.LightningModule):
         cv2.imwrite(f"test_normal/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
         cv2.imwrite(f"test_fg_rendering/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
 
+
+    def test_step_each_person_novel(self, batch, id, novel_view):
+        novel_view = novel_view.item()
+        os.makedirs(f"test_mask_{novel_view}/{id}", exist_ok=True)
+        os.makedirs(f"test_rendering_{novel_view}/{id}", exist_ok=True)
+        os.makedirs(f"test_fg_rendering_{novel_view}/{id}", exist_ok=True)
+        os.makedirs(f"test_normal_{novel_view}/{id}", exist_ok=True)
+        os.makedirs(f"test_mesh_{novel_view}/{id}", exist_ok=True)
+
+        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        num_splits = (total_pixels + pixel_per_batch -
+                      1) // pixel_per_batch
+        results = []
+
+        for i in range(num_splits):
+            indices = list(range(i * pixel_per_batch,
+                                 min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "P": inputs["P"],
+                            "C": inputs["C"],
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:,: , 4:76],
+                            "smpl_shape": inputs["smpl_params"][:,: , 76:],
+                            "smpl_trans": inputs["smpl_params"][:,:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+
+            if False:
+                # body_model_params = self.body_model_params(inputs['idx'])
+                #
+                # batch_inputs.update({'smpl_pose': torch.cat(
+                #     (body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                # batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                # batch_inputs.update({'smpl_trans': body_model_params['transl']})
+                body_params_list = [self.body_model_list[i](inputs['idx']) for i in range(self.num_person)]
+                batch_inputs['smpl_trans'] = torch.stack(
+                    [body_model_params['transl'] for body_model_params in body_params_list],
+                    dim=1)
+                batch_inputs['smpl_shape'] = torch.stack(
+                    [body_model_params['betas'] for body_model_params in body_params_list],
+                    dim=1)
+                global_orient = torch.stack(
+                    [body_model_params['global_orient'] for body_model_params in body_params_list],
+                    dim=1)
+                body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list],
+                                        dim=1)
+                batch_inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+                             "img_size": targets["img_size"]}
+
+            # with torch.no_grad():
+            with torch.inference_mode(mode=False):
+                batch_clone = {key: value.clone() for key, value in batch_inputs.items()}
+                model_outputs = self.model(batch_clone, id)
+            results.append({"rgb_values": model_outputs["rgb_values"].detach().clone(),
+                            "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "acc_person_list": model_outputs["acc_person_list"].detach().clone(),
+                            **batch_targets})
+
+        img_size = results[0]["img_size"]
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
+
+        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
+
+        if False:
+            instance_mask = torch.cat([result["acc_person_list"] for result in results], dim=0)
+            instance_mask = instance_mask.reshape(*img_size, -1)
+            for i in range(instance_mask.shape[2]):
+                instance_mask_i = instance_mask[:, :, i]
+                os.makedirs(f"test_instance_mask/{i}", exist_ok=True)
+                cv2.imwrite(f"test_instance_mask/{i}/{int(idx.cpu().numpy()):04d}.png", instance_mask_i.cpu().numpy() * 255)
+
+
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+
+        rgb = (rgb * 255).astype(np.uint8)
+
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
+
+        normal = (normal * 255).astype(np.uint8)
+
+        cv2.imwrite(f"test_mask_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        cv2.imwrite(f"test_rendering_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"test_fg_rendering_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+
+
     def test_step(self, batch, *args, **kwargs):
         # outputs = []
         self.model.eval()
-        self.test_step_mesh(batch, id=-1)
-        # self.test_step_each_person(batch, id=-1)
-        # if self.num_person > 1:
-        #     for i in range(self.num_person):
-        #         self.test_step_each_person(batch, id=i)
+        # self.test_step_mesh(batch, id=-1)
+        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        if "novel_view" in inputs.keys():
+            if idx==0:
+                print(f"novel view {inputs['novel_view']} with pose from dataset")
+            self.test_step_each_person_novel(batch, id=-1, novel_view=inputs["novel_view"])
+        elif "free_view" in inputs.keys():
+            # if idx >= 7:
+            #     self.test_step_each_person_denoisy(batch, id=-1)
+            print("free view prefix")
+            self.test_step_each_person_novel(batch, id=-1, novel_view='0')
+            if self.num_person > 1:
+                for i in range(self.num_person):
+                    self.test_step_each_person_novel(batch, id=i, novel_view='0')
+        else:
+            self.test_step_each_person(batch, id=-1)
+            if self.num_person > 1:
+                for i in range(self.num_person):
+                    self.test_step_each_person(batch, id=i)

@@ -19,6 +19,7 @@ from kaolin.ops.mesh import index_vertices_by_faces
 from pytorch3d import ops
 from nerfacc import render_weight_from_density, pack_info, accumulate_along_rays
 from .deformer import skinning
+import json
 class V2A(nn.Module):
     def __init__(self, opt, betas_path):
         super().__init__()
@@ -26,6 +27,19 @@ class V2A(nn.Module):
         self.using_nerfacc = True
         self.use_mesh_depth_order = True
         # default: use_depth_order_loss = True
+        try:
+            self.smpl_surface_weight = opt.loss.smpl_surface_weight
+            print("self.smpl_surface_weight ", self.smpl_surface_weight)
+        except:
+            self.smpl_surface_weight = 0
+            print("self.smpl_surface_weight ", self.smpl_surface_weight)
+
+        try:
+            self.zero_pose_weight = opt.loss.zero_pose_weight
+            print("self.zero_pose_weight ", self.zero_pose_weight)
+        except:
+            self.zero_pose_weight = 0
+            print("self.zero_pose_weight ", self.zero_pose_weight)
         try:
             self.use_depth_order_loss = opt.use_depth_order_loss
             print("self.use_depth_order_loss ", self.use_depth_order_loss)
@@ -50,12 +64,18 @@ class V2A(nn.Module):
         if len(betas.shape) == 2:
             if self.use_person_encoder:
                 # we use shared network for all people
-                print('use shared network for all people')
-                implicit_model = ImplicitNet(opt.implicit_network)
-                render_model = RenderingNet(opt.rendering_network, triplane=implicit_model.triplane)
-                for i in range(betas.shape[0]):
-                    self.foreground_implicit_network_list.append(implicit_model)
-                    self.foreground_rendering_network_list.append(render_model)
+                implicit_model = ImplicitNet(opt.implicit_network, betas=betas)
+                if opt.rendering_network.mode == 'pose_no_view':
+                    print('use shared network only for shape network, separate for render network')
+                    for i in range(betas.shape[0]):
+                        self.foreground_implicit_network_list.append(implicit_model)
+                        self.foreground_rendering_network_list.append(RenderingNet(opt.rendering_network))
+                else:
+                    print('use shared network for all people')
+                    render_model = RenderingNet(opt.rendering_network, triplane=implicit_model.triplane)
+                    for i in range(betas.shape[0]):
+                        self.foreground_implicit_network_list.append(implicit_model)
+                        self.foreground_rendering_network_list.append(render_model)
             else:
                 for i in range(betas.shape[0]):
                     self.foreground_implicit_network_list.append(ImplicitNet(opt.implicit_network))
@@ -125,6 +145,9 @@ class V2A(nn.Module):
             if not self.use_smpl_deformer:
                 self.deformer.load_state_dict(smpl_model_state["deformer_state_dict"])
 
+        if self.smpl_surface_weight > 0:
+            self.smpl_vertex_part = json.load(open(hydra.utils.to_absolute_path('./outputs/smpl_vert_segmentation.json')))
+
         # self.smpl_v_cano = self.smpl_server.verts_c
         # self.smpl_f_cano = torch.tensor(self.smpl_server.smpl.faces.astype(np.int64), device=self.smpl_v_cano.device)
         # DEBUG
@@ -189,7 +212,7 @@ class V2A(nn.Module):
         x = x.reshape(-1, 3)
         mnfld_pred = self.foreground_implicit_network_list[person_id](x, cond, person_id=person_id)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
-    def forward(self, input, id=-1):
+    def forward(self, input, id=-1, cond_zero_shit=False, canonical_pose=False):
         # Parse model input
         torch.set_grad_enabled(True)
         # if self.sam_0_mask is not None:
@@ -216,7 +239,14 @@ class V2A(nn.Module):
         ray_box_intersector_list = []
         verts_deformed_list = []
         for i in range(num_person):
-            smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
+            if canonical_pose:
+                canonical_smpl_pose = torch.zeros_like(smpl_pose[:,i])
+                canonical_smpl_trans = torch.zeros_like(smpl_trans[:,i])
+                canonical_smpl_pose[0, 5] = np.pi/6
+                canonical_smpl_pose[0, 8] = - np.pi / 6
+                smpl_output = self.smpl_server_list[i](scale[:, i], canonical_smpl_trans, canonical_smpl_pose, smpl_shape[:, i])
+            else:
+                smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
             smpl_output_list.append(smpl_output)
             smpl_tfs_list.append(smpl_output['smpl_tfs'])
             # load into trimesh
@@ -263,6 +293,7 @@ class V2A(nn.Module):
         interpenetration_loss = torch.zeros(1,device=smpl_pose.device)
         temporal_loss = torch.zeros(1, device=smpl_pose.device)
         smpl_surface_loss = torch.zeros(1, device=smpl_pose.device)
+        zero_pose_loss = torch.zeros(1, device=smpl_pose.device)
         # if input['current_epoch'] < 500 and input['idx'] > 85 and input['idx'] < 125:
         if self.training and input['current_epoch'] > 250:
             temporal_loss = torch.mean(torch.square(input["smpl_pose_last"] - input["smpl_pose"]))
@@ -304,7 +335,7 @@ class V2A(nn.Module):
 
             cond_pose = smpl_pose[:, person_id, 3:] / np.pi
             if self.training:
-                if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0:
+                if input['current_epoch'] < 20 or input['current_epoch'] % 20 == 0 or cond_zero_shit:
                     cond_pose = smpl_pose[:, person_id, 3:] * 0.
                     # cond = {'smpl': smpl_pose[:, person_id, 3:] * 0.}
                 # if input['current_epoch'] < 500:
@@ -361,9 +392,10 @@ class V2A(nn.Module):
             sdf_output = sdf_output.unsqueeze(1)
 
             if self.training:
-                index_off_surface_person, index_in_surface_person = self.check_off_in_surface_points_cano_mesh(canonical_points, N_samples, person_id=person_id, threshold=self.threshold)
-                index_in_surface_list.append(index_in_surface_person)
-                index_off_surface_list.append(index_off_surface_person)
+                if input['current_epoch'] < 250:
+                    index_off_surface_person, index_in_surface_person = self.check_off_in_surface_points_cano_mesh(canonical_points, N_samples, person_id=person_id, threshold=self.threshold)
+                    index_in_surface_list.append(index_in_surface_person)
+                    index_off_surface_list.append(index_off_surface_person)
                 canonical_points = canonical_points.reshape(num_pixels, N_samples, 3)
 
                 canonical_points = canonical_points.reshape(-1, 3)
@@ -383,56 +415,93 @@ class V2A(nn.Module):
                 differentiable_points = canonical_points
 
                 # sample point form deformed SMPL
-                number_surface_loss_points = num_pixels
-                idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_surface_loss_points].cuda()
-                sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'], dim=1, index=idx)
-                x_c, outlier_mask = self.deformer_list[person_id].forward(sample_point.reshape(-1, 3),
-                                                                           smpl_tfs_list[person_id],
-                                                                           return_weights=False,
-                                                                           inverse=True,
-                                                                           smpl_verts=smpl_output_list[person_id][
-                                                                               'smpl_verts'])
-                output = self.foreground_implicit_network_list[person_id](x_c, cond, person_id=person_id)[0]
-                sdf = output[:, 0:1]
-                sdf = sdf.reshape(-1)
-                threshold_smpl_sdf = 0.02
-                if (sdf > threshold_smpl_sdf).any():
-                    # TODO: Eikonal loss should be sampled also from the global
-                    unplausible_sdf = sdf[sdf > threshold_smpl_sdf]
-                    sdf_zero = torch.ones_like(unplausible_sdf, device=sdf.device) * threshold_smpl_sdf
-                    smpl_surface_loss += torch.nn.functional.l1_loss(unplausible_sdf, sdf_zero, reduction='mean')
-
-
-
-                # TODO: implement 3 person interpenetration loss
-                if len(person_list) == 2:
-                    # sample point for interpenetration loss
+                if self.smpl_surface_weight > 0:
+                    number_surface_loss_points = num_pixels
                     assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
-                    assert len(person_list) == 2
-                    number_sample_pixel = 512
-                    idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_sample_pixel].cuda()
-                    sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
-                    partner_id = 1-person_id
-
-                    x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
-                                                                              inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
-                    output = self.foreground_implicit_network_list[partner_id](x_c, cond, person_id=partner_id)[0]
+                    idx_weight = torch.ones(6890)
+                    exclude_idx = self.smpl_vertex_part['head'] + self.smpl_vertex_part['rightHand'] + \
+                                  self.smpl_vertex_part['leftHand'] + self.smpl_vertex_part['rightFoot'] + \
+                                  self.smpl_vertex_part['leftFoot'] + self.smpl_vertex_part['leftHandIndex1'] + \
+                                  self.smpl_vertex_part['rightHandIndex1']
+                    idx_weight[exclude_idx] = 0
+                    idx_weight = idx_weight.cuda()
+                    idx = idx_weight.multinomial(num_samples=number_surface_loss_points, replacement=True)
+                    # idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_surface_loss_points].cuda()
+                    sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'], dim=1, index=idx)
+                    x_c, outlier_mask = self.deformer_list[person_id].forward(sample_point.reshape(-1, 3),
+                                                                               smpl_tfs_list[person_id],
+                                                                               return_weights=False,
+                                                                               inverse=True,
+                                                                               smpl_verts=smpl_output_list[person_id][
+                                                                                   'smpl_verts'])
+                    output = self.foreground_implicit_network_list[person_id](x_c, cond, person_id=person_id)[0]
                     sdf = output[:, 0:1]
                     sdf = sdf.reshape(-1)
-                    if (sdf < -0.01).any():
-                        penetrate_point = sample_point[:, sdf < -0.01]
-                        # if there is a possibility that it actually make it penetrate? like smpl is outside but implicit is inside?
-                        # TODO try to penelize implicit function
-                        distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point, smpl_output_list[partner_id]['smpl_verts'], K=1, return_nn=True)
-                        # (N, P1, K, D) for neighbor_points
-                        neighbor_points = neighbor_points.mean(dim=2)
-                        # filter outlier point
-                        stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.5
-                        if stable_point.any():
-                            penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
-                            neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
-                            # TODO make the neightbor_points move torwards its normal by a little margin
-                            interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point, neighbor_points)
+                    threshold_smpl_sdf = 0.02
+                    if (sdf > threshold_smpl_sdf).any():
+                        # TODO: Eikonal loss should be sampled also from the global
+                        unplausible_sdf = sdf[sdf > threshold_smpl_sdf]
+                        sdf_zero = torch.ones_like(unplausible_sdf, device=sdf.device) * threshold_smpl_sdf
+                        smpl_surface_loss += torch.nn.functional.l1_loss(unplausible_sdf, sdf_zero, reduction='mean')
+
+                sample_pixel = 2000
+                if self.zero_pose_weight > 0:
+                    for p, canonical_average_vertex in enumerate(self.mesh_v_cano_list):
+                        idx = torch.randperm(canonical_average_vertex.shape[1])[:sample_pixel].cuda()
+                        sample_point = torch.index_select(canonical_average_vertex, dim=1, index=idx)
+                        output_pred = \
+                        self.foreground_implicit_network_list[p](sample_point.reshape(-1, 3), cond, person_id=p)[0]
+                        sdf_pred = output_pred[:, 0:1]
+
+                        cond_zero_pose = smpl_pose[:, person_id, 3:] * 0.
+                        if self.use_person_encoder:
+                            # import pdb;pdb.set_trace()
+                            person_id_tensor = torch.from_numpy(np.array([person_id])).long().to(smpl_pose.device)
+                            person_encoding = self.person_latent_encoder(person_id_tensor)
+                            person_encoding = person_encoding.repeat(smpl_pose.shape[0], 1)
+                            cond_zero_pose_id = torch.cat([cond_zero_pose, person_encoding], dim=1)
+                            cond_zero = {'smpl_id': cond_zero_pose_id}
+                        else:
+                            cond_zero = {'smpl': cond_zero_pose}
+
+                        output_zero = \
+                        self.foreground_implicit_network_list[p](sample_point.reshape(-1, 3), cond_zero, person_id=p)[0]
+                        sdf_zero = output_zero[:, 0:1]
+                        zero_pose_loss += torch.nn.functional.l1_loss(sdf_pred, sdf_zero, reduction='mean')
+                        feature_zero = output_zero[:, 1:]
+                        feature_pred = output_pred[:, 1:]
+                        zero_pose_loss += torch.nn.functional.l1_loss(feature_pred, feature_zero, reduction='mean')
+
+
+                # # TODO: implement 3 person interpenetration loss
+                # if len(person_list) == 2:
+                #     # sample point for interpenetration loss
+                #     assert smpl_output_list[person_id]['smpl_verts'].shape[1] == 6890
+                #     assert len(person_list) == 2
+                #     number_sample_pixel = 512
+                #     idx = torch.randperm(smpl_output_list[person_id]['smpl_verts'].shape[1])[:number_sample_pixel].cuda()
+                #     sample_point = torch.index_select(smpl_output_list[person_id]['smpl_verts'],dim=1,index=idx)
+                #     partner_id = 1-person_id
+                #
+                #     x_c, outlier_mask = self.deformer_list[partner_id].forward(sample_point.reshape(-1,3), smpl_tfs_list[partner_id], return_weights=False,
+                #                                                               inverse=True, smpl_verts=smpl_output_list[partner_id]['smpl_verts'])
+                #     output = self.foreground_implicit_network_list[partner_id](x_c, cond, person_id=partner_id)[0]
+                #     sdf = output[:, 0:1]
+                #     sdf = sdf.reshape(-1)
+                #     if (sdf < -0.01).any():
+                #         penetrate_point = sample_point[:, sdf < -0.01]
+                #         # if there is a possibility that it actually make it penetrate? like smpl is outside but implicit is inside?
+                #         # TODO try to penelize implicit function
+                #         distance_batch, index_batch, neighbor_points = ops.knn_points(penetrate_point, smpl_output_list[partner_id]['smpl_verts'], K=1, return_nn=True)
+                #         # (N, P1, K, D) for neighbor_points
+                #         neighbor_points = neighbor_points.mean(dim=2)
+                #         # filter outlier point
+                #         stable_point = (penetrate_point - neighbor_points).norm(dim=-1).reshape(-1) < 0.5
+                #         if stable_point.any():
+                #             penetrate_point = penetrate_point.reshape(-1, 3)[stable_point]
+                #             neighbor_points = neighbor_points.reshape(-1, 3)[stable_point]
+                #             # TODO make the neightbor_points move torwards its normal by a little margin
+                #             interpenetration_loss = interpenetration_loss + torch.nn.functional.mse_loss(penetrate_point, neighbor_points)
 
             else:
                 differentiable_points = canonical_points.reshape(num_pixels, N_samples, 3).reshape(-1, 3)
@@ -670,22 +739,27 @@ class V2A(nn.Module):
 
 
         if self.training:
-            if self.using_nerfacc:
-                index_off_surface = torch.tensor(np.ones((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
-                index_in_surface = torch.tensor(np.zeros((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
-                for p, (ray_index, index_off, index_in) in enumerate(zip(index_ray_box_list, index_off_surface_list, index_in_surface_list)):
-                    index_off_surface[ray_index, p] = index_off
-                    index_in_surface[ray_index, p] = index_in
-                index_off_surface = torch.all(index_off_surface, dim=1)
-                index_in_surface = torch.any(index_in_surface, dim=1)
+            if input['current_epoch'] < 250:
+                if self.using_nerfacc:
+                    index_off_surface = torch.tensor(np.ones((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
+                    index_in_surface = torch.tensor(np.zeros((n_rays, len(person_list))), dtype=torch.bool, device=rgb_values.device)
+                    for p, (ray_index, index_off, index_in) in enumerate(zip(index_ray_box_list, index_off_surface_list, index_in_surface_list)):
+                        index_off_surface[ray_index, p] = index_off
+                        index_in_surface[ray_index, p] = index_in
+                    index_off_surface = torch.all(index_off_surface, dim=1)
+                    index_in_surface = torch.any(index_in_surface, dim=1)
+                else:
+                    index_off_surface = torch.all(torch.stack(index_off_surface_list, dim=0), dim=0)
+                    index_in_surface = torch.any(torch.stack(index_in_surface_list, dim=0), dim=0)
             else:
-                index_off_surface = torch.all(torch.stack(index_off_surface_list, dim=0), dim=0)
-                index_in_surface = torch.any(torch.stack(index_in_surface_list, dim=0), dim=0)
+                index_off_surface = None
+                index_in_surface = None
             # import pdb; pdb.set_trace()
             grad_theta = torch.cat(grad_theta_list, dim=1)
             output = {
                 # 'sam_mask': sam_mask,
                 # 'uv': input["uv"],
+                'zero_pose_loss': zero_pose_loss,
                 't_list': t_list,
                 'fg_rgb_values_each_person_list' : fg_rgb_values_each_person_list,
                 'cam_loc': cam_loc,
@@ -730,9 +804,10 @@ class V2A(nn.Module):
         # ensure the gradient is normalized
         normals = nn.functional.normalize(gradients, dim=-1, eps=1e-6)
         if self.use_person_encoder:
+            tri_feat = self.foreground_implicit_network_list[person_id].triplane_feature_list[person_id]
             fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs,
                                                                                     cond['smpl_id'][:, :69],
-                                                                                    feature_vectors, person_id=person_id, id_latent_code=cond['smpl_id'][:,69:])
+                                                                                    feature_vectors, person_id=person_id, id_latent_code=cond['smpl_id'][:,69:], tri_feat=tri_feat)
         else:
             fg_rendering_output = self.foreground_rendering_network_list[person_id](pnts_c, normals, view_dirs, cond['smpl'],
                                                      feature_vectors, person_id=person_id)

@@ -1,0 +1,13 @@
+hydra:
+    run:
+        dir: "outputs/${exp}/${run}"
+
+defaults:
+  - model: skate11_sam_delay_depth_loop_0pose_2_model
+  - dataset: skate11_sam_delay_depth_loop_0pose_2 # hi4d # video # 3DPW
+  - _self_
+
+seed: 42
+project_name: "VOLSDF_cam_norm"
+exp: ${dataset.train.dataset}
+run: ${dataset.train.subject}
