@@ -110,11 +110,11 @@ class SMPL_Evaluator():
         if not (1 in miss_flag):
             depth_num = 1
             gt_depth_dist = (gt3d_joints[0][0,2]-gt3d_joints[1][0,2])
-            gt_depth_order = depth_relation(gt_depth_dist, 0.05)
+            gt_depth_order = depth_relation(gt_depth_dist, 0.15)
 
             pred_depth_dist = (pred_joints[0][0,2]+pred_trans[0][2])-(pred_joints[1][0,2]+pred_trans[1][2])
             # pred_depth_dist = (pred_joints[0][0,2] - pred_joints[1][0,2])
-            pred_depth_order = depth_relation(pred_depth_dist, 0.05)
+            pred_depth_order = depth_relation(pred_depth_dist, 0.15)
 
             if gt_depth_order == pred_depth_order:
                 correct_depth = 1
