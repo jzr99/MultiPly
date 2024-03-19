@@ -43,6 +43,7 @@ class Loss(nn.Module):
         self.smpl_surface_milestone = opt.smpl_surface_milestone
         self.depth_loss_milestone = 1000
         self.l1_loss = nn.L1Loss(reduction='mean')
+        self.l1_sum_loss = nn.L1Loss(reduction='sum')
         self.l2_loss = nn.MSELoss(reduction='mean')
         self.sigmoid = nn.Sigmoid()
     
@@ -75,6 +76,25 @@ class Loss(nn.Module):
         sam_mask = self.sigmoid(sam_mask)
         valid_mask = sam_mask.sum(dim=1) <= (1 + 1e-2)
         loss = self.l1_loss(acc_person[valid_mask], sam_mask[valid_mask])
+        # import pdb;pdb.set_trace()
+        return loss
+
+    def get_sam_mask_clip_loss(self, sam_mask, acc_person):
+        batch_size = sam_mask.shape[0]
+        person_num = sam_mask.shape[1]
+        sam_mask = self.sigmoid(sam_mask)
+        valid_mask = sam_mask.sum(dim=1) <= (1 + 1e-2)
+        valid_acc_person = acc_person[valid_mask].reshape(-1)
+        valid_sam_mask = sam_mask[valid_mask].reshape(-1)
+        min_min = torch.logical_and(valid_acc_person < 0.04, valid_sam_mask < 0.04)
+        max_max = torch.logical_and(valid_acc_person > 0.96, valid_sam_mask > 0.96)
+        clip_mask = torch.logical_or(min_min, max_max)
+        clip_mask = torch.logical_not(clip_mask)
+        # check if clip_mask is all False
+        if clip_mask.sum() == 0:
+            print('clip_mask is all False')
+            clip_mask[0] = True
+        loss = self.l1_sum_loss(valid_acc_person[clip_mask], valid_sam_mask[clip_mask]) / (batch_size * person_num)
         # import pdb;pdb.set_trace()
         return loss
 
@@ -166,7 +186,8 @@ class Loss(nn.Module):
         # smpl_surface_loss = torch.zeros((1),device=model_outputs['acc_map'].device)
         # import pdb; pdb.set_trace()
         if 'sam_mask' in model_outputs.keys() and model_outputs['epoch'] >= self.sam_start_epoch:
-            sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
+            # sam_mask_loss = self.get_sam_mask_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
+            sam_mask_loss = self.get_sam_mask_clip_loss(model_outputs['sam_mask'], model_outputs['acc_person_list'])
         else:
             sam_mask_loss = torch.zeros((1),device=temporal_loss.device)
         # if model_outputs['epoch'] > 300:
