@@ -38,5 +38,7 @@ def create_dataset(opt):
             shuffle=opt.shuffle,
             num_workers=opt.worker,
             pin_memory=True,
-            persistent_workers=True,
+            # both False because of memory issue
+            persistent_workers=False,
         )
+

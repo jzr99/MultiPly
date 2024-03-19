@@ -1906,6 +1906,14 @@ class V2AModel(pl.LightningModule):
             if idx==0:
                 print(f"novel view {inputs['novel_view']} with pose from dataset")
             self.test_step_each_person_novel(batch, id=-1, novel_view=inputs["novel_view"])
+        elif "free_view" in inputs.keys():
+            # if idx >= 7:
+            #     self.test_step_each_person_denoisy(batch, id=-1)
+            print("free view prefix")
+            self.test_step_each_person_novel(batch, id=-1, novel_view='0')
+            if self.num_person > 1:
+                for i in range(self.num_person):
+                    self.test_step_each_person_novel(batch, id=i, novel_view='0')
         else:
             self.test_step_each_person(batch, id=-1)
             if self.num_person > 1:

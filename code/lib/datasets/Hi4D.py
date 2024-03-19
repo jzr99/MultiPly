@@ -520,3 +520,96 @@ class Hi4DTestDataset(torch.utils.data.Dataset):
             if "org_sam_mask" in inputs.keys():
                 images.update({"org_sam_mask": inputs["org_sam_mask"]})
             return inputs_new, images, self.pixel_per_batch, self.total_pixels, idx
+
+class Hi4DTestFreeDataset(torch.utils.data.Dataset):
+    def __init__(self, opt, image_id, step_list, offset=0, scale_factor=1.0):
+        self.dataset = Hi4DDataset(opt)
+        self.name_offset = offset
+        self.img_size = self.dataset.img_size # [0]
+        self.step_list = step_list
+        self.scale_factor = scale_factor
+
+        self.total_pixels = np.prod(self.img_size)
+        self.pixel_per_batch = opt.pixel_per_batch
+        if True:
+            start = 0
+            steps = 60
+            step_size = 6
+            self.new_poses = []
+            self.image_id = image_id
+            self.data = self.dataset[self.image_id]
+            self.img_size = self.dataset.img_size  # [self.image_id]
+            self.total_pixels = np.prod(self.img_size)
+            # self.pixel_per_batch = opt.pixel_per_batch
+            self.pixel_per_batch = 512
+            target_inputs, images = self.data
+            from scipy.spatial.transform import Rotation as scipy_R
+            if len(self.step_list) > 0:
+                for i in self.step_list:
+                    rotation_angle_y = i
+                    pose = target_inputs['pose'].clone()
+                    new_pose = rend_util.get_new_cam_pose_fvr(pose, rotation_angle_y)
+                    self.new_poses.append(new_pose)
+            else:
+                for i in range(self.name_offset,steps):
+                    rotation_angle_y = start + i * (step_size)
+                    pose = target_inputs['pose'].clone()
+                    new_pose = rend_util.get_new_cam_pose_fvr(pose, rotation_angle_y)
+                    self.new_poses.append(new_pose)
+
+
+
+
+    def __len__(self):
+        return len(self.new_poses)
+        # return len(self.dataset)
+
+    def __getitem__(self, idx):
+        uv = np.mgrid[:self.img_size[0], :self.img_size[1]].astype(np.int32)
+        uv = np.flip(uv, axis=0).copy().transpose(1, 2, 0).astype(np.float32)
+        target_inputs, images = self.data
+        zoomed_intrinsics = target_inputs['intrinsics'].clone()
+        zoomed_intrinsics[0, 0] = zoomed_intrinsics[0, 0] / self.scale_factor
+        zoomed_intrinsics[1, 1] = zoomed_intrinsics[1, 1] / self.scale_factor
+        inputs = {
+            "uv": uv.reshape(-1, 2).astype(np.float32),
+            "intrinsics": zoomed_intrinsics,
+            "pose": self.new_poses[idx],  # target_inputs['pose'], # self.pose_all[idx],
+            'P': target_inputs['P'],
+            'C': target_inputs['C'],
+            "smpl_params": target_inputs["smpl_params"],
+            # 'image_id': self.image_id,
+            'idx': self.image_id,
+            "img_size": torch.from_numpy(np.array(self.img_size)),
+            'free_view': self.image_id,
+        }
+        images = {
+            "img_size": self.img_size}
+        return inputs, images, self.pixel_per_batch, self.total_pixels, self.name_offset + 1000 * self.image_id + self.step_list[idx]
+        # data = self.dataset[idx]
+        # inputs, images = data
+        # inputs_new = {
+        #     "uv": inputs["uv"],
+        #     "P": inputs["P"],
+        #     "C": inputs["C"],
+        #     "intrinsics": inputs['intrinsics'],
+        #     "pose": inputs['pose'],
+        #     "smpl_params": inputs["smpl_params"],
+        #     "idx": inputs['idx'],
+        #     # "org_img": inputs["org_img"],
+        #     "img_size": torch.from_numpy(np.array(inputs["img_size"])),
+        # }
+        # if "org_sam_mask" in inputs.keys():
+        #     inputs_new.update({"org_sam_mask": inputs["org_sam_mask"]})
+        #
+        # images = {
+        #     "rgb": images["rgb"],
+        #     # "normal": images["normal"],
+        #     "img_size": images["img_size"],
+        #     "org_uv": inputs["org_uv"],
+        #     "org_img": inputs["org_img"],
+        #     "org_object_mask": inputs["org_object_mask"],
+        # }
+        # if "org_sam_mask" in inputs.keys():
+        #     images.update({"org_sam_mask": inputs["org_sam_mask"]})
+        # return inputs_new, images, self.pixel_per_batch, self.total_pixels, idx

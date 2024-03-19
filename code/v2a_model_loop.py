@@ -1659,15 +1659,15 @@ class V2AModel(pl.LightningModule):
                     cond = {'smpl': cond_pose}
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id),
                                                smpl_server.verts_c[0],
-                                               point_batch=10000, res_up=3)
+                                               point_batch=10000, res_up=4)
                 self.model.deformer_list[person_id].K = 7
                 verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(mesh_canonical.vertices, smpl_tfs,
                                                                                   person_id)
                 self.model.deformer_list[person_id].K = 1
                 mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
-                os.makedirs(f"test_mesh/{person_id}", exist_ok=True)
-                mesh_canonical.export(f"test_mesh/{person_id}/{int(idx.cpu().numpy()):04d}_canonical.ply")
-                mesh_deformed.export(f"test_mesh/{person_id}/{int(idx.cpu().numpy()):04d}_deformed.ply")
+                os.makedirs(f"test_mesh_res4/{person_id}", exist_ok=True)
+                mesh_canonical.export(f"test_mesh_res4/{person_id}/{int(idx.cpu().numpy()):04d}_canonical.ply")
+                mesh_deformed.export(f"test_mesh_res4/{person_id}/{int(idx.cpu().numpy()):04d}_deformed.ply")
 
     def test_step_each_person(self, batch, id):
         os.makedirs(f"test_mask/{id}", exist_ok=True)
@@ -1717,7 +1717,7 @@ class V2AModel(pl.LightningModule):
                 else:
                     cond = {'smpl': cond_pose}
                 mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond, person_id=person_id), smpl_server.verts_c[0],
-                                               point_batch=10000, res_up=3)
+                                               point_batch=10000, res_up=4)
                 self.model.deformer_list[person_id].K = 7
                 verts_deformed = self.get_deformed_mesh_fast_mode_multiple_person(mesh_canonical.vertices, smpl_tfs,
                                                                                   person_id)
@@ -1959,12 +1959,141 @@ class V2AModel(pl.LightningModule):
         cv2.imwrite(f"test_normal_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
         cv2.imwrite(f"test_fg_rendering_{novel_view}/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
 
-    def test_step_each_person_denoisy(self, batch, id):
-        os.makedirs(f"test_mask_denoisy/{id}", exist_ok=True)
-        os.makedirs(f"test_rendering_denoisy/{id}", exist_ok=True)
-        os.makedirs(f"test_fg_rendering_denoisy/{id}", exist_ok=True)
-        os.makedirs(f"test_normal_denoisy/{id}", exist_ok=True)
-        os.makedirs(f"test_mesh_denoisy/{id}", exist_ok=True)
+    def test_step_each_person_canonical(self, batch, id, prefix='canonical'):
+        os.makedirs(f"test_mask_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_rendering_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_fg_rendering_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_normal_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_mesh_{prefix}/{id}", exist_ok=True)
+
+        inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        num_splits = (total_pixels + pixel_per_batch -
+                      1) // pixel_per_batch
+        results = []
+
+        # smpl_outputs = self.model.smpl_server(scale, smpl_trans, smpl_pose, smpl_shape)
+        # smpl_tfs = smpl_outputs['smpl_tfs']
+        # smpl_verts = smpl_outputs['smpl_verts']
+        # cond = {'smpl': smpl_pose[:, 3:] / np.pi}
+        #
+        # mesh_canonical = generate_mesh(lambda x: self.query_oc(x, cond), self.model.smpl_server.verts_c[0],
+        #                                point_batch=10000, res_up=4)
+        # verts_deformed = self.get_deformed_mesh_fast_mode(mesh_canonical.vertices, smpl_tfs)
+        # mesh_deformed = trimesh.Trimesh(vertices=verts_deformed, faces=mesh_canonical.faces, process=False)
+        #
+        #
+        # mesh_canonical.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_canonical.ply")
+        # mesh_deformed.export(f"test_mesh/{int(idx.cpu().numpy()):04d}_deformed.ply")
+
+        for i in range(num_splits):
+            indices = list(range(i * pixel_per_batch,
+                                 min((i + 1) * pixel_per_batch, total_pixels)))
+            batch_inputs = {"uv": inputs["uv"][:, indices],
+                            "P": inputs["P"],
+                            "C": inputs["C"],
+                            "intrinsics": inputs['intrinsics'],
+                            "pose": inputs['pose'],
+                            "smpl_params": inputs["smpl_params"],
+                            "smpl_pose": inputs["smpl_params"][:,: , 4:76],
+                            "smpl_shape": inputs["smpl_params"][:,: , 76:],
+                            "smpl_trans": inputs["smpl_params"][:,:, 1:4],
+                            "idx": inputs["idx"] if 'idx' in inputs.keys() else None}
+
+            if self.opt_smpl:
+                # body_model_params = self.body_model_params(inputs['idx'])
+                #
+                # batch_inputs.update({'smpl_pose': torch.cat(
+                #     (body_model_params['global_orient'], body_model_params['body_pose']), dim=1)})
+                # batch_inputs.update({'smpl_shape': body_model_params['betas']})
+                # batch_inputs.update({'smpl_trans': body_model_params['transl']})
+                body_params_list = [self.body_model_list[i](inputs['idx']) for i in range(self.num_person)]
+                batch_inputs['smpl_trans'] = torch.stack(
+                    [body_model_params['transl'] for body_model_params in body_params_list],
+                    dim=1)
+                batch_inputs['smpl_shape'] = torch.stack(
+                    [body_model_params['betas'] for body_model_params in body_params_list],
+                    dim=1)
+                global_orient = torch.stack(
+                    [body_model_params['global_orient'] for body_model_params in body_params_list],
+                    dim=1)
+                body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list],
+                                        dim=1)
+                batch_inputs['smpl_pose'] = torch.cat((global_orient, body_pose), dim=2)
+
+                # batch_inputs['smpl_trans'] = torch.zeros_like(batch_inputs['smpl_trans'])
+                # batch_inputs['smpl_pose'] = torch.zeros_like(batch_inputs['smpl_pose'])
+
+            batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
+                             "img_size": targets["img_size"]}
+
+            for person_id, smpl_server in enumerate(self.model.smpl_server_list):
+                self.model.deformer_list[person_id].K = 7
+                self.model.deformer_list[person_id].max_dist = 0.15
+
+            # with torch.no_grad():
+            with torch.inference_mode(mode=False):
+                batch_clone = {key: value.clone() for key, value in batch_inputs.items()}
+                model_outputs = self.model(batch_clone, id, canonical_pose=True)
+            results.append({"rgb_values": model_outputs["rgb_values"].detach().clone(),
+                            "fg_rgb_values": model_outputs["fg_rgb_values"].detach().clone(),
+                            "normal_values": model_outputs["normal_values"].detach().clone(),
+                            "acc_map": model_outputs["acc_map"].detach().clone(),
+                            "acc_person_list": model_outputs["acc_person_list"].detach().clone(),
+                            **batch_targets})
+
+        img_size = results[0]["img_size"]
+        rgb_pred = torch.cat([result["rgb_values"] for result in results], dim=0)
+        rgb_pred = rgb_pred.reshape(*img_size, -1)
+
+        fg_rgb_pred = torch.cat([result["fg_rgb_values"] for result in results], dim=0)
+        fg_rgb_pred = fg_rgb_pred.reshape(*img_size, -1)
+
+        normal_pred = torch.cat([result["normal_values"] for result in results], dim=0)
+        normal_pred = (normal_pred.reshape(*img_size, -1) + 1) / 2
+
+        pred_mask = torch.cat([result["acc_map"] for result in results], dim=0)
+        pred_mask = pred_mask.reshape(*img_size, -1)
+
+        if id==-1:
+            instance_mask = torch.cat([result["acc_person_list"] for result in results], dim=0)
+            instance_mask = instance_mask.reshape(*img_size, -1)
+            for i in range(instance_mask.shape[2]):
+                instance_mask_i = instance_mask[:, :, i]
+                os.makedirs(f"test_instance_mask_{prefix}/{i}", exist_ok=True)
+                cv2.imwrite(f"test_instance_mask_{prefix}/{i}/{int(idx.cpu().numpy()):04d}.png", instance_mask_i.cpu().numpy() * 255)
+
+
+        if results[0]['rgb'] is not None:
+            rgb_gt = torch.cat([result["rgb"] for result in results], dim=1).squeeze(0)
+            rgb_gt = rgb_gt.reshape(*img_size, -1)
+            rgb = torch.cat([rgb_gt, rgb_pred], dim=0).cpu().numpy()
+        else:
+            rgb = torch.cat([rgb_pred], dim=0).cpu().numpy()
+        if 'normal' in results[0].keys():
+            normal_gt = torch.cat([result["normal"] for result in results], dim=1).squeeze(0)
+            normal_gt = (normal_gt.reshape(*img_size, -1) + 1) / 2
+            normal = torch.cat([normal_gt, normal_pred], dim=0).cpu().numpy()
+        else:
+            normal = torch.cat([normal_pred], dim=0).cpu().numpy()
+
+        rgb = (rgb * 255).astype(np.uint8)
+
+        fg_rgb = torch.cat([fg_rgb_pred], dim=0).cpu().numpy()
+        fg_rgb = (fg_rgb * 255).astype(np.uint8)
+
+        normal = (normal * 255).astype(np.uint8)
+
+        cv2.imwrite(f"test_mask_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        cv2.imwrite(f"test_rendering_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"test_fg_rendering_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
+
+    def test_step_each_person_denoisy(self, batch, id, prefix='denoisy'):
+        os.makedirs(f"test_mask_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_rendering_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_fg_rendering_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_normal_{prefix}/{id}", exist_ok=True)
+        os.makedirs(f"test_mesh_{prefix}/{id}", exist_ok=True)
 
         inputs, targets, pixel_per_batch, total_pixels, idx = batch
         num_splits = (total_pixels + pixel_per_batch -
@@ -1989,7 +2118,7 @@ class V2AModel(pl.LightningModule):
             body_pose = torch.stack([body_model_params['body_pose'] for body_model_params in body_params_list], dim=1)
             smpl_pose = torch.cat((global_orient, body_pose), dim=2)
 
-        if id == -1:
+        if False:
             for person_id, smpl_server in enumerate(self.model.smpl_server_list):
                 # cond = {'smpl': inputs["smpl_pose"][:, person_id, 3:] / np.pi}
                 smpl_outputs = smpl_server(inputs["smpl_params"][:, person_id, 0], smpl_trans[:, person_id], smpl_pose[:, person_id], smpl_shape[:, person_id])
@@ -2084,9 +2213,9 @@ class V2AModel(pl.LightningModule):
             batch_targets = {"rgb": targets["rgb"][:, indices].detach().clone() if 'rgb' in targets.keys() else None,
                              "img_size": targets["img_size"]}
 
-            for person_id, smpl_server in enumerate(self.model.smpl_server_list):
-                self.model.deformer_list[person_id].K = 7
-                self.model.deformer_list[person_id].max_dist = 0.15
+            # for person_id, smpl_server in enumerate(self.model.smpl_server_list):
+            #     self.model.deformer_list[person_id].K = 7
+            #     self.model.deformer_list[person_id].max_dist = 0.15
 
             # with torch.no_grad():
             with torch.inference_mode(mode=False):
@@ -2117,8 +2246,8 @@ class V2AModel(pl.LightningModule):
             instance_mask = instance_mask.reshape(*img_size, -1)
             for i in range(instance_mask.shape[2]):
                 instance_mask_i = instance_mask[:, :, i]
-                os.makedirs(f"test_instance_mask_denoisy/{i}", exist_ok=True)
-                cv2.imwrite(f"test_instance_mask_denoisy/{i}/{int(idx.cpu().numpy()):04d}.png", instance_mask_i.cpu().numpy() * 255)
+                os.makedirs(f"test_instance_mask_{prefix}/{i}", exist_ok=True)
+                cv2.imwrite(f"test_instance_mask_{prefix}/{i}/{int(idx.cpu().numpy()):04d}.png", instance_mask_i.cpu().numpy() * 255)
 
 
         if results[0]['rgb'] is not None:
@@ -2141,25 +2270,43 @@ class V2AModel(pl.LightningModule):
 
         normal = (normal * 255).astype(np.uint8)
 
-        cv2.imwrite(f"test_mask_denoisy/{id}/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
-        cv2.imwrite(f"test_rendering_denoisy/{id}/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
-        cv2.imwrite(f"test_normal_denoisy/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
-        cv2.imwrite(f"test_fg_rendering_denoisy/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
-
+        cv2.imwrite(f"test_mask_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", pred_mask.cpu().numpy() * 255)
+        cv2.imwrite(f"test_rendering_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", rgb[:, :, ::-1])
+        cv2.imwrite(f"test_normal_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", normal[:, :, ::-1])
+        cv2.imwrite(f"test_fg_rendering_{prefix}/{id}/{int(idx.cpu().numpy()):04d}.png", fg_rgb[:, :, ::-1])
 
     def test_step(self, batch, *args, **kwargs):
         # outputs = []
         self.model.eval()
+
         # self.test_step_mesh(batch, id=-1)
+
+
+
+
         inputs, targets, pixel_per_batch, total_pixels, idx = batch
+        # canonical
+        # if self.num_person > 1:
+        #     for i in range(self.num_person):
+        #         self.test_step_each_person_canonical(batch, i, prefix='canonical')
         if "novel_view" in inputs.keys():
             if idx==0:
                 print(f"novel view {inputs['novel_view']} with pose from dataset")
             self.test_step_each_person_novel(batch, id=-1, novel_view=inputs["novel_view"])
+        elif "free_view" in inputs.keys():
+            # if idx >= 7:
+            #     self.test_step_each_person_denoisy(batch, id=-1)
+            print("free view prefix")
+            self.test_step_each_person_denoisy(batch, id=-1, prefix='free_view')
+            if self.num_person > 1:
+                for i in range(self.num_person):
+                    self.test_step_each_person_denoisy(batch, id=i, prefix='free_view')
         else:
             # if idx >= 7:
             #     self.test_step_each_person_denoisy(batch, id=-1)
-            self.test_step_each_person(batch, id=-1)
-            if self.num_person > 1:
-                for i in range(self.num_person):
-                    self.test_step_each_person(batch, id=i)
+            if idx<= 7:
+                self.test_step_each_person(batch, id=-1)
+            # uncomment to test each person
+            # if self.num_person > 1:
+            #     for i in range(self.num_person):
+            #         self.test_step_each_person(batch, id=i)

@@ -212,7 +212,7 @@ class V2A(nn.Module):
         x = x.reshape(-1, 3)
         mnfld_pred = self.foreground_implicit_network_list[person_id](x, cond, person_id=person_id)[:,:,0].reshape(-1,1)
         return {'occ':mnfld_pred}
-    def forward(self, input, id=-1, cond_zero_shit=False):
+    def forward(self, input, id=-1, cond_zero_shit=False, canonical_pose=False):
         # Parse model input
         torch.set_grad_enabled(True)
         # if self.sam_0_mask is not None:
@@ -239,7 +239,14 @@ class V2A(nn.Module):
         ray_box_intersector_list = []
         verts_deformed_list = []
         for i in range(num_person):
-            smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
+            if canonical_pose:
+                canonical_smpl_pose = torch.zeros_like(smpl_pose[:,i])
+                canonical_smpl_trans = torch.zeros_like(smpl_trans[:,i])
+                canonical_smpl_pose[0, 5] = np.pi/6
+                canonical_smpl_pose[0, 8] = - np.pi / 6
+                smpl_output = self.smpl_server_list[i](scale[:, i], canonical_smpl_trans, canonical_smpl_pose, smpl_shape[:, i])
+            else:
+                smpl_output = self.smpl_server_list[i](scale[:,i], smpl_trans[:,i], smpl_pose[:,i], smpl_shape[:,i])
             smpl_output_list.append(smpl_output)
             smpl_tfs_list.append(smpl_output['smpl_tfs'])
             # load into trimesh
