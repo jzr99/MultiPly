@@ -10,7 +10,7 @@ train:
     worker: 8
     num_person: 6
     data_dir : teaser6/
-    num_sample : 2048
+    num_sample : 768
     using_SAM: True
 
 valid:

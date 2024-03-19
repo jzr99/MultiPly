@@ -1,23 +1,32 @@
 learning_rate : 5.0e-4
-sched_milestones : [500,1000]
+sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: True
-is_continue: True
+is_continue: False
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 211 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
+num_training_frames: 150 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
 dim_frame_encoding: 32
-pose_correction_epoch: 200
+pose_correction_epoch: 500
 use_person_encoder: False
 use_depth_order_loss: False
-use_nerfacc: True
+use_nerfacc: False
 pose_opt_interval: 50
-pose_opt_epoch: 0
+pose_opt_epoch: 10
 use_loop: True
+depth_only_trans: False
+depth_end: False
 implicit_network:
+    offset_head: False
+    beta_encoding: False
+    use_cuda_grid: False
+    triplane_res: [ 128, 64, 32 ]
+    triplane_shortcut: False
+    multi_triplane: False
+    no_head_feature: False
     feature_vector_size: 256
     d_in: 3
     d_out: 1
@@ -29,11 +38,11 @@ implicit_network:
     embedder_mode: 'fourier'
     multires: 6
     cond: 'smpl' # 'smpl_tri' # 'smpl_id'
-    number_person: 7  # used for triplane
+    number_person: 2
     scene_bounding_sphere: 3.0 # 3.0
 rendering_network:
     feature_vector_size: 256
-    mode: "pose_no_view" # "pose_tri_no_view" # "pose_id_no_view" # "idr"
+    mode: "pose_no_view"# "pose_tri_no_view" # "pose_id_no_view" # "idr"
     d_in:  14 # 22 # 14 # 9
     d_out: 3
     dims: [ 256, 256, 256, 256]
@@ -82,10 +91,9 @@ loss:
     bce_weight: 5.0e-3
     opacity_sparse_weight: 3.0e-3
     in_shape_weight: 1.0e-2
-    sam_mask_weight: 3.0e-1
+    sam_mask_weight: 6.0e-2
     smpl_surface_milestone: 800
     sam_start_epoch: 50
     depth_order_weight: 0.005
     silhouette_weight: 0.000
-    interpenetration_loss_weight: 0.005
-    zero_pose_weight: 0.0
+    interpenetration_loss_weight: 0.0005

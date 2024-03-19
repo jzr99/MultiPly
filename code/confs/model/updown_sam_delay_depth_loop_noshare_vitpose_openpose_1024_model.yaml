@@ -8,15 +8,16 @@ with_bkgd: True
 using_inpainting: False
 use_smpl_deformer: True
 use_bbox_sampler: False
-num_training_frames: 211 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
+num_training_frames: 171 # 120 # 160 # 105 # 120 # 42 # 462 # 110 # 105
 dim_frame_encoding: 32
 pose_correction_epoch: 200
 use_person_encoder: False
 use_depth_order_loss: False
 use_nerfacc: True
 pose_opt_interval: 50
-pose_opt_epoch: 0
+pose_opt_epoch: 5
 use_loop: True
+fix_sam: True
 implicit_network:
     feature_vector_size: 256
     d_in: 3
@@ -29,7 +30,7 @@ implicit_network:
     embedder_mode: 'fourier'
     multires: 6
     cond: 'smpl' # 'smpl_tri' # 'smpl_id'
-    number_person: 7  # used for triplane
+    number_person: 5  # used for triplane
     scene_bounding_sphere: 3.0 # 3.0
 rendering_network:
     feature_vector_size: 256
@@ -85,7 +86,8 @@ loss:
     sam_mask_weight: 3.0e-1
     smpl_surface_milestone: 800
     sam_start_epoch: 50
-    depth_order_weight: 0.005
+    depth_order_weight: 0.050
     silhouette_weight: 0.000
     interpenetration_loss_weight: 0.005
     zero_pose_weight: 0.0
+    temporal_loss_weight: 0.0

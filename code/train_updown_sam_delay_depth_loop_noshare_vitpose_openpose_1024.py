@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="dance4_sam_delay_depth_loop_MLP_base")
+@hydra.main(config_path="confs", config_name="updown_sam_delay_depth_loop_noshare_vitpose_openpose_1024_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
@@ -15,17 +15,18 @@ def main(opt):
         dirpath="checkpoints/",
         filename="{epoch:04d}-{loss}",
         save_on_train_epoch_end=True,
-        every_n_epochs=10,
-        save_top_k=-1)
+        every_n_epochs=30,
+        save_top_k=-1,
+        save_last=True)
     logger = WandbLogger(project=opt.project_name, name=f"{opt.exp}/{opt.run}")
 
     trainer = pl.Trainer(
-        devices=1,
         # gpus=1,
+        devices=1,
         accelerator="gpu",
         callbacks=[checkpoint_callback],
         max_epochs=10000,
-        check_val_every_n_epoch=10,
+        check_val_every_n_epoch=500,
         logger=logger,
         log_every_n_steps=1,
         num_sanity_val_steps=0
@@ -33,10 +34,16 @@ def main(opt):
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = V2AModel(opt, betas_path)
-    # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
-    testset = create_dataset(opt.dataset.test)
-    trainer.test(model, testset, ckpt_path="checkpoints/epoch=1849-loss=0.019766857847571373.ckpt")
-    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=0899-loss=0.022465340793132782.ckpt")
+    trainset = create_dataset(opt.dataset.train)
+    validset = create_dataset(opt.dataset.valid)
+
+    if opt.model.is_continue == True:
+        # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+        checkpoint = sorted(glob.glob("checkpoints/epoch=*.ckpt"))[-1]
+        trainer.fit(model, trainset, validset, ckpt_path=checkpoint)
+    else: 
+        trainer.fit(model, trainset, validset)
+
 
 if __name__ == '__main__':
     main()

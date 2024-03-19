@@ -1,4 +1,4 @@
-from v2a_model_loop import V2AModel
+from v2a_model import V2AModel
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="dance4_sam_delay_depth_loop_MLP_base")
+@hydra.main(config_path="confs", config_name="Hi4D_pair19_piggyback19_4_sam_delay_depth_2_noshare_feet_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
@@ -35,8 +35,9 @@ def main(opt):
     model = V2AModel(opt, betas_path)
     # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     testset = create_dataset(opt.dataset.test)
-    trainer.test(model, testset, ckpt_path="checkpoints/epoch=1849-loss=0.019766857847571373.ckpt")
-    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=0899-loss=0.022465340793132782.ckpt")
+
+    trainer.test(model, testset, ckpt_path="checkpoints/epoch=2599-loss=0.009993085637688637.ckpt")
+    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=1299-loss=0.009938636794686317.ckpt")
 
 if __name__ == '__main__':
     main()

@@ -2,7 +2,7 @@ learning_rate : 5.0e-4
 sched_milestones : [200,500]
 sched_factor : 0.5
 smpl_init: True
-is_continue: False
+is_continue: True
 use_body_parsing: False
 with_bkgd: True
 using_inpainting: False

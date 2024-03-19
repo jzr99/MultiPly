@@ -3,10 +3,12 @@ from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
+from lib.datasets.Hi4D import Hi4DTestFreeDataset
+from torch.utils.data import DataLoader
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="dance4_sam_delay_depth_loop_MLP_base")
+@hydra.main(config_path="confs", config_name="updown_sam_delay_depth_loop_noshare_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
@@ -34,9 +36,20 @@ def main(opt):
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = V2AModel(opt, betas_path)
     # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
-    testset = create_dataset(opt.dataset.test)
-    trainer.test(model, testset, ckpt_path="checkpoints/epoch=1849-loss=0.019766857847571373.ckpt")
-    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=0899-loss=0.022465340793132782.ckpt")
+    # testset = create_dataset(opt.dataset.test)
+    dataset = Hi4DTestFreeDataset(opt.dataset.test, image_id=8)
+    testset = DataLoader(
+            dataset,
+            batch_size=opt.dataset.test.batch_size,
+            drop_last=opt.dataset.test.drop_last,
+            shuffle=opt.dataset.test.shuffle,
+            num_workers=opt.dataset.test.worker,
+            pin_memory=True,
+            persistent_workers=False,
+    )
+
+
+    trainer.test(model, testset, ckpt_path="checkpoints/epoch=1399-loss=0.015640875324606895.ckpt")
 
 if __name__ == '__main__':
     main()

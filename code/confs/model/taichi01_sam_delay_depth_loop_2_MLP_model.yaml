@@ -82,7 +82,7 @@ loss:
     bce_weight: 5.0e-3
     opacity_sparse_weight: 3.0e-3
     in_shape_weight: 1.0e-2
-    sam_mask_weight: 3.0e-2
+    sam_mask_weight: 1.0e-1
     smpl_surface_milestone: 800
     sam_start_epoch: 50
     depth_order_weight: 0.1
