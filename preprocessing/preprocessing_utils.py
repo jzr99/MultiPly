@@ -11,6 +11,7 @@ from pytorch3d.renderer import (
     MeshRasterizer,
     SoftPhongShader,
     PointLights,
+    PerspectiveCameras,
 )
 from pytorch3d.structures import Meshes
 from pytorch3d.renderer.mesh import Textures
@@ -134,7 +135,16 @@ def smpl_to_pose(model_type='smplx', use_hands=True, use_face=True,
         elif model_type == 'smpl_neutral':
             #return np.array([2,1,0,3,4,5,12,13,9,10,11,8,7,6], dtype=np.int32)
             return [6, 5, 4, 1, 2, 3, 16, 15, 14, 11, 12, 13, 8, 10]
-
+    elif openpose_format == 'coco17':
+        if model_type == 'smpl':
+            # TODO: here I use L_HIP_SMPL instead of L_HIP
+            # return np.array([24, 26, 25, 28, 27, 16, 17, 18, 19, 20, 21,
+            #                  1, 2, 4, 5, 7, 8],
+            return np.array([24, 26, 25, 28, 27, 16, 17, 18, 19, 20, 21,
+                             46, 45, 4, 5, 7, 8],
+                            dtype=np.int32)
+        else:
+            raise ValueError('Unknown model type: {}'.format(model_type))
     else:
         raise ValueError('Unknown joint format: {}'.format(openpose_format))
 
@@ -338,6 +348,122 @@ class Renderer():
         self.cam_T[:, :2] *= -1.0
         self.cam_R = torch.transpose(self.cam_R,1,2)
         self.cameras = SfMPerspectiveCameras(focal_length=self.focal_length, principal_point=self.principal_point, R=self.cam_R, T=self.cam_T, device=self.device)
+        self.rasterizer = MeshRasterizer(cameras=self.cameras, raster_settings=self.raster_settings)
+        self.shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
+        self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)
+
+    def render_mesh_recon(self, verts, faces, R=None, T=None, colors=None, mode='npat'):
+        '''
+        mode: normal, phong, texture
+        '''
+        with torch.no_grad():
+
+            mesh = Meshes(verts, faces)
+
+            normals = torch.stack(mesh.verts_normals_list())
+            front_light = -torch.tensor([0,0,-1]).float().to(verts.device)
+            shades = (normals * front_light.view(1,1,3)).sum(-1).clamp(min=0).unsqueeze(-1).expand(-1,-1,3)
+            results = []
+            # shading
+            if 'p' in mode:
+                mesh_shading = Meshes(verts, faces, textures=Textures(verts_rgb=shades))
+                image_phong = self.renderer(mesh_shading)
+                results.append(image_phong)
+            # normal
+            if 'n' in mode:
+                normals_vis = normals* 0.5 + 0.5
+                normals_vis = normals_vis[:,:,[2,1,0]]
+                mesh_normal = Meshes(verts, faces, textures=Textures(verts_rgb=normals_vis))
+                image_normal = self.renderer(mesh_normal)
+                results.append(image_normal)
+            return  torch.cat(results, axis=1)
+        
+class RendererNew():
+    
+    def __init__(self, principal_point=None, img_size=None, cam_intrinsic = None):
+    
+        super().__init__()
+
+        self.device = torch.device("cuda:0")
+        torch.cuda.set_device(self.device)
+        self.cam_intrinsic = cam_intrinsic
+        self.image_size = img_size
+        self.render_img_size = np.max(img_size)
+
+        self.focal_length = torch.tensor([(cam_intrinsic[0, 0]).astype(np.float32),
+                                     (cam_intrinsic[1, 1]).astype(np.float32)
+                                     ]).to(self.device).unsqueeze(0)
+        principal_point = [cam_intrinsic[0, 2], cam_intrinsic[1, 2]]
+        self.principal_point = torch.tensor(principal_point).float().to(self.device).unsqueeze(0)
+
+        # principal_point = [-(self.cam_intrinsic[0,2]-self.image_size[1]/2.)/(self.image_size[1]/2.), -(self.cam_intrinsic[1,2]-self.image_size[0]/2.)/(self.image_size[0]/2.)]  
+        # self.principal_point = torch.tensor(principal_point, device=self.device).unsqueeze(0)
+
+        self.cam_R = torch.from_numpy(np.array([[-1., 0., 0.],
+                                                [0., -1., 0.],
+                                                [0., 0., 1.]])).cuda().float().unsqueeze(0)
+
+        self.cam_T = torch.zeros((1,3)).cuda().float()
+
+        # half_max_length = max(self.cam_intrinsic[0:2,2])
+        # self.focal_length = torch.tensor([(self.cam_intrinsic[0,0]/half_max_length).astype(np.float32), \
+        #                                   (self.cam_intrinsic[1,1]/half_max_length).astype(np.float32)]).unsqueeze(0)
+        
+        # self.cameras = SfMPerspectiveCameras(focal_length=self.focal_length, principal_point=self.principal_point, R=self.cam_R, T=self.cam_T, device=self.device)
+
+        self.cameras = PerspectiveCameras(
+            focal_length=self.focal_length,
+            principal_point=self.principal_point,
+            R=self.cam_R,
+            T=self.cam_T,
+            in_ndc=False,
+            image_size=torch.tensor(self.image_size).unsqueeze(0),
+            device=self.device)
+        
+        self.lights = PointLights(device=self.device,location=[[0.0, 0.0, 0.0]], ambient_color=((1,1,1),),diffuse_color=((0,0,0),),specular_color=((0,0,0),))
+
+        # self.raster_settings = RasterizationSettings(image_size=self.render_img_size, faces_per_pixel=10, blur_radius=0, max_faces_per_bin=30000)
+        self.raster_settings = RasterizationSettings(
+            image_size = self.image_size,
+            blur_radius=0.0,
+            faces_per_pixel=1,
+            # bin_size=0.0,
+            max_faces_per_bin=40000)
+
+        self.rasterizer = MeshRasterizer(cameras=self.cameras, raster_settings=self.raster_settings)
+
+        self.shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
+
+        self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)
+    
+    def set_camera(self, R, T):
+        self.cam_R = R
+        self.cam_T = T
+        self.cam_R[:, :2, :] *= -1.0
+        self.cam_T[:, :2] *= -1.0
+        self.cam_R = torch.transpose(self.cam_R,1,2)
+        # self.cameras = SfMPerspectiveCameras(focal_length=self.focal_length, principal_point=self.principal_point, R=self.cam_R, T=self.cam_T, device=self.device)
+        # print("R", self.cam_R)
+        # print("T", self.cam_T)
+        # K = torch.eye(4).to(self.device)
+        # K[:3, :3] = torch.tensor(self.cam_intrinsic).to(self.device)
+        # print("k", K.shape)
+        self.cameras = PerspectiveCameras(
+            focal_length=self.focal_length,
+            principal_point=self.principal_point,
+            # K = K.unsqueeze(0),
+            R=self.cam_R,
+            T=self.cam_T,
+            in_ndc=False,
+            image_size=torch.tensor(self.image_size).unsqueeze(0),
+            device=self.device)
+        
+        self.raster_settings = RasterizationSettings(
+            image_size = self.image_size,
+            blur_radius=0.0,
+            faces_per_pixel=1,
+            # bin_size=0.0,
+            max_faces_per_bin=40000)
         self.rasterizer = MeshRasterizer(cameras=self.cameras, raster_settings=self.raster_settings)
         self.shader = SoftPhongShader(device=self.device, cameras=self.cameras, lights=self.lights)
         self.renderer = MeshRenderer(rasterizer=self.rasterizer, shader=self.shader)

@@ -47,6 +47,7 @@ def main(args):
         params['net_resolution'] = '-1x320'
         # params['net_resolution'] = '720x480'
         # params['net_resolution'] = '360x240'
+        # params['num_gpu'] = 0
 
         # Starting OpenPose
         # print("before Starting OpenPose")
@@ -59,6 +60,8 @@ def main(args):
         img_dir = f'{DIR}/{args.seq}/frames'
         # this line below will lead to a segfault
         imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
+        if len(imagePaths) == 0:
+            imagePaths = sorted(glob.glob(f'{img_dir}/*.jpg'))
         # imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
         # imagePaths = op.get_images_on_directory(img_dir)
         maskPath_list = sorted(glob.glob(f'{img_dir}/../init_mask/*'))

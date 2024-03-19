@@ -7,13 +7,14 @@ import os
 from tqdm import tqdm
 import glob
 import argparse
-from preprocessing_utils import (smpl_to_pose, PerspectiveCamera, Renderer, render_trimesh, \
+from preprocessing_utils import (smpl_to_pose, PerspectiveCamera, Renderer,RendererNew, render_trimesh, \
                                 estimate_translation_cv2, transform_smpl)
 from loss import joints_2d_loss, pose_temporal_loss, get_loss_weights
 from scipy.optimize import linear_sum_assignment
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation as R
 from scipy.spatial.transform import RotationSpline
+from rotation import axis_to_rot6D, rot6D_to_axis
 
 def interpolate_rotations(rotations, ts_in, ts_out):
     """
@@ -95,7 +96,12 @@ def main(args):
     # romp_file_dir = f'{DIR}/{seq}/ROMP'
     trace_file_dir = f'{DIR}/{seq}/trace'
     # img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
-    img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+    if args.source == 'hi4d':
+        img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
+    else:
+        img_paths = sorted(glob.glob(f"{img_dir}/*.png"))
+    if len(img_paths) == 0:
+        img_paths = sorted(glob.glob(f"{img_dir}/*.jpg"))
     # romp_file_paths = sorted(glob.glob(f"{romp_file_dir}/*.npz"))
     # format: [person_id, frame_id, ...]
     trace_file_path = f"{trace_file_dir}/{seq}.npz"
@@ -131,10 +137,42 @@ def main(args):
         cam_intrinsics = np.array([[float(cam_params[1]), 0., float(cam_params[3])], 
                                    [0., float(cam_params[6]), float(cam_params[7])], 
                                    [0., 0., 1.]])
+    elif args.source == 'hi4d':
+        # focal_length = max(input_img.shape[0], input_img.shape[1])
+        # cam_intrinsics = np.array([[focal_length, 0., input_img.shape[1]//2],
+        #                            [0., focal_length, input_img.shape[0]//2],
+        #                            [0., 0., 1.]])
+        # Hi4d_DIR = '/media/ubuntu/hdd/Hi4D' # path to hi4d dataset
+        # put camera intrinsics here
+        
+        camera_path = f"{DIR}/{seq}/cameras/rgb_cameras.npz"
+        cameras = dict(np.load(camera_path))
+        cam_view = int(args.seq.split('_')[-1])
+        print("cam_view", cam_view)
+        c = int(np.where(cameras['ids'] == cam_view)[0])
+        cam_intrinsics = cameras['intrinsics'][c]
+        cam_intrinsics[0,1]=0.0
+
+        gt_extrinsics = cameras['extrinsics'][c]
+
+        # cam_intrinsics[0, 0] = cam_intrinsics[0, 0] / 2
+        # cam_intrinsics[1, 1] = cam_intrinsics[1, 1] / 2
+        # cam_intrinsics[0, 2] = cam_intrinsics[0, 2] / 2
+        # cam_intrinsics[1, 2] = cam_intrinsics[1, 2] / 2
+        print("cam_intrinsics", cam_intrinsics)
+        print("gt_extrinsics", gt_extrinsics)
+        # import pdb;pdb.set_trace()
+        # TODO check the shape
+        # pass
+    elif args.source == 'iphone':
+        cam_intrinsics = np.array([[1424,0,712.67],
+                                    [0,1424,972.35],
+                                    [0, 0, 1],])
     else:
         print('Please specify the source of the dataset (custom, neuman, deepcap). We will continue to update the sources in the future.')
         raise NotImplementedError
-    renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
+    # renderer = Renderer(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
+    renderer = RendererNew(img_size = [input_img.shape[0], input_img.shape[1]], cam_intrinsic=cam_intrinsics)
 
     if args.mode == 'mask':
         if not os.path.exists(f'{DIR}/{seq}/init_mask'):
@@ -159,16 +197,40 @@ def main(args):
             os.makedirs(f'{DIR}/{seq}/init_refined_smpl_files')
         init_smpl_dir = f'{DIR}/{seq}/init_smpl_files'
         init_smpl_paths = sorted(glob.glob(f"{init_smpl_dir}/*.pkl"))
-        openpose_dir = f'{DIR}/{seq}/openpose'
-        openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
+        if args.vitpose:
+            print("using vitpose")
+            openpose_dir = f'{DIR}/{seq}/vitpose'
+            openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
+        else:
+            print("using openpose")
+            openpose_dir = f'{DIR}/{seq}/openpose'
+            openpose_paths = sorted(glob.glob(f"{openpose_dir}/*.npy"))
+        if args.openpose:
+            print("using openpose")
+            openpose_dir_true = f'{DIR}/{seq}/openpose'
+            openpose_paths_true = sorted(glob.glob(f"{openpose_dir_true}/*.npy"))
+
         opt_num_iters=150
         weight_dict = get_loss_weights()
         cam = PerspectiveCamera(focal_length_x=torch.tensor(cam_intrinsics[0, 0], dtype=torch.float32),
                                 focal_length_y=torch.tensor(cam_intrinsics[1, 1], dtype=torch.float32),
                                 center=torch.tensor(cam_intrinsics[0:2, 2]).unsqueeze(0)).to(device)
         mean_shape = []
-        smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
+        if args.vitpose:
+            print("using vitpose")
+            smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
+                                            use_face_contour=False, openpose_format='coco17'), dtype=torch.long).cuda()
+        else:
+            print("using openpose")
+            smpl2op_mapping = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
                                             use_face_contour=False, openpose_format='coco25'), dtype=torch.long).cuda()
+        if args.openpose:
+            print("using openpose")
+            smpl2op_mapping_openpose = torch.tensor(smpl_to_pose(model_type='smpl', use_hands=False, use_face=False,
+                                            use_face_contour=False, openpose_format='coco25'), dtype=torch.long).cuda()
+        
+        J_regressor_extra9 = np.load('./J_regressor_extra.npy')
+        J_regressor_extra9 = torch.tensor(J_regressor_extra9, dtype=torch.float32).cuda()
     elif args.mode == 'final':
         refined_smpl_dir = f'{DIR}/{seq}/init_refined_smpl_files'
         refined_smpl_mask_dir = f'{DIR}/{seq}/init_refined_mask'
@@ -228,16 +290,39 @@ def main(args):
         init_pose_list = np.array(init_pose_list)
         init_shape_list = np.array(init_shape_list)
         init_trans_list = np.array(init_trans_list)
+        interpolate_frame_list = []
+        # interpolate_frame_list = [15, 17, 19, 41] # for messi
+        # interpolate_frame_list = [88,89,90,91] # for c2
+        # interpolate_frame_list = [131,132] # for hi3
+        # interpolate_frame_list = [22] # for alehug
+        # interpolate_frame_list = [2,3,46,48,49,50,51,52,53,54,67,68,69,70,71,72,73,74,75,76] #dragon
+        # interpolate_frame_list = [37, 38,43, 53,54,55,56,57,58] # for alehug_vitpose_openpose
+        tracking_frame_list=[]
+        tracking_person_id=[]
+        # tracking_frame_list=[] + list(range(1, 176)) # for furui5
+        # tracking_person_id=[] + list(range(0,5)) # for furui5
+        # tracking_frame_list=[] + list(range(58,71)) + list(range(117,123)) + list(range(139,163)) + list(range(172,189)) # cat4 # tracking 2
+        # tracking_person_id=[2]
+        # tracking_frame_list = [146,147,148,149,150,151,152,153,154,155,156,157,158,168,169,170,171,172,173,174,175,176,177,178,179] # for iphone dance4
+        # tracking_person_id = [0]
+        # tracking_frame_list = [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51] # for taichi03
+        # interpolate_frame_list = list(range(33,141)) # piggyback19 for trace
+        # interpolate_frame_list = list(range(92,131)) + list(range(144, 147)) + list(range(163, 165)) + list(range(172,204)) + list(range(214,226)) + list(range(235,253)) + list(range(273,278)) + list(range(288, 366)) # courtyard dance 00
+        # real_interpolate_frame_list = list(range(172,190)) + list(range(335, 366)) # courtyard dance 00
+        # interpolate_frame_list = [9, 10, 11, 12, 13, 14, 15, 16, 17,  19, 20, 21,22, 24, 26, 27,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45, 83, 86,92,94,95,96,97,98,99,100,101,102, 111, 121, 122, 140, 141] # skate11
+        # interpolate_frame_list = [1, 2, 3, 4, 5, 6, 7, 8, 21, 24, 26,35,36,37,40,41,42,43,44,45,46,47,49,55,56,57,58,59,60,61,62,63,64,65,66,67,110,112,113,115,116,117,118,120,121,139,140,1444,145,146] # skate03
+        # interpolate_frame_list = [21,24,25,26,35,49,51,54,57,58,67,68,73,76,77,79,80,84,85,86,87,112,115,117,118,119,122,123,124,127,144,188] # blackpink4
         # interpolate_frame_list = [25, 30, 31, 32, 33, 36, 37,38,39,40,41,42,43,44,58,65,86,116,117,131,142,202,225,235]
         # interpolate_frame_list = [17, 18, 19, 21, 32, 33, 35, 46, 47, 49, 50, 51, 71, 73, 74]
         # interpolate_frame_list = [141, 142,143, 144,145,146,147,148]
-        interpolate_frame_list = []
+        # interpolate_frame_list = [84, 85, 86, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 131]
+        # interpolate_frame_list = [41, 51, 55, 59, 61, 62, 63, 66, 76, 77]
         # interpolate_frame_list = list(range(211,224))
         # # import pdb;pdb.set_trace()
         # for person_i  in range(2):
-        #     init_pose_list[:, person_i] , init_trans_list[:, person_i] = interpolate(init_pose_list.shape[0],interpolate_frame_list, init_pose_list[:, person_i], init_trans_list[:, person_i])
+        #     init_pose_list[:, person_i] , init_trans_list[:, person_i] = interpolate(init_pose_list.shape[0],real_interpolate_frame_list, init_pose_list[:, person_i], init_trans_list[:, person_i])
 
-
+    normalize_shift_first_frame = None
     for idx, img_path in enumerate(tqdm(img_paths)):
         input_img = cv2.imread(img_path)
         if args.mode == 'mask':
@@ -418,10 +503,10 @@ def main(args):
                 R = torch.tensor(cam_extrinsics[:3,:3])[None].float()
                 T = torch.tensor(cam_extrinsics[:3, 3])[None].float()
                 rendered_image = render_trimesh(renderer, smpl_mesh, R, T, 'n')
-                if input_img.shape[0] < input_img.shape[1]:
-                    rendered_image = rendered_image[abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2,...]
-                else:
-                    rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]
+                # if input_img.shape[0] < input_img.shape[1]:
+                #     rendered_image = rendered_image[abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2,...]
+                # else:
+                #     rendered_image = rendered_image[:,abs(input_img.shape[0]-input_img.shape[1])//2:(input_img.shape[0]+input_img.shape[1])//2]
                 valid_mask = (rendered_image[:,:,-1] > 0)[:, :, np.newaxis]
 
                 if args.mode == 'mask':
@@ -492,13 +577,24 @@ def main(args):
                 mean_shape.append(smpl_dict['shape'])
                 pkl.dump(smpl_dict, open(os.path.join(f'{DIR}/{seq}/init_smpl_files', '%04d.pkl' % idx), 'wb'))
         if args.mode == 'refine':
+            # if idx in tracking_frame_list:
+            if idx != 0:
+                last_opt_pose = opt_pose_list
+                last_trans_list = opt_trans_list
+                last_shape_list = opt_shape_list
+
             opt_pose_list = []
             opt_trans_list = []
             opt_shape_list = []
             for person_i in range(number_person):
-                smpl_shape = init_shape_list[idx, person_i]
-                smpl_pose = init_pose_list[idx, person_i]
-                tra_pred = init_trans_list[idx, person_i]
+                if (idx in tracking_frame_list) and (person_i in tracking_person_id):
+                    smpl_shape = last_shape_list[person_i]
+                    smpl_pose = last_opt_pose[person_i]
+                    tra_pred = last_trans_list[person_i]
+                else:
+                    smpl_shape = init_shape_list[idx, person_i]
+                    smpl_pose = init_pose_list[idx, person_i]
+                    tra_pred = init_trans_list[idx, person_i]
                 opt_betas = torch.tensor(smpl_shape[None], dtype=torch.float32, requires_grad=True, device=device)
                 opt_pose = torch.tensor(smpl_pose[None], dtype=torch.float32, requires_grad=True, device=device)
                 opt_trans = torch.tensor(tra_pred[None], dtype=torch.float32, requires_grad=True, device=device)
@@ -519,6 +615,30 @@ def main(args):
                                                     requires_grad=False, device=device)
                         openpose_conf = torch.tensor(openpose[person_i, :, -1][None], dtype=torch.float32,
                                                      requires_grad=False, device=device)
+                        keypoint_threshold = 0.6
+                        openpose_conf[0, openpose_conf[0, :] < keypoint_threshold] = 0.0
+
+                    
+                    if args.openpose:
+                        openpose_true = np.load(openpose_paths_true[idx])
+                        if idx in interpolate_frame_list:
+                            openpose_j2d_true = 0
+                            openpose_conf_true = 0
+                        else:  
+                            openpose_j2d_true = torch.tensor(openpose_true[person_i, :, :2][None], dtype=torch.float32,
+                                                        requires_grad=False, device=device)
+                            openpose_conf_true = torch.tensor(openpose_true[person_i, :, -1][None], dtype=torch.float32,
+                                                        requires_grad=False, device=device)
+                            keypoint_threshold_true = 0.4
+                            openpose_conf_true[0, openpose_conf_true[0, :] < keypoint_threshold_true] = 0.0
+                            openpose_conf_true[0,[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18]]=0.0
+                            # import pdb;pdb.set_trace()
+                            if torch.norm(openpose_j2d[0, 15,:] - openpose_j2d_true[0,14,:]) > 30:
+                                openpose_conf_true[0, [19,20,21]]=0.0
+                            if torch.norm(openpose_j2d[0, 16,:] - openpose_j2d_true[0,11,:]) > 30:
+                                openpose_conf_true[0, [22,23,24]]=0.0
+                            print('distance L_Ankle ', torch.norm(openpose_j2d[0, 15,:] - openpose_j2d_true[0,14,:]))
+                            print('distance R_Ankle ', torch.norm(openpose_j2d[0, 16,:] - openpose_j2d_true[0,11,:]))
 
                     # smpl_shape = seq_file['smpl_betas'][actor_id][:10]
                     # smpl_pose = seq_file['smpl_thetas'][actor_id]
@@ -527,13 +647,16 @@ def main(args):
                     opt_betas = torch.tensor(smpl_shape[None], dtype=torch.float32, requires_grad=True, device=device)
                     opt_pose = torch.tensor(smpl_pose[None], dtype=torch.float32, requires_grad=True, device=device)
                     opt_trans = torch.tensor(smpl_trans[None], dtype=torch.float32, requires_grad=True, device=device)
-
                     opt_params = [{'params': opt_betas, 'lr': 1e-3},
-                                  {'params': opt_pose, 'lr': 1e-3},
-                                  {'params': opt_trans, 'lr': 1e-3}]
+                                {'params': opt_pose, 'lr': 1e-3},
+                                {'params': opt_trans, 'lr': 1e-3}]
                     optimizer = torch.optim.Adam(opt_params, lr=2e-3, betas=(0.9, 0.999))
                     if idx == 0:
                         last_pose[person_i].append(opt_pose.detach().clone())
+                        previous_trans = opt_trans.detach().clone()
+                    else:
+                        previous_trans = torch.tensor(last_trans_list[person_i], dtype=torch.float32, requires_grad=False, device=device)
+                        previous_trans = previous_trans[None]
                     loop = tqdm(range(opt_num_iters))
                     for it in loop:
                         optimizer.zero_grad()
@@ -543,19 +666,47 @@ def main(args):
                                                                 global_orient=opt_pose[:, :3],
                                                                 transl=opt_trans)
                         smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
+                        extra_joints9 = torch.einsum('bik,ji->bjk', [smpl_output.vertices, J_regressor_extra9])
+                        smpl_54joints = torch.cat([smpl_output.joints, extra_joints9], dim=1)
+                        smpl_joints_2d = cam(torch.index_select(smpl_54joints, 1, smpl2op_mapping))
+                        # smpl_joints_2d = cam(torch.index_select(smpl_output.joints, 1, smpl2op_mapping))
+                        if args.openpose:
+                            smpl_joints_2d_openpose = cam(torch.index_select(smpl_output.joints, 1, smpl2op_mapping_openpose))
+                        previous_pose = last_pose[person_i][0]
+                        current_pose = opt_pose
+                        previous_pose = previous_pose.reshape(24, 3)
+                        current_pose = current_pose.reshape(24, 3)
 
-                        smpl_joints_2d = cam(torch.index_select(smpl_output.joints, 1, smpl2op_mapping))
+                        previous_pose_6d = axis_to_rot6D(previous_pose)
+                        current_pose_6d = axis_to_rot6D(current_pose)
+
+                        # original_pose = rot6D_to_axis(current_pose)
+                        # import pdb;pdb.set_trace()
 
                         loss = dict()
                         weight = 1
                         if idx in interpolate_frame_list:
+                            opt_pose = previous_pose.reshape(1, 72)
+                            opt_trans = previous_trans
+                            smpl_output = smpl_model_list[person_i](betas=opt_betas,
+                                                                body_pose=opt_pose[:, 3:],
+                                                                global_orient=opt_pose[:, :3],
+                                                                transl=opt_trans)
+                            smpl_verts = smpl_output.vertices.data.cpu().numpy().squeeze()
+                            break
                             weight = 0
-                            loss['J2D_Loss'] = joints_2d_loss(smpl_joints_2d, smpl_joints_2d, openpose_conf) * weight
-                            loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose)
+                            loss['J2D_Loss'] = joints_2d_loss(smpl_joints_2d, smpl_joints_2d, openpose_conf, args.vitpose) * weight
+                            # loss['Temporal_Loss'] = pose_temporal_loss(previous_pose, current_pose)
+                            # loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose) * weight
+                            loss['Temporal_Loss'] = pose_temporal_loss(previous_pose_6d, current_pose_6d) * 5 + pose_temporal_loss(previous_trans, opt_trans)
                         else:
                             weight = 1
-                            loss['J2D_Loss'] = joints_2d_loss(openpose_j2d, smpl_joints_2d, openpose_conf) * weight
-                            loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose)
+                            loss['J2D_Loss'] = joints_2d_loss(openpose_j2d, smpl_joints_2d, openpose_conf, args.vitpose) * weight
+                            if args.openpose:
+                                loss['J2D_Loss'] = loss['J2D_Loss'] + joints_2d_loss(openpose_j2d_true, smpl_joints_2d_openpose, openpose_conf_true) * weight
+                            # loss['Temporal_Loss'] = pose_temporal_loss(last_pose[person_i][0], opt_pose) * weight
+                            loss['Temporal_Loss'] = pose_temporal_loss(previous_pose_6d, current_pose_6d) * weight * 5 + pose_temporal_loss(previous_trans, opt_trans)
+                            # loss['Temporal_Loss'] = pose_temporal_loss(previous_pose, current_pose) * weight * 5
                         # if idx <= 38 or idx >= 106 or idx == 95 or idx == 104:
                         #     weight = 1
                         # else:
@@ -584,35 +735,35 @@ def main(args):
                 R = torch.tensor(cam_extrinsics[:3, :3])[None].float()
                 T = torch.tensor(cam_extrinsics[:3, 3])[None].float()
                 rendered_image = render_trimesh(renderer, smpl_mesh, R, T, 'n')
-                if input_img.shape[0] < input_img.shape[1]:
-                    rendered_image = rendered_image[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[
-                                                                                                           0] +
-                                                                                                       input_img.shape[
-                                                                                                           1]) // 2,
-                                     ...]
-                else:
-                    rendered_image = rendered_image[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(
-                                                                                                                     input_img.shape[
-                                                                                                                         0] +
-                                                                                                                     input_img.shape[
-                                                                                                                         1]) // 2]
+                # if input_img.shape[0] < input_img.shape[1]:
+                #     rendered_image = rendered_image[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[
+                #                                                                                            0] +
+                #                                                                                        input_img.shape[
+                #                                                                                            1]) // 2,
+                #                      ...]
+                # else:
+                #     rendered_image = rendered_image[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(
+                #                                                                                                      input_img.shape[
+                #                                                                                                          0] +
+                #                                                                                                      input_img.shape[
+                #                                                                                                          1]) // 2]
                 valid_mask = (rendered_image[:, :, -1] > 0)[:, :, np.newaxis]
                 smpl_mesh = trimesh.Trimesh(smpl_verts, smpl_model_list[person_i].faces, process=False)
                 R = torch.tensor(cam_extrinsics[:3, :3])[None].float()
                 T = torch.tensor(cam_extrinsics[:3, 3])[None].float()
                 rendered_image = render_trimesh(renderer, smpl_mesh, R, T, 'n')
-                if input_img.shape[0] < input_img.shape[1]:
-                    rendered_image = rendered_image[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[
-                                                                                                           0] +
-                                                                                                       input_img.shape[
-                                                                                                           1]) // 2,
-                                     ...]
-                else:
-                    rendered_image = rendered_image[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(
-                                                                                                                     input_img.shape[
-                                                                                                                         0] +
-                                                                                                                     input_img.shape[
-                                                                                                                         1]) // 2]
+                # if input_img.shape[0] < input_img.shape[1]:
+                #     rendered_image = rendered_image[abs(input_img.shape[0] - input_img.shape[1]) // 2:(input_img.shape[
+                #                                                                                            0] +
+                #                                                                                        input_img.shape[
+                #                                                                                            1]) // 2,
+                #                      ...]
+                # else:
+                #     rendered_image = rendered_image[:, abs(input_img.shape[0] - input_img.shape[1]) // 2:(
+                #                                                                                                      input_img.shape[
+                #                                                                                                          0] +
+                #                                                                                                      input_img.shape[
+                #                                                                                                          1]) // 2]
                 valid_mask = (rendered_image[:, :, -1] > 0)[:, :, np.newaxis]
 
                 if args.mode == 'refine':
@@ -681,10 +832,20 @@ def main(args):
             # normalize_shift = -(v_max + v_min) / 2.
             #
             # trans = smpl_trans + normalize_shift
+
+            # TODO save shift norm for the first frame and use it for the rest frame, to make the camera static
+            # we use static camera for hi4d
             smpl_verts_all = np.concatenate(smpl_verts_list, axis=0)
             v_max = smpl_verts_all.max(axis=0)
             v_min = smpl_verts_all.min(axis=0)
-            normalize_shift = -(v_max + v_min) / 2.
+            if args.source == 'hi4d':
+                if idx == 0:
+                    normalize_shift = -(v_max + v_min) / 2.
+                    normalize_shift_first_frame = normalize_shift
+                else:
+                    normalize_shift = normalize_shift_first_frame
+            else:
+                normalize_shift = -(v_max + v_min) / 2.
             smpl_trans = np.stack(smpl_trans_list, axis=0)
             smpl_pose = np.stack(smpl_pose_list, axis=0)
             trans = smpl_trans + normalize_shift.reshape(1, 3)
@@ -750,5 +911,8 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, help="mask mode or refine mode: mask or refine or final")
     # scale factor for the input image
     parser.add_argument('--scale_factor', type=int, default=1, help="scale factor for the input image")
+
+    parser.add_argument('--vitpose', action='store_true', help="use vitpose", default=False)
+    parser.add_argument('--openpose', action='store_true', help="use openpose", default=False)
     args = parser.parse_args()
     main(args)

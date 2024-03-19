@@ -27,7 +27,10 @@ def estimate_translation(joints_3d, joints_2d, org_trans, proj_mats=None, cam_di
     for i in range(joints_3d.shape[0]):
         trans_i = estimate_translation_cv2(joints_3d[i], joints_2d[i], 
                 proj_mat=proj_mats, cam_dist=cam_dists[i])
-        trans[i] = trans_i if trans_i is not None else org_trans[i]
+        if trans_i is None:
+            assert False, "Failed to estimate translation"
+        trans[i] = trans_i
+        # trans[i] = trans_i if trans_i is not None else org_trans[i]
 
     return torch.from_numpy(trans).float()
 
