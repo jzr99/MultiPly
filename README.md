@@ -11,6 +11,7 @@ Official Repository for CVPR 2024 paper [*MultiPly: Reconstruction of Multiple P
 * Clone this repo: `git clone https://github.com/jzr99/MultiPly`
 * Create a python virtual environment and activate. `conda create -n multiply python=3.7` and `conda activate multiply`
 * Install dependenices. `cd MultiPly`, `pip install -r requirement.txt` and `cd code; python setup.py develop`
+* Install [PyTorch3D](https://github.com/facebookresearch/pytorch3d/blob/main/INSTALL.md)
 * Install [Kaolin](https://kaolin.readthedocs.io/en/v0.10.0/notes/installation.html). We use version 0.10.0.
 * Download [SMPL model](https://smpl.is.tue.mpg.de/download.php) (version 1.1.0 for Python 2.7 (female/male/neutral)) and move them to the corresponding places:
 ```
@@ -82,7 +83,7 @@ Here are more recent related human body reconstruction projects from our team:
 * [Vid2Avatar: 3D Avatar Reconstruction from Videos in the Wild via Self-supervised Scene Decomposition](https://github.com/MoyGcc/vid2avatar/)
 
 ```
-@inproceedings{jiang2023multiply,
+@inproceedings{jiang2024multiply,
       title={MultiPly: Reconstruction of Multiple People from Monocular Video in the Wild},
       author={Jiang, Zeren and Guo, Chen and Kaufmann, Manuel and Jiang, Tianjian and Valentin, Julien and Hilliges, Otmar and Song, Jie},    
       booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
