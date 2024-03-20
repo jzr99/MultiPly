@@ -1,4 +1,4 @@
-smplx_models: "/media/ubuntu/hdd/Motion_infilling_smoothing/SmoothNet/data/"
+smplx_models: "../code/lib/smpl/smpl_model/SMPL_NEUTRAL.pkl"
 
 # # Pytorch configuration.
 # device: "cuda:0"

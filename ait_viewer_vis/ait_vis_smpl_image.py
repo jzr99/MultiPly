@@ -123,9 +123,9 @@ def main_without_extrinsics(v2a_root, v2a_output_root, visualize_smpl, visualize
 
 
         # load one frames
-        # frame_id = 131
+        frame_id = 131
         # frame_id = 85
-        frame_id = 75
+        # frame_id = 75
         npy_path_list = sorted(glob.glob(os.path.join(v2a_output_root, 'test_dumped_smpl/*')))
         body_pose_list = []
         betas_list = []
@@ -158,6 +158,7 @@ def main_without_extrinsics(v2a_root, v2a_output_root, visualize_smpl, visualize
 
 
         gender_list = np.load(f'{v2a_root}/gender.npy')
+        print(gender_list)
 
         smpl_layer = SMPLLayer(model_type='smpl', gender=gender_list[0])
         if len(betas.shape) == 3:
@@ -307,13 +308,14 @@ if __name__ == '__main__':
         # capture_root = os.path.join(root, subject_id, seq_id)
         # v2a_input_root = os.path.join(capture_root, "v2a")
         # v2a_output_root = os.path.join(capture_root, "v2a_baseline")
-    C.update_conf({"smplx_models": '/media/ubuntu/hdd/Motion_infilling_smoothing/SmoothNet/data/'})
+    # C.update_conf({"smplx_models": '/media/ubuntu/hdd/Motion_infilling_smoothing/SmoothNet/data/'})
+    C.update_conf({"smplx_models": '../code/lib/smpl/smpl_model/SMPL_NEUTRAL.pkl'})
     # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/updown_sam_delay_depth_loop_noshare'
     # v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/updown'
     # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/pair19_gt'
-    # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/Hi4D_pair19_piggyback19_4_sam_delay_depth_2_noshare'
+    v2a_output_root = f'/media/ubuntu/hdd/V2A_output/Hi4D_pair19_piggyback19_4_sam_delay_depth_2_noshare'
     # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/Hi4D_pair19_piggyback19_4_2_noshare'
-    # v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/pair19_piggyback19_vitpose_4'
+    v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/pair19_piggyback19_vitpose_4'
     # v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/Hi4D_pair19_piggyback19_static'
 
 
@@ -336,7 +338,7 @@ if __name__ == '__main__':
     # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/dance5_sam_delay_depth_loop_noshare'
     # v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/dance5'
 
-    v2a_output_root = f'/media/ubuntu/hdd/V2A_output/taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose'
-    v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/taichi01_vitpose_openpose'
-    main_without_extrinsics(v2a_input_root, v2a_output_root, visualize_smpl=False, visualize_mesh=True)
+    # v2a_output_root = f'/media/ubuntu/hdd/V2A_output/taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose'
+    # v2a_input_root = f'/media/ubuntu/hdd/RGB-PINA/data/taichi01_vitpose_openpose'
+    main_without_extrinsics(v2a_input_root, v2a_output_root, visualize_smpl=True, visualize_mesh=False)
     # main_without_extrinsics(v2a_input_root, v2a_output_root, visualize_smpl=True, visualize_mesh=False)

@@ -1,6 +1,5 @@
 train:
     dataset: Hi4D
-#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
     subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
     start_frame: 0
     end_frame: 75
@@ -15,7 +14,6 @@ train:
 
 valid:
     dataset: "Hi4DVal"
-#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
     subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
     start_frame: 0
     end_frame: 75
@@ -28,12 +26,11 @@ valid:
 
     data_dir : taichi01_vitpose_openpose/
     num_sample : -1
-    pixel_per_batch: 768
+    pixel_per_batch: 512
     using_SAM: True
 
 test:
     dataset: "Hi4DTest"
-#    subject: "courtyard_shakeHands_00_no_pose_condition_interpenetration_loss_idr"
     subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
     start_frame: 0
     end_frame: 75
@@ -46,5 +43,5 @@ test:
 
     data_dir : taichi01_vitpose_openpose/
     num_sample : 0
-    pixel_per_batch: 1024
+    pixel_per_batch: 512
     using_SAM: True

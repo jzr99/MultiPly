@@ -47,28 +47,19 @@ def main(args):
         params['net_resolution'] = '-1x320'
         # params['net_resolution'] = '720x480'
         # params['net_resolution'] = '360x240'
-        # params['num_gpu'] = 0
-
-        # Starting OpenPose
-        # print("before Starting OpenPose")
         opWrapper = op.WrapperPython()
         opWrapper.configure(params)
         opWrapper.start()
         # print("after Starting OpenPose")
-
         # Read frames on directory
         img_dir = f'{DIR}/{args.seq}/frames'
         # this line below will lead to a segfault
         imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
         if len(imagePaths) == 0:
             imagePaths = sorted(glob.glob(f'{img_dir}/*.jpg'))
-        # imagePaths = sorted(glob.glob(f'{img_dir}/*.png'))
-        # imagePaths = op.get_images_on_directory(img_dir)
         maskPath_list = sorted(glob.glob(f'{img_dir}/../init_mask/*'))
         number_person = len(maskPath_list)
         mask_path_list = [sorted(glob.glob(f'{img_dir}/../init_mask/{i}/*.png')) for i in range(number_person)]
-        # maskPaths_0 = sorted(glob.glob(f'{img_dir}/../init_mask/0/*.png'))
-        # maskPaths_1 = sorted(glob.glob(f'{img_dir}/../init_mask/1/*.png'))
         start = time.time()
         # import pdb; pdb.set_trace()
         if not os.path.exists(f'{img_dir}/../openpose'):
@@ -77,31 +68,19 @@ def main(args):
         # Process and display images
         nbrs = NearestNeighbors(n_neighbors=1)
         for idx, imagePath in enumerate(tqdm(imagePaths)):
-            # if idx < 215:
-            #     continue
-            # print("before op.Datum()")
             datum = op.Datum()
-            # print("after op.Datum()")
             imageToProcess = cv2.imread(imagePath)
             mask_center_list = []
             for person_id in range(number_person):
                 maskPath = mask_path_list[person_id][idx]
                 mask_center_list.append(get_mask_center(maskPath))
             mask_center_np = np.stack(mask_center_list, 0)
-            # maskPath_0 = maskPaths_0[idx]
-            # maskPath_1 = maskPaths_1[idx]
-            # bbox_center_0 = get_bbox_center(imagePath, maskPath_0)
-            # bbox_center_1 = get_bbox_center(imagePath, maskPath_1)
-            # mask_center_0 = get_mask_center(maskPath_0)
-            # mask_center_1 = get_mask_center(maskPath_1)
             datum.cvInputData = imageToProcess
             opWrapper.emplaceAndPop(op.VectorDatum([datum]))
 
             poseKeypoints = datum.poseKeypoints
             # print("number of detected person", poseKeypoints.shape)
             center_2D = (poseKeypoints[:, :, :2] * poseKeypoints[:, :, [-1]]).sum(axis=1) / poseKeypoints[:, :, -1].sum(axis=1, keepdims=True)
-            
-
 
             # calculate cost matrix
             cost_matrix = np.zeros((number_person, center_2D.shape[0]))
@@ -115,68 +94,6 @@ def main(args):
             for person_i, keypoint_i in zip(row_ind, col_ind):
                 if cost_matrix[person_i, keypoint_i] < 200:
                     output_2d[person_i] = poseKeypoints[keypoint_i]
-            # for person_i in range(number_person):
-            #     # tracking in case of two persons or wrong ROMP detection
-            #     if len(seq_file['smpl_thetas']) >= number_person:
-            #         # dist = []
-            #         # if idx == 0:
-            #         #     last_j3d.append(seq_file['joints'][actor_order])
-            #         # for i in range(len(seq_file['smpl_thetas'])):
-            #         #     dist.append(np.linalg.norm(seq_file['joints'][i].mean(0) - last_j3d[-1][person_i].mean(0, keepdims=True)))
-            #         # actor_id = np.argmin(dist)
-            #         assert row_ind[person_i] == person_i
-            #         actor_id = col_ind[person_i]
-            #         smpl_verts = seq_file['verts'][actor_id, idx]
-            #         pj2d_org = seq_file['pj2d_org'][actor_id, idx]
-            #         joints3d = seq_file['joints'][actor_id, idx]
-            #         smpl_shape = seq_file['smpl_betas'][actor_id, idx][:10]
-            #         smpl_pose = seq_file['smpl_thetas'][actor_id, idx]
-            #         cam_trans = seq_file['cam_trans'][actor_id, idx]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            # if center_2D.shape[0] > 2:
-            #     print("detect more than 2 person, truncating to 2")
-            #     center_2D = center_2D[:2]
-            # elif center_2D.shape[0] < 2:
-            #     print("detect less than 2 person, ignored")
-            #     np.save(f'{img_dir}/../openpose/%04d.npy' % idx, np.zeros(1))
-            #     continue
-            # if np.linalg.norm(center_2D[0] - mask_center_0) + np.linalg.norm(center_2D[1] - mask_center_1) > np.linalg.norm(center_2D[0] - mask_center_1) + np.linalg.norm(center_2D[1] - mask_center_0):
-            #     order = [1, 0]
-            # else:
-            #     order = [0, 1]
-            # # nbrs.fit(center_2D)
-            # # nbrs.fit(poseKeypoints[:, 8, :2])
-
-            # actor_0 = order[0]
-            # actor_1 = order[1]
-            # # actor_0 = nbrs.kneighbors(bbox_center_0.reshape(1, -1), return_distance=False).ravel()[0]
-            # # actor_0 = nbrs.kneighbors(mask_center_0.reshape(1, -1), return_distance=False).ravel()[0]
-            # poseKeypoints_0 = poseKeypoints[actor_0]
-            # # actor_1 = nbrs.kneighbors(mask_center_1.reshape(1, -1), return_distance=False).ravel()[0]
-            # # actor_1 = nbrs.kneighbors(bbox_center_1.reshape(1, -1), return_distance=False).ravel()[0]
-            # poseKeypoints_1 = poseKeypoints[actor_1]
-
-            # import pdb; pdb.set_trace()
-            # np.save(f'{img_dir}/../openpose/%04d.npy' % idx, np.stack([poseKeypoints_0, poseKeypoints_1], axis=0))
             np.save(f'{img_dir}/../openpose/%04d.npy' % idx, output_2d)
             output_img = datum.cvOutputData
             color = [(0, 0, 255), (255, 0, 0), (0, 255, 0), (255,255,0), (255,0,255), (0,255,255), (255,255,255), (0,0,0), (128,128,128), (128,0,0), (0,128,0), (0,0,128), (128,128,0), (128,0,128), (0,128,128)]
@@ -189,14 +106,6 @@ def main(args):
                 cv2.circle(output_img, (int(center_2D[keypoint_i][0]),int(center_2D[keypoint_i][1])), 10, color_jit, -1)
                 cv2.circle(output_img, (int(mask_center_np[person_i][0]),int(mask_center_np[person_i][1])), 10, color_jit, -1)
                 
-            # for point in poseKeypoints_0:
-            #     cv2.circle(output_img, (int(point[0]), int(point[1])), 5, (0, 0, 255), -1)
-            # for point in poseKeypoints_1:
-            #     cv2.circle(output_img, (int(point[0]), int(point[1])), 5, (0, 255, 0), -1)
-            # cv2.circle(output_img, (int(center_2D[actor_0][0]),int(center_2D[actor_0][1])), 10, (0, 0, 255), -1)
-            # cv2.circle(output_img, (int(center_2D[actor_1][0]),int(center_2D[actor_1][1])), 10, (0, 255, 0), -1)
-            # cv2.circle(output_img, (int(mask_center_0[0]),int(mask_center_0[1])), 10, (0, 0, 255), 3)
-            # cv2.circle(output_img, (int(mask_center_1[0]),int(mask_center_1[1])), 10, (0, 255, 0), 3)
             cv2.imwrite(f'{img_dir}/../openpose/%04d.png' % idx, output_img)
         end = time.time()
         print("OpenPose demo successfully finished. Total time: " + str(end - start) + " seconds")

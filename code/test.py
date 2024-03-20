@@ -1,4 +1,4 @@
-from v2a_model import V2AModel
+from multiply_model import MultiplyModel
 from lib.datasets import create_dataset
 import hydra
 import pytorch_lightning as pl
@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="base")
+@hydra.main(config_path="confs", config_name="taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
@@ -32,11 +32,11 @@ def main(opt):
     )
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
-    model = V2AModel(opt, betas_path)
+    model = MultiplyModel(opt, betas_path)
     # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     testset = create_dataset(opt.dataset.test)
 
-    trainer.test(model, testset, ckpt_path="checkpoints/last.ckpt")
+    trainer.test(model, testset, ckpt_path="checkpoints/epoch=5299-loss=0.02430165372788906.ckpt")
 
 if __name__ == '__main__':
     main()
