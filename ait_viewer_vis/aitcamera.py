@@ -72,7 +72,7 @@ def visulize_result(renderer, outputs, imgpath, rendering_cfgs, save_dir, smpl_m
     return render_images_path
 
 def main(args):
-    # C.update_conf({"smplx_models": '/media/ubuntu/hdd/Motion_infilling_smoothing/SmoothNet/data/'})
+    # C.update_conf({"smplx_models": '../code/lib/smpl/smpl_model/SMPL_NEUTRAL.pkl'})
     if args.headless:
         v = HeadlessRenderer(size=(1920, 1080))
     else:
@@ -89,24 +89,6 @@ def main(args):
 
     # render SMPL
     if "smpl" in args.vis:
-        # smpl_layer = SMPLLayer(model_type="smpl", gender="male")
-        # poses = np.load(os.path.join(Root_dir,'poses.npy'))
-        # norm_trans = np.load(os.path.join(Root_dir, 'normalize_trans.npy'))
-        # mean_beats = np.load(os.path.join(Root_dir, "mean_shape.npy")).reshape(1,10).repeat(norm_trans.shape[0], axis=0)
-        # smpl_seq = SMPLSequence(poses_body = poses[:,3:],
-        #                         smpl_layer = smpl_layer,
-        #                         poses_root = poses[:,:3],
-        #                         betas = mean_beats[:,:],
-        #                         trans = norm_trans[:,:])
-        # smpl_seq.mesh_seq.vertex_colors = np.array(CONTACT_COLORS[0])[np.zeros(6890,dtype=np.int32)][np.newaxis,...].repeat(norm_trans.shape[0],axis=0)
-        # smpl_seq.name = "smpl" + str(0)
-        # smpl_seq.mesh_seq.material.diffuse = 1.0
-        # smpl_seq.mesh_seq.material.ambient = 0.1
-
-        # cameras = np.load(os.path.join(Root_dir,'cameras.npz'))
-
-        # import numpy as np
-        # r = np.load('/media/ubuntu/hdd/ROMP/simple_romp/trace_results/trace_demo.npz', allow_pickle=True)
         trace_output = f"./trace_results/{args.seq}"
         try:
             result = np.load(trace_output + '.npz', allow_pickle=True)
@@ -115,7 +97,6 @@ def main(args):
                 result = np.load(trace_output + '.mp4' + '.npz', allow_pickle=True)
             except:
                 Exception("No trace result found!")
-        # import pdb;pdb.set_trace()
         smpl_layer = SMPLLayer(model_type="smpl", gender="neutral")
         used_org_inds, per_img_person_inds = process_idx(result['outputs'][()]['reorganize_idx'])
         
@@ -133,32 +114,11 @@ def main(args):
         for org_ind, img_inds in zip(used_org_inds, per_img_person_inds):
             for img_ind_i in img_inds:
                 track_id = track_ids[img_ind_i] -1
-                # import pdb;pdb.set_trace()
                 theta_np[track_id, org_ind] = result['outputs'][()]['smpl_thetas'][img_ind_i]
                 beta_np[track_id, org_ind] = result['outputs'][()]['smpl_betas'][img_ind_i]
                 cam_np[track_id, org_ind] = result['outputs'][()]['cam_trans'][img_ind_i]
                 j3d_np[track_id, org_ind] = result['outputs'][()]['j3d'][img_ind_i]
                 pj2d_org_np[track_id, org_ind] = result['outputs'][()]['pj2d_org'][img_ind_i]
-                # if org_ind == 131 and track_id==1:
-                #     for take in range(120,131):
-                #         theta_np[1, take] = result['outputs'][()]['smpl_thetas'][img_ind_i]
-                #         beta_np[1, take] = result['outputs'][()]['smpl_betas'][img_ind_i]
-                #         cam_np[1, take] = result['outputs'][()]['cam_trans'][img_ind_i]
-                #         j3d_np[1, take] = result['outputs'][()]['j3d'][img_ind_i]
-                #         pj2d_org_np[1, take] = result['outputs'][()]['pj2d_org'][img_ind_i]
-                # if org_ind == 13:
-                    # theta_np[track_id, 0] = result['outputs'][()]['smpl_thetas'][img_ind_i]
-                    # beta_np[track_id, 0] = result['outputs'][()]['smpl_betas'][img_ind_i]
-                    # cam_np[track_id, 0] = result['outputs'][()]['cam_trans'][img_ind_i]
-                    # j3d_np[track_id, 0] = result['outputs'][()]['j3d'][img_ind_i]
-                    # pj2d_org_np[track_id, 0] = result['outputs'][()]['pj2d_org'][img_ind_i]
-                # if track_id == 2 and org_ind == 1:
-                    # theta_np[track_id, 0] = result['outputs'][()]['smpl_thetas'][img_ind_i]
-                    # beta_np[track_id, 0] = result['outputs'][()]['smpl_betas'][img_ind_i]
-                    # cam_np[track_id, 0] = result['outputs'][()]['cam_trans'][img_ind_i]
-                    # j3d_np[track_id, 0] = result['outputs'][()]['j3d'][img_ind_i]
-                    # pj2d_org_np[track_id, 0] = result['outputs'][()]['pj2d_org'][img_ind_i]
-        
         
         theta_list = []
         beta_list = []
@@ -182,29 +142,18 @@ def main(args):
             j3d_list.append(j3d)
             pj2d_org_list.append(pj2d_org)
 
-            # smpl_seq = SMPLSequence(poses_body = theta[:,3:],
-            #                         smpl_layer = smpl_layer,
-            #                         # poses_root = world_rotation[:,:3],
-            #                         poses_root = theta[:, :3],
-            #                         betas = beta[:,:],
-            #                         # trans = world_trans[:,:],
-            #                         trans = cam_trans[:, :])
             da_pose = np.zeros_like(theta_np[i, :,3:])
             da_pose[:, 2] = np.pi / 6
             da_pose[:, 5] = - np.pi / 6
             smpl_seq = SMPLSequence(poses_body = theta_np[i, :,3:],
-                                    # poses_body = da_pose,
                                     smpl_layer = smpl_layer,
-                                    # poses_root = world_rotation[:,:3],
                                     poses_root = theta_np[i, :, :3],
                                     betas = beta_np[i, :,:],
-                                    # trans = world_trans[:,:],
                                     trans = cam_np[i, :, :])
             verts_list.append(smpl_seq.vertices)
             verts_np[i] = smpl_seq.vertices
             
             smpl_seq.mesh_seq.vertex_colors = np.array(CONTACT_COLORS[i])[np.zeros(6890,dtype=np.int32)][np.newaxis,...].repeat(world_trans.shape[0],axis=0)
-            # smpl_seq.mesh_seq.vertex_colors = np.array(CONTACT_COLORS[i])[np.zeros(6890,dtype=np.int32)][np.newaxis,...].repeat(theta_np[i, :,3:].shape[0],axis=0)
             smpl_seq.name = "smpl" + str(i)
             smpl_seq.mesh_seq.material.diffuse = 1.0
             smpl_seq.mesh_seq.material.ambient = 0.1
@@ -218,56 +167,10 @@ def main(args):
             "smpl_betas": beta_np,
             "verts": verts_np
         }
-        # np.savez(trace_output + "_reformat.npz", results=save_result)
-        # uncomment
+
         os.makedirs(f"./raw_data/{args.seq}/trace", exist_ok=True)
         np.savez(f"./raw_data/{args.seq}/trace/{args.seq}.npz", results=save_result)
         
-        # save_result = {
-        #     "joints": np.stack(j3d_list, 0),
-        #     "pj2d_org": np.stack(pj2d_org_list, 0),
-        #     "cam_trans": np.stack(cam_list, 0),
-        #     "smpl_thetas": np.stack(theta_list, 0),
-        #     "smpl_betas": np.stack(beta_list, 0),
-        #     "verts": np.stack(verts_list, 0)
-        # }
-        # np.savez(trace_output + "_reformat.npz", results=save_result)
-
-
-        # dict_keys(['reorganize_idx', 'j3d', 'world_cams', 'world_trans', 'world_global_rots', 'pj2d_org', 'pj2d', 'cam_trans', 'pj2d_org_h36m17', 'joints_h36m17', 'center_confs', 'track_ids', 'smpl_thetas', 'smpl_betas'])
-        
-        # R = aa2rot_numpy(r['outputs'][()]["world_cams"])
-        # t = r['outputs'][()]["cam_trans"]
-        # K=np.array([[548,0,256], [0,548,256], [0,0,1]])
-        # K_list = []
-        # Rt_list = []
-        # for i in range(R.shape[0]):
-        #     intrinsics = np.eye(4)
-        #     intrinsics[:3, :3] = K
-        #     pose = np.eye(4, dtype=np.float32)
-        #     pose[:3, :3] = R[i]
-        #     pose[:3,3] = t[i]
-        #     # P = P[:3, :4]
-        #     # out = cv2.decomposeProjectionMatrix(P)
-        #     # K = out[0]
-        #     # R = out[1]
-        #     # t = out[2]
-
-        #     # K = K/K[2,2]
-        #     # intrinsics = np.eye(4)
-        #     # intrinsics[:3, :3] = K
-
-        #     # pose = np.eye(4, dtype=np.float32)
-        #     # pose[:3, :3] = R.transpose()
-        #     # pose[:3,3] = (t[:3] / t[3])[:,0]
-
-        #     # pose = np.linalg.inv(pose)
-
-        #     K_list.append(K)
-        #     Rt_list.append(pose[:3,:])
-
-        # cv_cams = OpenCVCamera(K=np.array(K_list), Rt=np.array(Rt_list), cols=648, rows=361)
-        # v.scene.add(smpl_seq, cv_cams)
     if not args.headless:
         v.run()
 
@@ -275,7 +178,6 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--vis', nargs='+', type=str, default=['smpl'], help='visualize type: org, seg, instance, smpl, rgb')
-    parser.add_argument('--trace_output', type=str, default='/media/ubuntu/hdd/ROMP/simple_romp/trace_results/triple02_dance02_88_clip', help='trace file')
     parser.add_argument('--seq', type=str, default="seq_name", help='seq name')
     parser.add_argument('--headless', default=False, help='headless mode', action='store_true')
     main(parser.parse_args())

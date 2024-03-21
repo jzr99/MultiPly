@@ -48,11 +48,10 @@ cd code
 python test.py
 ```
 ## 3D Visualization
-We use [AITViewer](https://github.com/eth-ait/aitviewer) to visualize the human models in 3D. First install AITViewer: `pip install aitviewer imgui==1.4.1`, and then run the following command to visualize the canonical mesh (--mode static) or deformed mesh sequence (--mode dynamic):
+We use [AITViewer](https://github.com/eth-ait/aitviewer) to visualize the human models in 3D. First install AITViewer: `pip install aitviewer imgui==1.4.1`, and then run the following command to visualize the deformed mesh sequence and reproject it onto the corresponding frames:
 ```
 cd ait_viewer_vis
-# unfinish
-python ait_vis_smpl_image.py --mode {MODE} --path {PATH}
+python vis_mesh_image.py --input_root {input data folder} --output_root {Multiply output folder}
 ```
 <p align="center">
   <img src="resources/mesh_2.gif" width="623" height="346"/> 

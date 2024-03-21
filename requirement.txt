@@ -3,7 +3,7 @@ chumpy==0.70
 scikit-image==0.18.1
 torch==1.12.1
 torchvision==0.13.0
-pytorch-lightning==1.5.7
+pytorch-lightning==1.9.0
 hydra-core==1.1.1
 wandb==0.13.1
 aitviewer

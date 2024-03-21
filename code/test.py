@@ -33,10 +33,11 @@ def main(opt):
 
     betas_path = os.path.join(hydra.utils.to_absolute_path('..'), 'data', opt.dataset.train.data_dir, 'mean_shape.npy')
     model = MultiplyModel(opt, betas_path)
-    # checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
+    checkpoint = sorted(glob.glob("checkpoints/*.ckpt"))[-1]
     testset = create_dataset(opt.dataset.test)
-
-    trainer.test(model, testset, ckpt_path="checkpoints/epoch=5299-loss=0.02430165372788906.ckpt")
+    print("checkpoint:", checkpoint)
+    trainer.test(model, testset, ckpt_path=checkpoint)
+    # trainer.test(model, testset, ckpt_path="checkpoints/epoch=5299-loss=0.02430165372788906.ckpt")
 
 if __name__ == '__main__':
     main()

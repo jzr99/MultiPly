@@ -1693,7 +1693,7 @@ class MultiplyModel(pl.LightningModule):
         else:
             # test all persons
             self.test_step_each_person(batch, id=-1)
-            # test each person
-            if self.num_person > 1:
-                for i in range(self.num_person):
-                    self.test_step_each_person(batch, id=i)
+            # # uncomment this to test each person
+            # if self.num_person > 1:
+            #     for i in range(self.num_person):
+            #         self.test_step_each_person(batch, id=i)
