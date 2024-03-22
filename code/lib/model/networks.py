@@ -7,34 +7,7 @@ from .triplane import TriPlane, TriPlaneMulti
 class ImplicitNet(nn.Module):
     def __init__(self, opt, betas=None):
         super().__init__()
-        try:
-            self.multi_triplane = opt.multi_triplane
-            print('multi_triplane', self.multi_triplane)
-        except:
-            self.multi_triplane = False
-            print('multi_triplane', self.multi_triplane)
-
-        try:
-            self.offset_head = opt.offset_head
-            print('offset_head', self.offset_head)
-        except:
-            self.offset_head = False
-            print('offset_head', self.offset_head)
-
-        try:
-            self.beta_encoding = opt.beta_encoding
-            print('beta_encoding', self.beta_encoding)
-        except:
-            self.beta_encoding = False
-            print('beta_encoding', self.beta_encoding)
-
-        try:
-            self.no_head_feature = opt.no_head_feature
-            print('no_head_feature', self.no_head_feature)
-        except:
-            self.no_head_feature = False
-            print('no_head_feature', self.no_head_feature)
-
+        self.init_params(opt)
         dims = [opt.d_in] + list(
             opt.dims) + [opt.d_out + opt.feature_vector_size]
         self.num_layers = len(dims)
@@ -143,6 +116,25 @@ class ImplicitNet(nn.Module):
                 self.beta_layer_list.append(beta_layer)
 
 
+    def init_params(self, opt):
+        try:
+            self.multi_triplane = opt.multi_triplane
+        except:
+            self.multi_triplane = False
+        try:
+            self.offset_head = opt.offset_head
+        except:
+            self.offset_head = False
+        try:
+            self.beta_encoding = opt.beta_encoding
+        except:
+            self.beta_encoding = False
+        try:
+            self.no_head_feature = opt.no_head_feature
+        except:
+            self.no_head_feature = False
+
+    
     def forward(self, input, cond, current_epoch=None, person_id=-1):
         if input.ndim == 2: input = input.unsqueeze(0)
 
