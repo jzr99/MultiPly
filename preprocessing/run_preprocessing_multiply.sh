@@ -7,6 +7,7 @@ number=2 # number of people
 time_start="00:00:00" # start time of the sequence
 time_duration="00:00:15" # duration of the sequence
 
+source /media/ubuntu/hdd/anaconda3/etc/profile.d/conda.sh # load conda (find your conda path and replace it here)
 # environment setup (can be same if you installed all the packages in the same environment, or different if you installed them in different environments)
 trace_env="smoothnet-env"
 vitpose_env="vitpose"
@@ -20,8 +21,8 @@ mkdir ./raw_data/$seq
 mkdir ./raw_data/$seq/$seq
 ffmpeg -i $seq_path -ss $time_start -t $time_duration -vsync 0 ./raw_data/$seq/$seq/%04d.png
 
-# estimate the SMPL parameter and tracking with trace
-trace2 -i $folder_path/raw_data/$seq/$seq  --subject_num=$number --results_save_dir=./trace_results/ --save_video --show_tracking --time2forget=40
+# estimate the SMPL parameter and tracking with trace (for visualization use --show_tracking)
+trace2 -i $folder_path/raw_data/$seq/$seq  --subject_num=$number --results_save_dir=./trace_results/ --save_video --time2forget=40
 mv ./raw_data/$seq/$seq ./raw_data/$seq/frames
 
 echo "reformate the data"

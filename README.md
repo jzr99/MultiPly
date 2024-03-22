@@ -60,8 +60,8 @@ python vis_mesh_image.py --input_root {input data folder} --output_root {Multipl
 ## Play on custom video 
 * It's better to install those package into separate environments, then specify the environment name in `run_preprocessing_multiply.sh`.
 * Install [TRACE](https://github.com/Arthur151/ROMP/blob/master/simple_romp/trace2/README.md) for initial pose estimation and tracking. 
-* Install [Vitpose](https://github.com/ViTAE-Transformer/ViTPose?tab=readme-ov-file#usage) for 2D keypoint detection.
-* (Optional) Install [OpenPose](https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation/0_index.md) as well as the python bindings for better feet pose estimation.
+* Install [Vitpose](https://github.com/ViTAE-Transformer/ViTPose?tab=readme-ov-file#usage) for 2D keypoint detection. Download the pre-trained model from [here](https://1drv.ms/u/s!AimBgYV7JjTlgS5rLeRAJiWobCdh?e=41GsDd), and save it as `preprocessing/vitpose/checkpoints/vitpose-h-multi-coco.pth`
+* (Optional) Install [OpenPose](https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation/0_index.md) as well as the python bindings for better feet keypoints estimation.
 * Install [FFMPEG](https://ffmpeg.org/download.html) for video processing.
 * Modify the preprocessing script `preprocessing/run_preprocessing_multiply.sh` accordingly: the data source, data path, sequence name, environment name. The data source is by default "custom" which will estimate camera intrinsics. If the camera intrinsics are known, it's better if the true camera parameters can be given.
 * Run preprocessing: `cd preprocessing` and `bash run_preprocessing_multiply.sh`. The processed data will be stored in `data/`. The intermediate outputs of the preprocessing can be found at `preprocessing/raw_data/{SEQUENCE_NAME}/`
