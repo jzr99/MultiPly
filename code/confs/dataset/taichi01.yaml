@@ -1,6 +1,6 @@
 train:
     dataset: Hi4D
-    subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
+    subject: "taichi01"
     start_frame: 0
     end_frame: 75
     batch_size: 1
@@ -14,7 +14,7 @@ train:
 
 valid:
     dataset: "Hi4DVal"
-    subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
+    subject: "taichi01"
     start_frame: 0
     end_frame: 75
     image_id: 0
@@ -31,7 +31,7 @@ valid:
 
 test:
     dataset: "Hi4DTest"
-    subject: "taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose"
+    subject: "taichi01"
     start_frame: 0
     end_frame: 75
     image_id: 0

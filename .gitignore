@@ -28,3 +28,4 @@ imgui.ini
 outputs
 code/build/temp.linux-x86_64-3.7/
 code/lib/cuda/
+/preprocessing/trace_results

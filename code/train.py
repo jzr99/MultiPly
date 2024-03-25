@@ -6,7 +6,7 @@ from pytorch_lightning.loggers import WandbLogger
 import os
 import glob
 
-@hydra.main(config_path="confs", config_name="taichi01_sam_delay_depth_loop_2_MLP_vitpose_openpose_base")
+@hydra.main(config_path="confs", config_name="taichi01_base")
 def main(opt):
     pl.seed_everything(42)
     print("Working dir:", os.getcwd())
