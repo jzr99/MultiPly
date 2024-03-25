@@ -26,6 +26,8 @@ preprocessing/model_data
 preprocessing/raw_data
 imgui.ini
 outputs
-code/build/temp.linux-x86_64-3.7/
+code/build/
+code/dist/
+code/UNKNOWN.egg-info/
 code/lib/cuda/
 /preprocessing/trace_results
